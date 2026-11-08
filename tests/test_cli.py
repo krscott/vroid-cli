@@ -262,6 +262,9 @@ def test_launch_reports_a_desktop_that_failed_before_vroid(tmp_path: Path) -> No
     desktop = tmp_path / "state/test/desktop"
     desktop.mkdir(parents=True)
     (desktop / "app.log").write_text("previous run\n")
+    (desktop / "app-exit.json").write_text("{}")
+    old = time.time() - 60
+    os.utime(desktop / "app-exit.json", (old, old))
     env = fake_framewisp(tmp_path, "print('sway exited', file=sys.stderr)\nsys.exit(1)")
     result = invoke(tmp_path, "launch", "--timeout", "8", env=env)
     assert result.returncode == 1

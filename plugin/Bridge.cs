@@ -18,13 +18,16 @@ public sealed class RpcDirectory
     public const int Protocol = 1;
 
     private readonly string root;
+    private readonly Func<object> status;
     private readonly HashSet<string> taken = new();
     private (string Id, string Text)? unpublished;
     public string Boot { get; }
 
-    public RpcDirectory(string root, string boot)
+    /// `status` returns the current status for status.json.
+    public RpcDirectory(string root, string boot, Func<object> status)
     {
         this.root = root;
+        this.status = status;
         Boot = boot;
         Directory.CreateDirectory(Path.Combine(root, "results"));
     }
@@ -88,13 +91,15 @@ public sealed class RpcDirectory
         Flush();
     }
 
-    /// Writes the pending result, then removes the request. Results are kept
-    /// for inspection. Returns false if the result is still unpublished.
+    /// Writes the current status, then the pending result, then removes the
+    /// request, so a caller holding a result reads a current status. Results
+    /// are kept for inspection. Returns false if the result is still unpublished.
     private bool Flush()
     {
         if (unpublished is not { } pending) return true;
         try
         {
+            WriteStatus();
             WriteText(ResultPath(pending.Id), pending.Text);
             File.Delete(RequestPath);
         }
@@ -106,7 +111,7 @@ public sealed class RpcDirectory
         return true;
     }
 
-    public void WriteStatus(object status) => Write(Path.Combine(root, "status.json"), status);
+    public void WriteStatus() => Write(Path.Combine(root, "status.json"), status());
 
     private Request? Parse()
     {

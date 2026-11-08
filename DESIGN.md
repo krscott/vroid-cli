@@ -68,7 +68,8 @@ The CLI reads the desktop as one of three states:
 new process session, logging to `runner.log`. A running app is waited for. An
 exited app fails with instructions to wait or stop. If the runner exits during
 the wait, the error shows the end of `desktop/app.log` when Framewisp recorded
-VRoid's exit, which is where the launcher script's own errors land (R-SES-5).
+VRoid's exit during this launch, which is where the launcher script's own
+errors land (R-SES-5).
 Otherwise the desktop failed before VRoid started, `app.log` may be from an
 earlier run, and the error shows the end of `runner.log`.
 
@@ -143,10 +144,10 @@ resends (R-RPC-5).
 The bridge answers a request for another `boot` with an error without running
 it (R-RPC-1). Each instance runs a request ID at most once (R-RPC-5). It
 serializes the result once, falling back to an error result if the payload
-cannot be serialized. If writing the result fails, `RpcDirectory` keeps it and
-retries on every later `Take` before accepting another request. The status is
-written just before the result, so a caller holding a result normally reads a
-current `modified`. When the bridge loads with a request still present, it
+cannot be serialized. Publishing writes the current status, then the result,
+then removes the request, so a caller holding a result reads a current
+`modified` (R-SES-4). If any step fails, `RpcDirectory` keeps the result and
+retries on every later `Take` before accepting another request. When the bridge loads with a request still present, it
 records an unknown outcome unless that request's result already exists
 (R-RPC-2). A request file that does not parse is moved to
 `request.invalid.json`; the CLI then reports that no result was written.

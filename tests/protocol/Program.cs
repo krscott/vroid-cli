@@ -30,6 +30,9 @@ void Check(bool condition, string message)
 
 string NewId() => Guid.NewGuid().ToString("N");
 
+RpcDirectory Rpc(string directory, string boot, bool modified = false) =>
+    new(directory, boot, () => new { boot, modified });
+
 void Send(string directory, string id, string boot) =>
     File.WriteAllText(Path.Combine(directory, "request.json"), JsonSerializer.Serialize(new
     {
@@ -42,7 +45,7 @@ JsonElement Result(string directory, string id) =>
 // R-RPC-1
 Test("request for another app instance is rejected, not run", directory =>
 {
-    var rpc = new RpcDirectory(directory, "current");
+    var rpc = Rpc(directory, "current");
     var id = NewId();
     Send(directory, id, "previous");
     Check(rpc.Take() == null, "request was returned for execution");
@@ -55,7 +58,7 @@ Test("restart marks an interrupted request unknown and never replays it", direct
 {
     var id = NewId();
     Send(directory, id, "previous");
-    var rpc = new RpcDirectory(directory, "current");
+    var rpc = Rpc(directory, "current");
     rpc.RecoverInterrupted();
     var result = Result(directory, id);
     Check(!result.GetProperty("ok").GetBoolean(), "result reports success");
@@ -67,12 +70,12 @@ Test("restart marks an interrupted request unknown and never replays it", direct
 Test("restart keeps a result written before the restart", directory =>
 {
     var id = NewId();
-    var before = new RpcDirectory(directory, "previous");
+    var before = Rpc(directory, "previous");
     Send(directory, id, "previous");
     var request = before.Take()!;
     before.Finish(request, true, 0.25);
     Send(directory, id, "previous"); // As if the app died before removing the request.
-    new RpcDirectory(directory, "current").RecoverInterrupted();
+    Rpc(directory, "current").RecoverInterrupted();
     Check(Result(directory, id).GetProperty("ok").GetBoolean(), "completed result was replaced");
     Check(!File.Exists(Path.Combine(directory, "request.json")), "request still pending");
 });
@@ -80,7 +83,7 @@ Test("restart keeps a result written before the restart", directory =>
 // R-RPC-3, R-RPC-6
 Test("a request stays pending until finished and its result is kept", directory =>
 {
-    var rpc = new RpcDirectory(directory, "current");
+    var rpc = Rpc(directory, "current");
     var first = NewId();
     Send(directory, first, "current");
     var request = rpc.Take()!;
@@ -97,7 +100,7 @@ Test("a request stays pending until finished and its result is kept", directory 
 // R-RPC-5, R-RPC-6
 Test("a result that cannot be written is retried and the request never reruns", directory =>
 {
-    var rpc = new RpcDirectory(directory, "current");
+    var rpc = Rpc(directory, "current");
     var id = NewId();
     Send(directory, id, "current");
     var request = rpc.Take()!;
@@ -112,10 +115,29 @@ Test("a result that cannot be written is retried and the request never reruns", 
     Check(!File.Exists(Path.Combine(directory, "request.json")), "request still pending");
 });
 
+// R-SES-4
+Test("a result is published only after the current status", directory =>
+{
+    var rpc = Rpc(directory, "current", modified: true);
+    var id = NewId();
+    Send(directory, id, "current");
+    var request = rpc.Take()!;
+    var status = Path.Combine(directory, "status.json");
+    Directory.CreateDirectory(status); // Status writes now fail.
+    rpc.Finish(request, true, 0.25);
+    Check(!File.Exists(Path.Combine(directory, "results", id + ".json")), "result published before status");
+    Check(File.Exists(Path.Combine(directory, "request.json")), "request removed before status");
+    Directory.Delete(status);
+    Check(rpc.Take() == null, "request was returned after publishing");
+    var written = JsonDocument.Parse(File.ReadAllText(status)).RootElement;
+    Check(written.GetProperty("modified").GetBoolean(), "status not current");
+    Check(Result(directory, id).GetProperty("ok").GetBoolean(), "result was not published");
+});
+
 // R-RPC-6
 Test("a result that cannot be serialized is recorded as an error", directory =>
 {
-    var rpc = new RpcDirectory(directory, "current");
+    var rpc = Rpc(directory, "current");
     var id = NewId();
     Send(directory, id, "current");
     rpc.Finish(rpc.Take()!, true, new { value = float.NaN });
@@ -126,7 +148,7 @@ Test("a result that cannot be serialized is recorded as an error", directory =>
 
 Test("a request whose id is not a CLI id writes nothing outside results", directory =>
 {
-    var rpc = new RpcDirectory(directory, "current");
+    var rpc = Rpc(directory, "current");
     Send(directory, "../escape", "current");
     Check(rpc.Take() == null, "invalid request was returned");
     Check(!File.Exists(Path.Combine(directory, "escape.json")), "wrote outside results");

@@ -124,11 +124,12 @@ def tail(path: Path, lines: int = 10) -> str:
         return ""
 
 
-def exited(session: Session) -> str:
+def exited(session: Session, *, since_ms: float = 0) -> str:
     """Explain why the private desktop or VRoid stopped (R-SES-5)."""
     # app.log belongs to the last run that started VRoid, which is this run
-    # only if Framewisp recorded VRoid's exit.
-    if (session.desktop / "app-exit.json").exists():
+    # only if Framewisp recorded VRoid's exit during it.
+    record = session.desktop / "app-exit.json"
+    if record.exists() and record.stat().st_mtime * 1000 >= since_ms:
         log = session.desktop / "app.log"
         return f"VRoid exited. Last lines of {log}:\n{tail(log)}"
     log = session.directory / "runner.log"
@@ -243,7 +244,7 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
                     raise RuntimeError(terms_pending(session))
                 return summary(session)
             if runner is not None and runner.poll() is not None:
-                raise RuntimeError(exited(session))
+                raise RuntimeError(exited(session, since_ms=started_ms))
             if runner is None and time.monotonic() >= next_check:
                 next_check = time.monotonic() + 5
                 if desktop_state(session) is not Desktop.RUNNING:

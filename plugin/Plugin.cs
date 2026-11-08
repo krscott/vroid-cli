@@ -29,7 +29,7 @@ public sealed class Plugin : BasePlugin
     {
         var directory = Environment.GetEnvironmentVariable("VROID_BRIDGE_DIR")
             ?? throw new InvalidOperationException("VROID_BRIDGE_DIR is required");
-        rpc = new RpcDirectory(directory, Guid.NewGuid().ToString("N"));
+        rpc = new RpcDirectory(directory, Guid.NewGuid().ToString("N"), Status);
         rpc.RecoverInterrupted();
         var harmony = new Harmony("vroid-cli.bridge");
         Patch(harmony, "VRoid.Studio.EditRootScreen.ViewModel", "OnScreenActivate", nameof(CaptureRoot));
@@ -88,7 +88,8 @@ public sealed class Plugin : BasePlugin
             if (!SinceHeartbeat.IsRunning || SinceHeartbeat.ElapsedMilliseconds >= 1000)
             {
                 main ??= FindMainViewModel();
-                Try(WriteStatus, "write status");
+                Try(rpc.WriteStatus, "write status");
+                SinceHeartbeat.Restart();
             }
             if (operation == null && (current = rpc.Take()) != null)
             {
@@ -120,21 +121,17 @@ public sealed class Plugin : BasePlugin
         return Reflect.Items(views).Select(view => Reflect.Get(view, "_viewModel")).FirstOrDefault(value => value != null);
     }
 
-    private static void WriteStatus()
+    private static object Status() => new
     {
-        rpc.WriteStatus(new
-        {
-            boot = rpc.Boot,
-            protocol = RpcDirectory.Protocol,
-            heartbeat = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            main = main != null,
-            editor = root != null,
-            updating,
-            modified,
-            rebuilt,
-        });
-        SinceHeartbeat.Restart();
-    }
+        boot = rpc.Boot,
+        protocol = RpcDirectory.Protocol,
+        heartbeat = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        main = main != null,
+        editor = root != null,
+        updating,
+        modified,
+        rebuilt,
+    };
 
     private static bool Try(Action action, string what)
     {
@@ -150,15 +147,12 @@ public sealed class Plugin : BasePlugin
         }
     }
 
-    // The status is written first, so a caller holding a result normally reads
-    // a current `modified`.
     private static void Complete(bool ok, object? payload)
     {
         var request = current!;
         current = null;
         operation?.Dispose();
         operation = null;
-        Try(WriteStatus, "write status");
         rpc.Finish(request, ok, payload);
     }
 
