@@ -10,8 +10,9 @@ edits characters through VRoid's internal methods. It sends no mouse or
 keyboard input and needs no OCR, MCP server, or account login. The user can keep
 using their computer.
 
-Get it once with `nix shell github:krscott/vroid-cli`, or use `vroid-cli` inside
-the project's `nix develop` shell, and keep that build for the whole session. It supports VRoid Studio 2.16.0
+Get it once with `nix shell github:krscott/vroid-cli`, or use `vroid-cli`
+inside the project's `nix develop` shell. Keep that build for the whole
+session. It supports VRoid Studio 2.16.0
 on x86_64 Linux.
 
 ```sh

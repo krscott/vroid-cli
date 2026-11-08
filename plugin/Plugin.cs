@@ -22,7 +22,6 @@ public sealed class Plugin : BasePlugin
     private static Request? current;
     private static IEnumerator<bool>? operation;
     private static object? result;
-    private static (Request Request, string Result)? unpublished;
     private static readonly Stopwatch Elapsed = new();
     private static readonly Stopwatch SinceHeartbeat = new();
 
@@ -91,11 +90,6 @@ public sealed class Plugin : BasePlugin
                 main ??= FindMainViewModel();
                 Try(WriteStatus, "write status");
             }
-            if (unpublished != null)
-            {
-                Publish();
-                return;
-            }
             if (operation == null && (current = rpc.Take()) != null)
             {
                 Elapsed.Restart();
@@ -156,23 +150,16 @@ public sealed class Plugin : BasePlugin
         }
     }
 
+    // The status is written first, so a caller holding a result normally reads
+    // a current `modified`.
     private static void Complete(bool ok, object? payload)
     {
-        unpublished = (current!, RpcDirectory.Result(ok, payload));
+        var request = current!;
         current = null;
         operation?.Dispose();
         operation = null;
-        Publish();
-    }
-
-    // Retried every frame until it succeeds; the operation itself never reruns.
-    // The status is current before the result appears, so a caller holding a
-    // result never reads a stale `modified`.
-    private static void Publish()
-    {
-        var (request, text) = unpublished!.Value;
-        if (Try(WriteStatus, "write status") && Try(() => rpc.Publish(request, text), "publish a result"))
-            unpublished = null;
+        Try(WriteStatus, "write status");
+        rpc.Finish(request, ok, payload);
     }
 
     private static object Main => main ?? throw new InvalidOperationException("App is not ready");

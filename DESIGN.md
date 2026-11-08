@@ -56,9 +56,9 @@ it (R-SES-1). The detached Framewisp runner does not inherit the lock.
 
 The CLI reads the desktop as one of three states:
 
-- Stopped: no `desktop/session.json`. If Framewisp's ownership journal remains
-  without an exit record, the previous runner died and every command asks the
-  user to run `framewisp DESKTOP recover`.
+- Stopped: no `desktop/session.json`. If Framewisp's ownership journal
+  remains, the previous runner died and every command asks the user to run
+  `framewisp DESKTOP recover`.
 - Exited: Framewisp recorded VRoid's exit in `desktop/app-exit.json` and the
   runner is shutting down.
 - Running: `framewisp DESKTOP status` reports the app running.
@@ -66,8 +66,11 @@ The CLI reads the desktop as one of three states:
 `launch` records its start time and takes the lock. A stopped desktop starts
 `framewisp DESKTOP run --x11 --width 2560 --height 1440 -- vroid-studio` in a
 new process session, logging to `runner.log`. A running app is waited for. An
-exited app fails with the end of `desktop/app.log`, which is where the launcher
-script's own errors land (R-SES-5).
+exited app fails with instructions to wait or stop. If the runner exits during
+the wait, the error shows the end of `desktop/app.log` when Framewisp recorded
+VRoid's exit, which is where the launcher script's own errors land (R-SES-5).
+Otherwise the desktop failed before VRoid started, `app.log` may be from an
+earlier run, and the error shows the end of `runner.log`.
 
 It then waits for a bridge heartbeat that is fresh, was written after the
 launch began, and has found the main view model (R-SES-2). The bridge finds the
@@ -140,8 +143,10 @@ resends (R-RPC-5).
 The bridge answers a request for another `boot` with an error without running
 it (R-RPC-1). Each instance runs a request ID at most once (R-RPC-5). It
 serializes the result once, falling back to an error result if the payload
-cannot be serialized, and retries writing the status and result every frame
-until both succeed. When the bridge loads with a request still present, it
+cannot be serialized. If writing the result fails, `RpcDirectory` keeps it and
+retries on every later `Take` before accepting another request. The status is
+written just before the result, so a caller holding a result normally reads a
+current `modified`. When the bridge loads with a request still present, it
 records an unknown outcome unless that request's result already exists
 (R-RPC-2). A request file that does not parse is moved to
 `request.invalid.json`; the CLI then reports that no result was written.

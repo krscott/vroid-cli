@@ -110,7 +110,10 @@ def running_desktop(tmp_path: Path) -> dict[str, str]:
 
 
 def answer(
-    rpc: Path, reply: Callable[[dict[str, Any]], dict[str, Any]]
+    rpc: Path,
+    reply: Callable[[dict[str, Any]], dict[str, Any]],
+    *,
+    removal_delay: float = 0,
 ) -> tuple[threading.Thread, list[dict[str, Any]]]:
     """Act as the bridge for the next requests until none arrives for 2s."""
     received: list[dict[str, Any]] = []
@@ -125,6 +128,7 @@ def answer(
                 response = rpc / "results" / f"{packet['id']}.json"
                 response.with_suffix(".tmp").write_text(json.dumps(reply(packet)))
                 response.with_suffix(".tmp").replace(response)
+                time.sleep(removal_delay)
                 request.unlink()
                 deadline = time.monotonic() + 2
             time.sleep(0.01)
@@ -246,11 +250,60 @@ def test_launch_reports_why_the_app_exited(tmp_path: Path) -> None:
         tmp_path,
         "Path(args[0]).mkdir(parents=True)\n"
         "Path(args[0], 'app.log').write_text('Incomplete installation in wine\\n')\n"
+        "Path(args[0], 'app-exit.json').write_text('{}')\n"
         "sys.exit(1)",
     )
     result = invoke(tmp_path, "launch", "--timeout", "8", env=env)
     assert result.returncode == 1
     assert "Incomplete installation in wine" in result.stderr
+
+
+def test_launch_reports_a_desktop_that_failed_before_vroid(tmp_path: Path) -> None:
+    desktop = tmp_path / "state/test/desktop"
+    desktop.mkdir(parents=True)
+    (desktop / "app.log").write_text("previous run\n")
+    env = fake_framewisp(tmp_path, "print('sway exited', file=sys.stderr)\nsys.exit(1)")
+    result = invoke(tmp_path, "launch", "--timeout", "8", env=env)
+    assert result.returncode == 1
+    assert "sway exited" in result.stderr
+    assert "previous run" not in result.stderr
+
+
+def test_exited_app_blocks_launch_and_stop_waits_for_the_desktop(
+    tmp_path: Path,
+) -> None:
+    bridge(tmp_path, modified=True)
+    desktop = tmp_path / "state/test/desktop"
+    desktop.mkdir(parents=True)
+    (desktop / "session.json").write_text("{}")
+    (desktop / "app-exit.json").write_text("{}")
+    env = fake_framewisp(tmp_path, "raise SystemExit('framewisp must not run')")
+    launched = invoke(tmp_path, "launch", env=env)
+    assert launched.returncode == 1
+    assert "Wait for the desktop to close" in launched.stderr
+
+    def close() -> None:
+        time.sleep(0.5)
+        (desktop / "session.json").unlink()
+
+    closing = threading.Thread(target=close)
+    closing.start()
+    stopped = invoke(tmp_path, "stop", env=env)
+    assert not (desktop / "session.json").exists()
+    closing.join()
+    assert stopped.returncode == 0, stopped.stderr
+    assert json.loads(stopped.stdout)["stopped"] is True
+
+
+def test_abandoned_desktop_asks_for_recovery(tmp_path: Path) -> None:
+    desktop = tmp_path / "state/test/desktop"
+    desktop.mkdir(parents=True)
+    (desktop / ".headless-owner.json").write_text("{}")
+    (desktop / "app-exit.json").write_text("{}")
+    for command in ["status", "launch", "stop"]:
+        result = invoke(tmp_path, command)
+        assert result.returncode == 1
+        assert "recover" in result.stderr
 
 
 def test_state_ignores_itself_inside_another_repository(tmp_path: Path) -> None:
@@ -340,6 +393,18 @@ def test_request_roundtrip(tmp_path: Path, ok: bool) -> None:
         assert result.returncode == 1
         assert result.stdout == ""
         assert "engine refused" in result.stderr
+
+
+def test_command_returns_after_the_bridge_removes_its_request(tmp_path: Path) -> None:
+    # R-RPC-3
+    rpc = bridge(tmp_path)
+    peer, _ = answer(
+        rpc, lambda _: {"ok": True, "result": [], "error": None}, removal_delay=1
+    )
+    result = invoke(tmp_path, "categories", "Body")
+    assert result.returncode == 0, result.stderr
+    assert not (rpc / "request.json").exists()
+    peer.join()
 
 
 def test_paths_are_sent_as_wine_paths(tmp_path: Path) -> None:

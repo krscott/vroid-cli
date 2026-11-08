@@ -88,17 +88,13 @@ def controller(session: Session) -> Generator[None]:
 
 
 def desktop_state(session: Session) -> Desktop:
-    if (session.desktop / "app-exit.json").exists():
-        # Framewisp keeps the exit record until the next run.
-        return (
-            Desktop.EXITED
-            if (session.desktop / "session.json").exists()
-            else Desktop.STOPPED
-        )
     if not (session.desktop / "session.json").exists():
         if (session.desktop / ".headless-owner.json").exists():
             raise RuntimeError(abandoned(session))
         return Desktop.STOPPED
+    # Framewisp records the app's exit; the runner then shuts itself down.
+    if (session.desktop / "app-exit.json").exists():
+        return Desktop.EXITED
     result = subprocess.run(
         ["framewisp", str(session.desktop), "status"],
         capture_output=True,
@@ -121,17 +117,22 @@ def abandoned(session: Session) -> str:
     )
 
 
-def app_exited(session: Session) -> str:
-    log = session.desktop / "app.log"
+def tail(path: Path, lines: int = 10) -> str:
     try:
-        tail = "\n".join(log.read_text(errors="replace").splitlines()[-10:])
+        return "\n".join(path.read_text(errors="replace").splitlines()[-lines:])
     except OSError:
-        tail = ""
-    return (
-        f"VRoid exited. Last lines of {log}:\n{tail}"
-        if tail
-        else (f"VRoid exited; inspect {session.directory / 'runner.log'}")
-    )
+        return ""
+
+
+def exited(session: Session) -> str:
+    """Explain why the private desktop or VRoid stopped (R-SES-5)."""
+    # app.log belongs to the last run that started VRoid, which is this run
+    # only if Framewisp recorded VRoid's exit.
+    if (session.desktop / "app-exit.json").exists():
+        log = session.desktop / "app.log"
+        return f"VRoid exited. Last lines of {log}:\n{tail(log)}"
+    log = session.directory / "runner.log"
+    return f"The private desktop exited. Last lines of {log}:\n{tail(log)}"
 
 
 def graphics_environment(
@@ -205,7 +206,8 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
         desktop = desktop_state(session)
         if desktop is Desktop.EXITED:
             raise RuntimeError(
-                f"{app_exited(session)}\nWait for the desktop to close, then launch again"
+                f"{exited(session)}\nWait for the desktop to close, then launch "
+                "again; if this persists, run stop"
             )
         if desktop is Desktop.STOPPED:
             with (session.directory / "runner.log").open("ab") as log:
@@ -241,11 +243,11 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
                     raise RuntimeError(terms_pending(session))
                 return summary(session)
             if runner is not None and runner.poll() is not None:
-                raise RuntimeError(app_exited(session))
+                raise RuntimeError(exited(session))
             if runner is None and time.monotonic() >= next_check:
                 next_check = time.monotonic() + 5
                 if desktop_state(session) is not Desktop.RUNNING:
-                    raise RuntimeError(app_exited(session))
+                    raise RuntimeError(exited(session))
             if time.monotonic() >= deadline:
                 raise RuntimeError(
                     f"VRoid is not ready after {timeout_s:.0f}s and keeps starting. "
@@ -279,7 +281,7 @@ def stop(session: Session, *, force: bool) -> dict[str, Any]:
                 text=True,
                 check=False,
             )
-            if result.returncode and desktop_state(session) is not Desktop.EXITED:
+            if result.returncode and desktop_state(session) is Desktop.RUNNING:
                 raise RuntimeError(f"{result.stderr.strip()}\n{abandoned(session)}")
         # The runner shuts itself down after the app exits.
         deadline = time.monotonic() + 60

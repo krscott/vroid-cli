@@ -19,6 +19,7 @@ public sealed class RpcDirectory
 
     private readonly string root;
     private readonly HashSet<string> taken = new();
+    private (string Id, string Text)? unpublished;
     public string Boot { get; }
 
     public RpcDirectory(string root, string boot)
@@ -48,7 +49,7 @@ public sealed class RpcDirectory
     /// another instance are answered with an error and not run.
     public Request? Take()
     {
-        if (!File.Exists(RequestPath)) return null;
+        if (!Flush() || !File.Exists(RequestPath)) return null;
         var request = Parse();
         if (request == null || taken.Contains(request.Id)) return null;
         if (request.Boot != Boot)
@@ -68,7 +69,7 @@ public sealed class RpcDirectory
         {
             return JsonSerializer.Serialize(new { ok, result = ok ? payload : null, error = ok ? null : payload });
         }
-        catch (Exception error) when (error is NotSupportedException or ArgumentException or InvalidOperationException)
+        catch (Exception error)
         {
             return JsonSerializer.Serialize(new
             {
@@ -79,13 +80,30 @@ public sealed class RpcDirectory
         }
     }
 
-    /// Writes the result, then removes the request. Results are kept for inspection.
-    public void Finish(Request request, bool ok, object? payload) => Publish(request, Result(ok, payload));
-
-    public void Publish(Request request, string result)
+    /// Records a request's result and publishes it. If publishing fails, Take
+    /// retries it and returns nothing until it succeeds; the request is never rerun.
+    public void Finish(Request request, bool ok, object? payload)
     {
-        WriteText(ResultPath(request.Id), result);
-        File.Delete(RequestPath);
+        unpublished = (request.Id, Result(ok, payload));
+        Flush();
+    }
+
+    /// Writes the pending result, then removes the request. Results are kept
+    /// for inspection. Returns false if the result is still unpublished.
+    private bool Flush()
+    {
+        if (unpublished is not { } pending) return true;
+        try
+        {
+            WriteText(ResultPath(pending.Id), pending.Text);
+            File.Delete(RequestPath);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+        unpublished = null;
+        return true;
     }
 
     public void WriteStatus(object status) => Write(Path.Combine(root, "status.json"), status);

@@ -75,8 +75,8 @@ the session directory: `runner.log`, `installer.log`, `player.log`,
 - **Timed-out request:** do not repeat it. It stays pending and blocks other
   commands until its result appears in `rpc/results/ID.json`. Restarting the
   session marks it as having an unknown outcome; inspect the project first.
-- **Unsaved changes:** `stop` refuses them, and a pending request. Save to a
-  new path, or use `stop --force` to discard them.
+- **Unsaved changes:** `stop` refuses while there are unsaved changes or a
+  pending request. Save to a new path, or use `stop --force` to discard them.
 - **Another project:** save, `stop`, and `launch` before opening it.
 - **Incomplete installation:** it is not repeated. Read `installer.log`, then
   delete the session directory or use another session name.

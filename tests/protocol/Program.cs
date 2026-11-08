@@ -94,15 +94,22 @@ Test("a request stays pending until finished and its result is kept", directory 
     Check(Result(directory, second).GetProperty("error").GetString() == "engine refused", "second result lost");
 });
 
-// R-RPC-5
-Test("a request runs at most once even when its result cannot be published", directory =>
+// R-RPC-5, R-RPC-6
+Test("a result that cannot be written is retried and the request never reruns", directory =>
 {
     var rpc = new RpcDirectory(directory, "current");
     var id = NewId();
     Send(directory, id, "current");
-    Check(rpc.Take()?.Id == id, "request was not taken");
-    // Publishing failed, so the request is still in place.
+    var request = rpc.Take()!;
+    var results = new DirectoryInfo(Path.Combine(directory, "results"));
+    results.UnixFileMode = UnixFileMode.UserRead | UnixFileMode.UserExecute;
+    rpc.Finish(request, true, 0.25);
+    Check(File.Exists(Path.Combine(directory, "request.json")), "request removed without a result");
     Check(rpc.Take() == null, "request was returned twice");
+    results.UnixFileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+    Check(rpc.Take() == null, "request was returned after publishing");
+    Check(Result(directory, id).GetProperty("ok").GetBoolean(), "result was not published");
+    Check(!File.Exists(Path.Combine(directory, "request.json")), "request still pending");
 });
 
 // R-RPC-6
