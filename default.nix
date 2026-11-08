@@ -4,7 +4,7 @@
 }:
 
 stdenv.mkDerivation {
-  name = "flake-start";
+  name = "vroid-cli";
 
   src = lib.cleanSource ./.;
 
@@ -18,12 +18,12 @@ stdenv.mkDerivation {
     printf '%s\n' \
       '#!/usr/bin/env bash' \
       'set -euo pipefail' \
-      'echo "Hello from flake-start"' \
-      >"$out/bin/flake-start"
-    chmod +x "$out/bin/flake-start"
+      'echo "Hello from vroid-cli"' \
+      >"$out/bin/vroid-cli"
+    chmod +x "$out/bin/vroid-cli"
 
     runHook postInstall
   '';
 
-  meta.mainProgram = "flake-start";
+  meta.mainProgram = "vroid-cli";
 }

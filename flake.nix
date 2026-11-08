@@ -27,7 +27,7 @@
       in
       {
         packages = {
-          "flake-start" = package;
+          "vroid-cli" = package;
           default = package;
         };
 
