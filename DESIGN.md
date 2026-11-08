@@ -146,10 +146,13 @@ it (R-RPC-1). Each instance runs a request ID at most once (R-RPC-5). It
 serializes the result once, falling back to an error result if the payload
 cannot be serialized. Publishing writes the current status, then the result,
 then removes the request, so a caller holding a result reads a current
-`modified` (R-SES-4). If any step fails, `RpcDirectory` keeps the result and
-retries on every later `Take` before accepting another request. When the bridge loads with a request still present, it
-records an unknown outcome unless that request's result already exists
-(R-RPC-2). A request file that does not parse is moved to
+`modified` (R-SES-4). If any step fails, `RpcDirectory` logs the error, keeps
+the result, and retries on every later `Take` before accepting another
+request. `stop` checks for `request.json` before reading the status for the
+same reason.
+
+When the bridge loads with a request still present, it records an unknown
+outcome unless that request's result already exists (R-RPC-2). A request file that does not parse is moved to
 `request.invalid.json`; the CLI then reports that no result was written.
 
 The bridge checks the request's `timeout_ms` (90 s) between frames and then

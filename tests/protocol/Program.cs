@@ -31,7 +31,7 @@ void Check(bool condition, string message)
 string NewId() => Guid.NewGuid().ToString("N");
 
 RpcDirectory Rpc(string directory, string boot, bool modified = false) =>
-    new(directory, boot, () => new { boot, modified });
+    new(directory, boot, () => new { boot, modified }, _ => { });
 
 void Send(string directory, string id, string boot) =>
     File.WriteAllText(Path.Combine(directory, "request.json"), JsonSerializer.Serialize(new

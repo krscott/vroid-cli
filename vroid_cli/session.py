@@ -268,8 +268,10 @@ def stop(session: Session, *, force: bool) -> dict[str, Any]:
         if desktop is Desktop.STOPPED:
             return {"session": session.name, "stopped": False}
         if desktop is Desktop.RUNNING:
-            status = rpc.read_status(session.rpc)
+            # The bridge writes its status before removing a finished request,
+            # so a status read after this check is current.
             pending = (session.rpc / "request.json").exists()
+            status = rpc.read_status(session.rpc)
             if not force and (pending or (status is not None and status.modified)):
                 raise RuntimeError(
                     "The app has unsaved changes or a pending request. "

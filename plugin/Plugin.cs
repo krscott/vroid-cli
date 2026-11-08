@@ -29,7 +29,7 @@ public sealed class Plugin : BasePlugin
     {
         var directory = Environment.GetEnvironmentVariable("VROID_BRIDGE_DIR")
             ?? throw new InvalidOperationException("VROID_BRIDGE_DIR is required");
-        rpc = new RpcDirectory(directory, Guid.NewGuid().ToString("N"), Status);
+        rpc = new RpcDirectory(directory, Guid.NewGuid().ToString("N"), Status, Diagnostics.LogError);
         rpc.RecoverInterrupted();
         var harmony = new Harmony("vroid-cli.bridge");
         Patch(harmony, "VRoid.Studio.EditRootScreen.ViewModel", "OnScreenActivate", nameof(CaptureRoot));

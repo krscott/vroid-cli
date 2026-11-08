@@ -19,15 +19,18 @@ public sealed class RpcDirectory
 
     private readonly string root;
     private readonly Func<object> status;
+    private readonly Action<string> log;
     private readonly HashSet<string> taken = new();
     private (string Id, string Text)? unpublished;
     public string Boot { get; }
 
-    /// `status` returns the current status for status.json.
-    public RpcDirectory(string root, string boot, Func<object> status)
+    /// `status` returns the current status for status.json; `log` reports
+    /// failures that leave a result unpublished.
+    public RpcDirectory(string root, string boot, Func<object> status, Action<string> log)
     {
         this.root = root;
         this.status = status;
+        this.log = log;
         Boot = boot;
         Directory.CreateDirectory(Path.Combine(root, "results"));
     }
@@ -52,7 +55,7 @@ public sealed class RpcDirectory
     /// another instance are answered with an error and not run.
     public Request? Take()
     {
-        if (!Flush() || !File.Exists(RequestPath)) return null;
+        if (Flush() != null || !File.Exists(RequestPath)) return null;
         var request = Parse();
         if (request == null || taken.Contains(request.Id)) return null;
         if (request.Boot != Boot)
@@ -88,15 +91,16 @@ public sealed class RpcDirectory
     public void Finish(Request request, bool ok, object? payload)
     {
         unpublished = (request.Id, Result(ok, payload));
-        Flush();
+        if (Flush() is { } error)
+            log($"Could not publish the result of request {request.Id}; retrying: {error.Message}");
     }
 
     /// Writes the current status, then the pending result, then removes the
     /// request, so a caller holding a result reads a current status. Results
-    /// are kept for inspection. Returns false if the result is still unpublished.
-    private bool Flush()
+    /// are kept for inspection. Returns the error if the result is still unpublished.
+    private Exception? Flush()
     {
-        if (unpublished is not { } pending) return true;
+        if (unpublished is not { } pending) return null;
         try
         {
             WriteStatus();
@@ -105,10 +109,10 @@ public sealed class RpcDirectory
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
-            return false;
+            return error;
         }
         unpublished = null;
-        return true;
+        return null;
     }
 
     public void WriteStatus() => Write(Path.Combine(root, "status.json"), status());
