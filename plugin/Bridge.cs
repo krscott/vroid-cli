@@ -1,0 +1,87 @@
+// Session-local file protocol shared with vroid_cli/rpc.py. Has no Unity
+// dependencies so tests/protocol can exercise it directly.
+using System.Text.Json;
+
+namespace VroidBridge;
+
+public sealed record Request(string Id, string Boot, string Method, int TimeoutMs, JsonElement Body)
+{
+    public string Text(string name) => Body.GetProperty(name).GetString()
+        ?? throw new ArgumentException($"Missing {name}");
+
+    public double Number(string name) => Body.GetProperty(name).GetDouble();
+}
+
+public sealed class RpcDirectory
+{
+    private readonly string root;
+    public string Boot { get; }
+
+    public RpcDirectory(string root, string boot)
+    {
+        this.root = root;
+        Boot = boot;
+        Directory.CreateDirectory(Path.Combine(root, "results"));
+    }
+
+    private string RequestPath => Path.Combine(root, "request.json");
+    private string ResultPath(string id) => Path.Combine(root, "results", id + ".json");
+
+    /// Marks a request left by an earlier app instance as having an unknown
+    /// outcome; it is never replayed. A result written before the restart is kept.
+    public void RecoverInterrupted()
+    {
+        if (!File.Exists(RequestPath)) return;
+        var request = Parse();
+        if (request == null) return;
+        if (File.Exists(ResultPath(request.Id))) File.Delete(RequestPath);
+        else Finish(request, false, "App restarted before this request finished; outcome unknown. "
+            + "Inspect the project before another edit.");
+    }
+
+    /// Returns the pending request if it is addressed to this app instance.
+    /// Requests for another instance are answered with an error and not run.
+    public Request? Take()
+    {
+        if (!File.Exists(RequestPath)) return null;
+        var request = Parse();
+        if (request == null || request.Boot == Boot) return request;
+        Finish(request, false, "Request belongs to another app instance; not executed");
+        return null;
+    }
+
+    /// Writes the result, then removes the request. Results are kept for inspection.
+    public void Finish(Request request, bool ok, object? payload)
+    {
+        Write(ResultPath(request.Id), new { ok, result = ok ? payload : null, error = ok ? null : payload });
+        File.Delete(RequestPath);
+    }
+
+    public void WriteStatus(object status) => Write(Path.Combine(root, "status.json"), status);
+
+    private Request? Parse()
+    {
+        try
+        {
+            var body = JsonDocument.Parse(File.ReadAllText(RequestPath)).RootElement.Clone();
+            var id = body.GetProperty("id").GetString()!;
+            // The id names the result file; accept only the CLI's format.
+            if (!Guid.TryParseExact(id, "N", out _) || id != id.ToLowerInvariant())
+                throw new FormatException("Invalid request id");
+            return new Request(id, body.GetProperty("boot").GetString()!,
+                body.GetProperty("method").GetString()!, body.GetProperty("timeout_ms").GetInt32(), body);
+        }
+        catch (Exception error) when (error is JsonException or KeyNotFoundException
+            or InvalidOperationException or FormatException or NullReferenceException)
+        {
+            File.Move(RequestPath, Path.Combine(root, "request.invalid.json"), true);
+            return null;
+        }
+    }
+
+    private static void Write(string path, object value)
+    {
+        File.WriteAllText(path + ".tmp", JsonSerializer.Serialize(value));
+        File.Move(path + ".tmp", path, true);
+    }
+}

@@ -1,0 +1,106 @@
+// Exercises plugin/Bridge.cs, the app side of the file protocol, without Unity.
+using System.Text.Json;
+using VroidBridge;
+
+var failures = 0;
+
+void Test(string name, Action<string> body)
+{
+    var directory = Directory.CreateTempSubdirectory("vroid-protocol-").FullName;
+    try
+    {
+        body(directory);
+        Console.WriteLine($"ok   {name}");
+    }
+    catch (Exception error)
+    {
+        failures++;
+        Console.WriteLine($"FAIL {name}: {error.Message}");
+    }
+    finally
+    {
+        Directory.Delete(directory, true);
+    }
+}
+
+void Check(bool condition, string message)
+{
+    if (!condition) throw new Exception(message);
+}
+
+string NewId() => Guid.NewGuid().ToString("N");
+
+void Send(string directory, string id, string boot) =>
+    File.WriteAllText(Path.Combine(directory, "request.json"), JsonSerializer.Serialize(new
+    {
+        id, boot, method = "set", timeout_ms = 1000, section = "Body",
+    }));
+
+JsonElement Result(string directory, string id) =>
+    JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "results", id + ".json"))).RootElement;
+
+// R-RPC-1
+Test("request for another app instance is rejected, not run", directory =>
+{
+    var rpc = new RpcDirectory(directory, "current");
+    var id = NewId();
+    Send(directory, id, "previous");
+    Check(rpc.Take() == null, "request was returned for execution");
+    Check(!Result(directory, id).GetProperty("ok").GetBoolean(), "result reports success");
+    Check(!File.Exists(Path.Combine(directory, "request.json")), "request still pending");
+});
+
+// R-RPC-2
+Test("restart marks an interrupted request unknown and never replays it", directory =>
+{
+    var id = NewId();
+    Send(directory, id, "previous");
+    var rpc = new RpcDirectory(directory, "current");
+    rpc.RecoverInterrupted();
+    var result = Result(directory, id);
+    Check(!result.GetProperty("ok").GetBoolean(), "result reports success");
+    Check(result.GetProperty("error").GetString()!.Contains("unknown"), "error does not say unknown");
+    Check(rpc.Take() == null, "request remains executable");
+});
+
+// R-RPC-2, R-RPC-6
+Test("restart keeps a result written before the restart", directory =>
+{
+    var id = NewId();
+    var before = new RpcDirectory(directory, "previous");
+    Send(directory, id, "previous");
+    var request = before.Take()!;
+    before.Finish(request, true, 0.25);
+    Send(directory, id, "previous"); // As if the app died before removing the request.
+    new RpcDirectory(directory, "current").RecoverInterrupted();
+    Check(Result(directory, id).GetProperty("ok").GetBoolean(), "completed result was replaced");
+    Check(!File.Exists(Path.Combine(directory, "request.json")), "request still pending");
+});
+
+// R-RPC-3, R-RPC-6
+Test("a request stays pending until finished and its result is kept", directory =>
+{
+    var rpc = new RpcDirectory(directory, "current");
+    var first = NewId();
+    Send(directory, first, "current");
+    var request = rpc.Take()!;
+    Check(request.Id == first && request.Text("section") == "Body", "request fields differ");
+    Check(File.Exists(Path.Combine(directory, "request.json")), "request removed before finishing");
+    rpc.Finish(request, true, new { value = 0.25 });
+    var second = NewId();
+    Send(directory, second, "current");
+    rpc.Finish(rpc.Take()!, false, "engine refused");
+    Check(Result(directory, first).GetProperty("ok").GetBoolean(), "first result lost");
+    Check(Result(directory, second).GetProperty("error").GetString() == "engine refused", "second result lost");
+});
+
+Test("a request whose id is not a CLI id writes nothing outside results", directory =>
+{
+    var rpc = new RpcDirectory(directory, "current");
+    Send(directory, "../escape", "current");
+    Check(rpc.Take() == null, "invalid request was returned");
+    Check(!File.Exists(Path.Combine(directory, "escape.json")), "wrote outside results");
+    Check(File.Exists(Path.Combine(directory, "request.invalid.json")), "invalid request not kept");
+});
+
+return failures == 0 ? 0 : 1;

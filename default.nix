@@ -1,29 +1,56 @@
 {
   lib,
-  stdenv,
+  buildPythonApplication,
+  setuptools,
+  pytestCheckHook,
+  bash,
+  coreutils,
+  git,
+  framewisp,
+  vroid-studio,
+  vroid-bridge,
 }:
-
-stdenv.mkDerivation {
-  name = "vroid-cli";
-
-  src = lib.cleanSource ./.;
-
-  nativeBuildInputs = [ ];
-  buildInputs = [ ];
-
-  installPhase = ''
-    runHook preInstall
-
-    mkdir -p "$out/bin"
-    printf '%s\n' \
-      '#!/usr/bin/env bash' \
-      'set -euo pipefail' \
-      'echo "Hello from vroid-cli"' \
-      >"$out/bin/vroid-cli"
-    chmod +x "$out/bin/vroid-cli"
-
-    runHook postInstall
-  '';
-
-  meta.mainProgram = "vroid-cli";
+buildPythonApplication {
+  pname = "vroid-cli";
+  version = "0.1.0";
+  src = lib.fileset.toSource {
+    root = ./.;
+    fileset = lib.fileset.unions [
+      ./pyproject.toml
+      ./vroid_cli
+      ./tests
+      ./scripts
+      ./.agents/skills/vroid-cli/SKILL.md
+    ];
+  };
+  pyproject = true;
+  build-system = [ setuptools ];
+  nativeCheckInputs = [
+    pytestCheckHook
+    bash
+    coreutils
+    git
+  ];
+  pythonImportsCheck = [ "vroid_cli" ];
+  makeWrapperArgs = [
+    "--set"
+    "VROID_BRIDGE_BUNDLE"
+    "${vroid-bridge}"
+    "--set"
+    "VROID_CLI_SKILL"
+    "${./.agents/skills/vroid-cli/SKILL.md}"
+    "--prefix"
+    "PATH"
+    ":"
+    (lib.makeBinPath [
+      framewisp
+      vroid-studio
+      git
+    ])
+  ];
+  meta = {
+    description = "Edit VRoid Studio characters through its internal API on a private desktop";
+    platforms = [ "x86_64-linux" ];
+    mainProgram = "vroid-cli";
+  };
 }
