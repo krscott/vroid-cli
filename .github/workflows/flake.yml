@@ -1,0 +1,29 @@
+name: Nix flake
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check
+        run: nix develop -c just check
+
+      - name: Test
+        run: nix develop -c just test
+
+      - name: Build
+        run: nix build -L
+
+      - name: Run
+        run: nix run -L
