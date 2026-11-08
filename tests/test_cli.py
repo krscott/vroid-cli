@@ -14,7 +14,6 @@ from typing import Any
 import pytest
 
 SOURCE = Path(__file__).resolve().parent.parent
-BUNDLE = "/nix/store/test-bundle"
 
 
 def invoke(
@@ -25,7 +24,7 @@ def invoke(
     state: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     environment = {k: v for k, v in os.environ.items() if k != "VROID_STATE_DIR"}
-    environment |= {"PYTHONPATH": str(SOURCE), "VROID_BRIDGE_BUNDLE": BUNDLE}
+    environment["PYTHONPATH"] = str(SOURCE)
     if state:
         environment["VROID_STATE_DIR"] = str(tmp_path / "state")
     return subprocess.run(
@@ -41,11 +40,10 @@ def invoke(
 def write_status(rpc: Path, **fields: Any) -> dict[str, Any]:
     status = {
         "boot": "test-boot",
-        "bundle": BUNDLE,
+        "protocol": 1,
         "heartbeat": time.time() * 1000,
         "main": True,
         "modified": False,
-        "busy": False,
     } | fields
     temporary = rpc / "status.tmp"
     temporary.write_text(json.dumps(status))
@@ -106,6 +104,7 @@ def running_desktop(tmp_path: Path) -> dict[str, str]:
     return fake_framewisp(
         tmp_path,
         f"open({str(log)!r}, 'a').write(args[1] + '\\n')\n"
+        "if args[1] == 'stop': Path(args[0], 'session.json').unlink()\n"
         "print(json.dumps({'app': {'running': True}}))",
     )
 
@@ -241,12 +240,17 @@ def test_commands_wait_for_the_user_to_accept_terms(tmp_path: Path) -> None:
     assert (status["terms_accepted"], status["ready"]) == (False, False)
 
 
-def test_launch_reports_an_exited_desktop(tmp_path: Path) -> None:
-    env = fake_framewisp(tmp_path, "print('no display', file=sys.stderr)\nsys.exit(1)")
+def test_launch_reports_why_the_app_exited(tmp_path: Path) -> None:
+    # R-SES-5
+    env = fake_framewisp(
+        tmp_path,
+        "Path(args[0]).mkdir(parents=True)\n"
+        "Path(args[0], 'app.log').write_text('Incomplete installation in wine\\n')\n"
+        "sys.exit(1)",
+    )
     result = invoke(tmp_path, "launch", "--timeout", "8", env=env)
     assert result.returncode == 1
-    assert "runner.log" in result.stderr
-    assert "no display" in (tmp_path / "state/test/runner.log").read_text()
+    assert "Incomplete installation in wine" in result.stderr
 
 
 def test_state_ignores_itself_inside_another_repository(tmp_path: Path) -> None:
@@ -268,10 +272,31 @@ def test_state_ignores_itself_inside_another_repository(tmp_path: Path) -> None:
     assert untracked.stdout == ""
 
 
-@pytest.mark.parametrize("field", ["modified", "busy"])
-def test_stop_refuses_to_discard_work_unless_forced(tmp_path: Path, field: str) -> None:
+def test_state_dir_hides_only_session_state(tmp_path: Path) -> None:
+    # R-SES-3
+    repository = tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", str(repository)], check=True)
+    (repository / "important.py").write_text("")
+    env = fake_framewisp(tmp_path, "sys.exit(1)") | {"VROID_STATE_DIR": str(repository)}
+    result = invoke(tmp_path, "launch", env=env)
+    assert result.returncode == 1
+    assert (repository / "test/runner.log").exists()
+    untracked = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=repository,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert untracked.stdout == "?? important.py\n"
+
+
+@pytest.mark.parametrize("cause", ["modified", "pending"])
+def test_stop_refuses_to_discard_work_unless_forced(tmp_path: Path, cause: str) -> None:
     # R-SES-4
-    bridge(tmp_path, **{field: True})
+    rpc = bridge(tmp_path, modified=cause == "modified")
+    if cause == "pending":
+        (rpc / "request.json").write_text("{}")
     env = running_desktop(tmp_path)
     refused = invoke(tmp_path, "stop", env=env)
     assert refused.returncode == 1

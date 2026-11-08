@@ -14,7 +14,11 @@ public sealed record Request(string Id, string Boot, string Method, int TimeoutM
 
 public sealed class RpcDirectory
 {
+    /// Change together with PROTOCOL in vroid_cli/rpc.py.
+    public const int Protocol = 1;
+
     private readonly string root;
+    private readonly HashSet<string> taken = new();
     public string Boot { get; }
 
     public RpcDirectory(string root, string boot)
@@ -39,21 +43,48 @@ public sealed class RpcDirectory
             + "Inspect the project before another edit.");
     }
 
-    /// Returns the pending request if it is addressed to this app instance.
-    /// Requests for another instance are answered with an error and not run.
+    /// Returns the pending request if it is addressed to this app instance and
+    /// was not returned before; each request runs at most once. Requests for
+    /// another instance are answered with an error and not run.
     public Request? Take()
     {
         if (!File.Exists(RequestPath)) return null;
         var request = Parse();
-        if (request == null || request.Boot == Boot) return request;
-        Finish(request, false, "Request belongs to another app instance; not executed");
-        return null;
+        if (request == null || taken.Contains(request.Id)) return null;
+        if (request.Boot != Boot)
+        {
+            Finish(request, false, "Request belongs to another app instance; not executed");
+            return null;
+        }
+        taken.Add(request.Id);
+        return request;
+    }
+
+    /// Serializes a result. A payload that cannot be serialized becomes an error,
+    /// since the operation has already run.
+    public static string Result(bool ok, object? payload)
+    {
+        try
+        {
+            return JsonSerializer.Serialize(new { ok, result = ok ? payload : null, error = ok ? null : payload });
+        }
+        catch (Exception error) when (error is NotSupportedException or ArgumentException or InvalidOperationException)
+        {
+            return JsonSerializer.Serialize(new
+            {
+                ok = false,
+                result = (object?)null,
+                error = $"The operation ran, but its result could not be recorded ({error.Message}). Inspect the project.",
+            });
+        }
     }
 
     /// Writes the result, then removes the request. Results are kept for inspection.
-    public void Finish(Request request, bool ok, object? payload)
+    public void Finish(Request request, bool ok, object? payload) => Publish(request, Result(ok, payload));
+
+    public void Publish(Request request, string result)
     {
-        Write(ResultPath(request.Id), new { ok, result = ok ? payload : null, error = ok ? null : payload });
+        WriteText(ResultPath(request.Id), result);
         File.Delete(RequestPath);
     }
 
@@ -79,9 +110,11 @@ public sealed class RpcDirectory
         }
     }
 
-    private static void Write(string path, object value)
+    private static void Write(string path, object value) => WriteText(path, JsonSerializer.Serialize(value));
+
+    private static void WriteText(string path, string text)
     {
-        File.WriteAllText(path + ".tmp", JsonSerializer.Serialize(value));
+        File.WriteAllText(path + ".tmp", text);
         File.Move(path + ".tmp", path, true);
     }
 }

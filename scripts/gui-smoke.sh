@@ -43,7 +43,6 @@ vroid() {
 
 state=$(vroid status)
 [[ $(jq .app_running <<<"$state") == false ]] || fatal "Stop session $session first"
-mkdir -p "$(jq -r .directory <<<"$state")"
 out=$(mktemp -d "$(jq -r .directory <<<"$state")/smoke.XXXXXX")
 edited=$out/edited.vroid
 printf 'gui-smoke: artifacts in %s\n' "$out" >&2
@@ -86,7 +85,11 @@ for edit in "${edits[@]}"; do
     IFS='|' read -r section category label <<<"$edit"
     current=$(value_of "$section" "$category" "$label")
     target=$(pick "$current")
+    rebuilt=$(vroid status | jq .bridge.rebuilt)
     vroid set "$section" "$category" "$label" "$target" >/dev/null
+    vroid status | jq -e --argjson before "$rebuilt" \
+        '.bridge.rebuilt > $before and .bridge.updating == false' >/dev/null ||
+        fatal "set $label returned before a completed rebuild"
     actual=$(value_of "$section" "$category" "$label")
     same "$actual" "$target" || fatal "$label read back $actual after set $target"
     expected[$edit]=$target

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using BepInEx;
 using BepInEx.Logging;
@@ -11,7 +12,6 @@ public sealed class Plugin : BasePlugin
 {
     private static readonly ManualLogSource Diagnostics = BepInEx.Logging.Logger.CreateLogSource("VroidBridge");
     private static RpcDirectory rpc = null!;
-    private static string bundle = "";
     private static object? main;
     private static object? root;
     private static bool updating;
@@ -22,14 +22,14 @@ public sealed class Plugin : BasePlugin
     private static Request? current;
     private static IEnumerator<bool>? operation;
     private static object? result;
-    private static DateTime deadline;
-    private static DateTime heartbeat;
+    private static (Request Request, string Result)? unpublished;
+    private static readonly Stopwatch Elapsed = new();
+    private static readonly Stopwatch SinceHeartbeat = new();
 
     public override void Load()
     {
         var directory = Environment.GetEnvironmentVariable("VROID_BRIDGE_DIR")
             ?? throw new InvalidOperationException("VROID_BRIDGE_DIR is required");
-        bundle = Environment.GetEnvironmentVariable("VROID_BRIDGE_BUNDLE") ?? "";
         rpc = new RpcDirectory(directory, Guid.NewGuid().ToString("N"));
         rpc.RecoverInterrupted();
         var harmony = new Harmony("vroid-cli.bridge");
@@ -86,20 +86,26 @@ public sealed class Plugin : BasePlugin
             if (now == frame) return;
             frame = now;
             Reflect.Type("UnityEngine.Application").GetProperty("runInBackground")!.SetValue(null, true);
-            if (DateTime.UtcNow >= heartbeat)
+            if (!SinceHeartbeat.IsRunning || SinceHeartbeat.ElapsedMilliseconds >= 1000)
             {
                 main ??= FindMainViewModel();
-                WriteStatus();
+                Try(WriteStatus, "write status");
+            }
+            if (unpublished != null)
+            {
+                Publish();
+                return;
             }
             if (operation == null && (current = rpc.Take()) != null)
             {
-                deadline = DateTime.UtcNow.AddMilliseconds(current.TimeoutMs);
+                Elapsed.Restart();
                 result = null;
                 operation = Execute(current).GetEnumerator();
             }
             if (operation != null)
             {
-                if (DateTime.UtcNow > deadline)
+                // Checked between frames: a single blocking call can run past it.
+                if (Elapsed.ElapsedMilliseconds > current!.TimeoutMs)
                     throw new TimeoutException("Engine operation timed out; outcome may be incomplete. Inspect state before another edit.");
                 if (!operation.MoveNext()) Complete(true, result);
             }
@@ -125,28 +131,48 @@ public sealed class Plugin : BasePlugin
         rpc.WriteStatus(new
         {
             boot = rpc.Boot,
-            bundle,
+            protocol = RpcDirectory.Protocol,
             heartbeat = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             main = main != null,
             editor = root != null,
             updating,
             modified,
             rebuilt,
-            busy = operation != null,
         });
-        heartbeat = DateTime.UtcNow.AddSeconds(1);
+        SinceHeartbeat.Restart();
     }
 
-    // The status is current before the result appears, so a caller that has a
-    // result never reads a stale `busy` or `modified`.
+    private static bool Try(Action action, string what)
+    {
+        try
+        {
+            action();
+            return true;
+        }
+        catch (Exception error)
+        {
+            Diagnostics.LogError($"Could not {what}: {error}");
+            return false;
+        }
+    }
+
     private static void Complete(bool ok, object? payload)
     {
-        var request = current!;
+        unpublished = (current!, RpcDirectory.Result(ok, payload));
         current = null;
         operation?.Dispose();
         operation = null;
-        WriteStatus();
-        rpc.Finish(request, ok, payload);
+        Publish();
+    }
+
+    // Retried every frame until it succeeds; the operation itself never reruns.
+    // The status is current before the result appears, so a caller holding a
+    // result never reads a stale `modified`.
+    private static void Publish()
+    {
+        var (request, text) = unpublished!.Value;
+        if (Try(WriteStatus, "write status") && Try(() => rpc.Publish(request, text), "publish a result"))
+            unpublished = null;
     }
 
     private static object Main => main ?? throw new InvalidOperationException("App is not ready");

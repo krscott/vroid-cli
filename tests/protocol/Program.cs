@@ -94,6 +94,29 @@ Test("a request stays pending until finished and its result is kept", directory 
     Check(Result(directory, second).GetProperty("error").GetString() == "engine refused", "second result lost");
 });
 
+// R-RPC-5
+Test("a request runs at most once even when its result cannot be published", directory =>
+{
+    var rpc = new RpcDirectory(directory, "current");
+    var id = NewId();
+    Send(directory, id, "current");
+    Check(rpc.Take()?.Id == id, "request was not taken");
+    // Publishing failed, so the request is still in place.
+    Check(rpc.Take() == null, "request was returned twice");
+});
+
+// R-RPC-6
+Test("a result that cannot be serialized is recorded as an error", directory =>
+{
+    var rpc = new RpcDirectory(directory, "current");
+    var id = NewId();
+    Send(directory, id, "current");
+    rpc.Finish(rpc.Take()!, true, new { value = float.NaN });
+    var result = Result(directory, id);
+    Check(!result.GetProperty("ok").GetBoolean(), "result reports success");
+    Check(result.GetProperty("error").GetString()!.Contains("operation ran"), "error does not say it ran");
+});
+
 Test("a request whose id is not a CLI id writes nothing outside results", directory =>
 {
     var rpc = new RpcDirectory(directory, "current");

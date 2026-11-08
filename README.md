@@ -24,7 +24,7 @@ colors, hair and texture tools, and VRM export are not supported yet.
 ## Usage
 
 ```sh
-nix develop   # or: nix run github:krscott/vroid-cli -- ARGS
+nix develop   # or: nix shell github:krscott/vroid-cli
 vroid-cli --session demo launch
 vroid-cli --session demo open ./source.vroid
 vroid-cli --session demo categories Body
@@ -57,7 +57,7 @@ the app keeps starting; run `launch` again to keep waiting.
 VRoid then shows its welcome and terms dialogs once per session. vroid-cli never
 accepts them: `launch` and edit commands fail with instructions until you do.
 Read and accept them on the private desktop with Framewisp, then run `launch`
-again:
+again (if it still refuses, `stop` and `launch`):
 
 ```sh
 desktop=$(vroid-cli --session demo status | jq -r .desktop)
@@ -75,15 +75,16 @@ the session directory: `runner.log`, `installer.log`, `player.log`,
 - **Timed-out request:** do not repeat it. It stays pending and blocks other
   commands until its result appears in `rpc/results/ID.json`. Restarting the
   session marks it as having an unknown outcome; inspect the project first.
-- **Unsaved changes:** `stop` refuses them. Save to a new path, or use
-  `stop --force` to discard them.
+- **Unsaved changes:** `stop` refuses them, and a pending request. Save to a
+  new path, or use `stop --force` to discard them.
 - **Another project:** save, `stop`, and `launch` before opening it.
 - **Incomplete installation:** it is not repeated. Read `installer.log`, then
   delete the session directory or use another session name.
 - **Unclean desktop shutdown:** run `framewisp ABSOLUTE/SESSION/desktop recover`
   as the error message says, then launch again.
-- **Upgrades:** stop sessions before upgrading. `launch` installs the new bridge
-  while the app is stopped.
+- **Upgrades:** `launch` installs a new bridge only while the app is stopped. A
+  running session keeps working with a newer CLI unless the file protocol
+  changed; then save with the older build or stop and launch again.
 
 ## Development
 

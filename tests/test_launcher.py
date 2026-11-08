@@ -83,7 +83,7 @@ def test_bridge_upgrade_replaces_store_copies(writable: Path, legacy: bool) -> N
     assert (app / "dotnet").stat().st_mode & 0o200
 
 
-def test_failed_copy_keeps_the_previous_marker(writable: Path) -> None:
+def test_failed_copy_is_retried_on_the_next_launch(writable: Path) -> None:
     # R-SES-6
     session = writable / "session"
     app = session / "wine/drive_c/VRoidStudio"
@@ -97,6 +97,11 @@ def test_failed_copy_keeps_the_previous_marker(writable: Path) -> None:
     assert result.returncode != 0
     assert "winhttp.dll" in result.stderr
     assert (app / ".vroid-bridge-bundle").read_text() == "previous\n"
+    (bundle / "winhttp.dll").chmod(0o444)
+    retried = launch(writable, session, bundle)
+    assert retried.returncode == 0, retried.stderr
+    assert (app / "winhttp.dll").read_text() == "1"
+    assert (app / ".vroid-bridge-bundle").read_text() == f"{bundle}\n"
 
 
 def test_incomplete_installation_is_not_repeated(writable: Path) -> None:

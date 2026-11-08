@@ -92,7 +92,10 @@ def main() -> int:
     cli = parser()
     args = cli.parse_args()
     if args.agent_skill:
-        print(Path(os.environ["VROID_CLI_SKILL"]).read_text(), end="")
+        skill = os.environ.get("VROID_CLI_SKILL")
+        if not skill:
+            cli.error("VROID_CLI_SKILL is unset; run the packaged vroid-cli")
+        print(Path(skill).read_text(), end="")
         return 0
     if args.command is None:
         cli.error("a command is required")
@@ -116,7 +119,7 @@ def main() -> int:
             if isinstance(body, str):
                 cli.error(body)
             result = sessions.request(session, method=args.command, args=body)
-    except RuntimeError as error:
+    except (RuntimeError, OSError) as error:
         print(f"vroid-cli: {error}", file=sys.stderr)
         return 1
     print(json.dumps(result))

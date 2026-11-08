@@ -34,9 +34,10 @@ flake substitutes GLES2, which VRoid needs for usable frame rates.
 
 A session is a directory `ROOT/NAME/`. `ROOT` is `VROID_STATE_DIR`, otherwise
 `.vroid/` at the Git worktree root of the current directory, otherwise
-`.vroid/` in the current directory. Creating `ROOT` writes `ROOT/.gitignore`
-containing `*`, so the state ignores itself in whichever repository holds it
-(R-SES-3). Names are 1–64 letters, digits, `_`, or `-`.
+`.vroid/` in the current directory. Each session directory holds a
+`.gitignore` containing `*`, so it ignores itself in whichever repository holds
+it without hiding anything else there (R-SES-3). Names are 1–64 letters,
+digits, `_`, or `-`.
 
 | Entry | Contents |
 | --- | --- |
@@ -53,14 +54,20 @@ it (R-SES-1). The detached Framewisp runner does not inherit the lock.
 
 ## Lifecycle
 
-`launch` records its start time, takes the lock, and checks the desktop:
+The CLI reads the desktop as one of three states:
 
-- No `desktop/session.json`: if Framewisp's ownership journal remains, the
-  previous runner died and the user must run `framewisp DESKTOP recover`.
-  Otherwise it starts `framewisp DESKTOP run --x11 --width 2560 --height 1440
-  -- vroid-studio` in a new process session, logging to `runner.log`.
-- A live desktop whose app is still running: it waits for that app.
-- A live desktop whose app exited: it fails; stop and launch again.
+- Stopped: no `desktop/session.json`. If Framewisp's ownership journal remains
+  without an exit record, the previous runner died and every command asks the
+  user to run `framewisp DESKTOP recover`.
+- Exited: Framewisp recorded VRoid's exit in `desktop/app-exit.json` and the
+  runner is shutting down.
+- Running: `framewisp DESKTOP status` reports the app running.
+
+`launch` records its start time and takes the lock. A stopped desktop starts
+`framewisp DESKTOP run --x11 --width 2560 --height 1440 -- vroid-studio` in a
+new process session, logging to `runner.log`. A running app is waited for. An
+exited app fails with the end of `desktop/app.log`, which is where the launcher
+script's own errors land (R-SES-5).
 
 It then waits for a bridge heartbeat that is fresh, was written after the
 launch began, and has found the main view model (R-SES-2). The bridge finds the
@@ -71,16 +78,18 @@ VRoid records acceptance as `<AllAgreementsAreAccepted>Yes` in
 and `status` reports it as `terms_accepted` (R-SES-8). An older heartbeat
 can look fresh for a few seconds after the previous app exits. The wait fails
 early if the runner exits. On timeout the app keeps starting; running `launch`
-again resumes the wait. A heartbeat from another bundle fails with
-instructions to stop and relaunch.
+again resumes the wait. A bridge reporting another protocol version fails with
+instructions to stop and relaunch; bridges from other builds with the same
+protocol keep working until the next launch installs the new one.
 
 The compositor uses the first AMD or Intel render node unless
 `WLR_RENDER_DRM_DEVICE` is set. Automatic NVIDIA selection stalled during
 testing, and NVIDIA-only hosts are unvalidated.
 
-`stop` refuses while the last bridge status reports `modified` or `busy`,
-unless `--force` (R-SES-4), then runs `framewisp DESKTOP stop`, which waits for
-the app and compositor to exit. An absent desktop is already stopped.
+`stop` refuses while the last bridge status reports `modified` or
+`request.json` exists, unless `--force` (R-SES-4). It then runs `framewisp
+DESKTOP stop`, which waits for the app and compositor to exit. For an exited
+app it waits for the runner to finish. A stopped desktop is already stopped.
 
 `scripts/vroid-studio.sh` runs inside the private desktop:
 
@@ -110,9 +119,11 @@ The CLI and bridge exchange JSON files in `rpc/`. Every write goes to a
 temporary file renamed over its target, so readers never see partial files.
 
 - `status.json`: written by the bridge about once per second with `boot` (a
-  random ID per app instance), `bundle`, `heartbeat` (Unix ms), `main`,
-  `editor`, `updating`, `modified`, `rebuilt`, and `busy`. It is stale after
-  5 seconds.
+  random ID per app instance), `protocol`, `heartbeat` (Unix ms), `main`,
+  `editor`, `updating`, `modified`, and `rebuilt`. It is stale after 5
+  seconds. `protocol` is `PROTOCOL` in `vroid_cli/rpc.py` and
+  `RpcDirectory.Protocol` in `plugin/Bridge.cs`; bump both for incompatible
+  changes.
 - `request.json`: at most one pending request, written by the CLI, with `id`
   (32 lowercase hex digits), `boot`, `method`, `timeout_ms`, and arguments.
   Paths are Wine paths (`Z:/...`).
@@ -120,18 +131,27 @@ temporary file renamed over its target, so readers never see partial files.
   it removes the request. Results are never deleted (R-RPC-6).
 
 A request command takes the lock, requires accepted terms, requires a fresh
-heartbeat from the same bundle (R-RPC-4), refuses if `request.json` exists (R-RPC-3), tags the request
-with the heartbeat's `boot`, and waits for the result. It never resends
-(R-RPC-5). The bridge answers a request for another `boot` with an error without
-running it (R-RPC-1). When the bridge loads with a request still present, it
+heartbeat with the same protocol (R-RPC-4), refuses if `request.json` exists
+(R-RPC-3), tags the request with the heartbeat's `boot`, and waits until the
+bridge removes the request, then reads the result. Waiting for the removal
+keeps the next command from seeing a finished request as pending. It never
+resends (R-RPC-5).
+
+The bridge answers a request for another `boot` with an error without running
+it (R-RPC-1). Each instance runs a request ID at most once (R-RPC-5). It
+serializes the result once, falling back to an error result if the payload
+cannot be serialized, and retries writing the status and result every frame
+until both succeed. When the bridge loads with a request still present, it
 records an unknown outcome unless that request's result already exists
 (R-RPC-2). A request file that does not parse is moved to
-`request.invalid.json`.
+`request.invalid.json`; the CLI then reports that no result was written.
 
-The bridge abandons an operation after the request's `timeout_ms` (90 s) and
-reports a possibly incomplete outcome. The CLI waits 30 s longer, so a slow
-operation normally yields a result rather than a CLI timeout. If the CLI still
-times out, the request stays pending and its result appears later.
+The bridge checks the request's `timeout_ms` (90 s) between frames and then
+reports a possibly incomplete outcome. A single blocking call, such as
+`SaveSync`, can run past it and complete later. The CLI waits 30 s longer, so a
+slow operation normally yields a result rather than a CLI timeout. If the CLI
+still times out, the request stays pending and its result appears later.
+Timers use a monotonic clock.
 
 ## Bridge
 

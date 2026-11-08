@@ -43,7 +43,7 @@ investigate or ask; never invent a rationale.
   logs that must never be committed by accident.
 
 - **R-SES-4** [test] `stop` refuses while the app last reported unsaved changes
-  or a running request, unless forced.
+  or a request is pending, unless forced.
 
   Rationale: Stopping discards unsaved edits, which may be the only copy of an
   agent's work.
@@ -70,11 +70,11 @@ investigate or ask; never invent a rationale.
   characters.
 
 - **R-SES-8** [test] `launch` and edit commands fail with instructions until the
-  user has accepted VRoid's first-run terms in that session. vroid-cli never
-  accepts or skips them.
+  user has accepted VRoid's first-run terms in that session.
 
-  Rationale: Accepting the terms is the user's decision. Edits made through
-  internal methods could otherwise bypass VRoid's own first-run flow.
+  Rationale: Accepting the terms is the user's decision, and vroid-cli never
+  accepts them. Edits made through internal methods could otherwise bypass
+  VRoid's own first-run flow.
 
 ## Requests (RPC)
 
@@ -103,7 +103,8 @@ investigate or ask; never invent a rationale.
   Rationale: A request to a dead or hung app stays pending and blocks the
   session until it restarts.
 
-- **R-RPC-5** [test] The CLI never repeats a request automatically.
+- **R-RPC-5** [test] A request runs at most once. The CLI never repeats a
+  request automatically.
 
   Rationale: A repeated mutation can apply twice after an ambiguous failure.
 
@@ -158,9 +159,9 @@ investigate or ask; never invent a rationale.
   Rationale: Synthetic input depends on the exact screen layout and fails
   silently when it changes.
 
-- **R-EDIT-6** [manual: `just gui-smoke` reads each value back immediately
-  after `set` and after `open`] `open` and `set` succeed only after the model
-  has finished rebuilding with the result.
+- **R-EDIT-6** [manual: `just gui-smoke` checks that each `set` returns after a
+  completed rebuild and that values read back after `open`] `open` and `set`
+  succeed only after the model has finished rebuilding with the result.
 
   Rationale: Commands that run during a rebuild read stale values or save a
   half-rebuilt model.

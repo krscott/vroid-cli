@@ -9,15 +9,24 @@ import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from . import rpc
 
 SESSION_NAME = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}")
+# Must match the player size in scripts/vroid-studio.sh.
 DISPLAY = ("2560", "1440")
 # Mesa render devices; automatic NVIDIA selection stalled the compositor.
 PREFERRED_GPU_VENDORS = {"0x1002", "0x8086"}
+TERMS_ACCEPTED = "<AllAgreementsAreAccepted>Yes</AllAgreementsAreAccepted>"
+
+
+class Desktop(Enum):
+    STOPPED = "stopped"
+    EXITED = "exited"  # VRoid exited; the runner is shutting down.
+    RUNNING = "running"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -55,13 +64,11 @@ def resolve(name: str, *, cwd: Path) -> Session:
 
 
 def create_state(session: Session) -> None:
-    root = session.directory.parent
-    root.mkdir(parents=True, exist_ok=True)
-    # Ignore the state root from inside, whichever repository contains it (R-SES-3).
-    ignore = root / ".gitignore"
+    (session.rpc / "results").mkdir(parents=True, exist_ok=True)
+    # Each session ignores itself, whichever repository contains it (R-SES-3).
+    ignore = session.directory / ".gitignore"
     if not ignore.exists():
         ignore.write_text("*\n")
-    (session.rpc / "results").mkdir(parents=True, exist_ok=True)
 
 
 @contextmanager
@@ -80,12 +87,18 @@ def controller(session: Session) -> Generator[None]:
         yield
 
 
-def desktop_status(session: Session) -> dict[str, Any] | None:
-    """Return Framewisp's status for a live runner, or None when none is running."""
+def desktop_state(session: Session) -> Desktop:
+    if (session.desktop / "app-exit.json").exists():
+        # Framewisp keeps the exit record until the next run.
+        return (
+            Desktop.EXITED
+            if (session.desktop / "session.json").exists()
+            else Desktop.STOPPED
+        )
     if not (session.desktop / "session.json").exists():
         if (session.desktop / ".headless-owner.json").exists():
             raise RuntimeError(abandoned(session))
-        return None
+        return Desktop.STOPPED
     result = subprocess.run(
         ["framewisp", str(session.desktop), "status"],
         capture_output=True,
@@ -93,9 +106,11 @@ def desktop_status(session: Session) -> dict[str, Any] | None:
         check=False,
     )
     if result.returncode:
+        if (session.desktop / "app-exit.json").exists():
+            return Desktop.EXITED
         raise RuntimeError(f"{result.stderr.strip()}\n{abandoned(session)}")
     status: dict[str, Any] = json.loads(result.stdout)
-    return status
+    return Desktop.RUNNING if status["app"]["running"] else Desktop.EXITED
 
 
 def abandoned(session: Session) -> str:
@@ -103,6 +118,19 @@ def abandoned(session: Session) -> str:
         f"The private desktop was not shut down cleanly. Inspect "
         f"{session.directory / 'runner.log'}, then run: "
         f"framewisp {session.desktop} recover"
+    )
+
+
+def app_exited(session: Session) -> str:
+    log = session.desktop / "app.log"
+    try:
+        tail = "\n".join(log.read_text(errors="replace").splitlines()[-10:])
+    except OSError:
+        tail = ""
+    return (
+        f"VRoid exited. Last lines of {log}:\n{tail}"
+        if tail
+        else (f"VRoid exited; inspect {session.directory / 'runner.log'}")
     )
 
 
@@ -124,14 +152,13 @@ def graphics_environment(
 
 def terms_accepted(session: Session) -> bool:
     """Whether the user accepted VRoid's first-run terms in this session (R-SES-8)."""
-    preferences = session.directory / "wine/drive_c/users"
-    for path in preferences.glob(
-        "*/AppData/LocalLow/pixiv/VRoid Studio/preferences/editoroption.xml"
-    ):
-        text = path.read_text(encoding="utf-8-sig", errors="replace")
-        if "<AllAgreementsAreAccepted>Yes</AllAgreementsAreAccepted>" in text:
-            return True
-    return False
+    users = session.directory / "wine/drive_c/users"
+    return any(
+        TERMS_ACCEPTED in path.read_text(encoding="utf-8-sig", errors="replace")
+        for path in users.glob(
+            "*/AppData/LocalLow/pixiv/VRoid Studio/preferences/editoroption.xml"
+        )
+    )
 
 
 def terms_pending(session: Session) -> str:
@@ -143,25 +170,31 @@ def terms_pending(session: Session) -> str:
     )
 
 
+def incompatible() -> str:
+    return (
+        "The session runs a bridge from an incompatible vroid-cli build. Use that "
+        "build to save, or stop and launch again"
+    )
+
+
 def summary(session: Session) -> dict[str, Any]:
-    desktop = desktop_status(session) if session.directory.is_dir() else None
+    exists = session.directory.is_dir()
+    desktop = desktop_state(session) if exists else Desktop.STOPPED
     bridge = rpc.read_status(session.rpc)
-    running = desktop is not None and bool(desktop["app"]["running"])
     accepted = terms_accepted(session)
     return {
         "session": session.name,
         "directory": str(session.directory),
         "desktop": str(session.desktop),
-        "app_running": running,
+        "app_running": desktop is Desktop.RUNNING,
         "terms_accepted": accepted,
-        "ready": running and accepted and bridge is not None and rpc.is_fresh(bridge),
+        "ready": desktop is Desktop.RUNNING
+        and accepted
+        and bridge is not None
+        and bridge.ready(),
         "pending_request": (session.rpc / "request.json").exists(),
-        "bridge": bridge,
+        "bridge": bridge.raw if bridge else None,
     }
-
-
-def bundle() -> str:
-    return os.environ["VROID_BRIDGE_BUNDLE"]
 
 
 def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
@@ -169,8 +202,12 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
     create_state(session)
     with controller(session):
         runner: subprocess.Popen[bytes] | None = None
-        desktop = desktop_status(session)
-        if desktop is None:
+        desktop = desktop_state(session)
+        if desktop is Desktop.EXITED:
+            raise RuntimeError(
+                f"{app_exited(session)}\nWait for the desktop to close, then launch again"
+            )
+        if desktop is Desktop.STOPPED:
             with (session.directory / "runner.log").open("ab") as log:
                 runner = subprocess.Popen(
                     [
@@ -192,36 +229,23 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
                     env=graphics_environment()
                     | {"VROID_SESSION_DIR": str(session.directory)},
                 )
-        elif not desktop["app"]["running"]:
-            raise RuntimeError(
-                f"VRoid exited; inspect {session.desktop / 'app.log'}, then stop "
-                "the session before launching again"
-            )
         deadline = time.monotonic() + timeout_s
         next_check = time.monotonic() + 5
         while True:
             status = rpc.read_status(session.rpc)
             # Only a heartbeat written after this launch began counts (R-SES-2).
-            if status and status["main"] and rpc.is_fresh(status, since_ms=started_ms):
-                if status["bundle"] != bundle():
-                    raise RuntimeError(
-                        "The session runs another vroid-cli build; "
-                        "stop it and launch again"
-                    )
+            if status and status.fresh(since_ms=started_ms) and status.main:
+                if not status.compatible:
+                    raise RuntimeError(incompatible())
                 if not terms_accepted(session):
                     raise RuntimeError(terms_pending(session))
                 return summary(session)
             if runner is not None and runner.poll() is not None:
-                raise RuntimeError(
-                    f"The private desktop exited; inspect {session.directory / 'runner.log'}"
-                )
+                raise RuntimeError(app_exited(session))
             if runner is None and time.monotonic() >= next_check:
                 next_check = time.monotonic() + 5
-                current = desktop_status(session)
-                if current is None or not current["app"]["running"]:
-                    raise RuntimeError(
-                        f"VRoid exited; inspect {session.desktop / 'app.log'}"
-                    )
+                if desktop_state(session) is not Desktop.RUNNING:
+                    raise RuntimeError(app_exited(session))
             if time.monotonic() >= deadline:
                 raise RuntimeError(
                     f"VRoid is not ready after {timeout_s:.0f}s and keeps starting. "
@@ -237,24 +261,32 @@ def stop(session: Session, *, force: bool) -> dict[str, Any]:
     if not session.directory.is_dir():
         return {"session": session.name, "stopped": False}
     with controller(session):
-        if desktop_status(session) is None:
+        desktop = desktop_state(session)
+        if desktop is Desktop.STOPPED:
             return {"session": session.name, "stopped": False}
-        status = rpc.read_status(session.rpc)
-        if not force and status and (status["modified"] or status["busy"]):
-            raise RuntimeError(
-                "The app last reported unsaved changes or a running request. "
-                "Save first, or pass --force to discard them"
+        if desktop is Desktop.RUNNING:
+            status = rpc.read_status(session.rpc)
+            pending = (session.rpc / "request.json").exists()
+            if not force and (pending or (status is not None and status.modified)):
+                raise RuntimeError(
+                    "The app has unsaved changes or a pending request. "
+                    "Save or wait first, or pass --force to discard them"
+                )
+            result = subprocess.run(
+                ["framewisp", str(session.desktop), "stop"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
             )
-        result = subprocess.run(
-            ["framewisp", str(session.desktop), "stop"],
-            stdout=subprocess.PIPE,
-            text=True,
-            check=False,
-        )
-        if result.returncode:
-            raise RuntimeError(
-                f"Could not stop the private desktop; {abandoned(session)}"
-            )
+            if result.returncode and desktop_state(session) is not Desktop.EXITED:
+                raise RuntimeError(f"{result.stderr.strip()}\n{abandoned(session)}")
+        # The runner shuts itself down after the app exits.
+        deadline = time.monotonic() + 60
+        while (session.desktop / "session.json").exists():
+            if time.monotonic() >= deadline:
+                raise RuntimeError(abandoned(session))
+            time.sleep(0.2)
         return {"session": session.name, "stopped": True}
 
 
@@ -263,13 +295,11 @@ def request(session: Session, *, method: str, args: dict[str, Any]) -> Any:
         if not terms_accepted(session):
             raise RuntimeError(terms_pending(session))
         status = rpc.read_status(session.rpc)
-        if status is None or not rpc.is_fresh(status):
+        if status is None or not status.fresh():
             raise RuntimeError(
                 f"Session {session.name!r} is not running or not responding; "
                 f"check status and {session.directory / 'player.log'}"
             )
-        if status["bundle"] != bundle():
-            raise RuntimeError(
-                "The session runs another vroid-cli build; save, stop, and launch again"
-            )
-        return rpc.submit(session.rpc, boot=status["boot"], method=method, args=args)
+        if not status.compatible:
+            raise RuntimeError(incompatible())
+        return rpc.submit(session.rpc, boot=status.boot, method=method, args=args)

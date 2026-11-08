@@ -10,8 +10,8 @@ edits characters through VRoid's internal methods. It sends no mouse or
 keyboard input and needs no OCR, MCP server, or account login. The user can keep
 using their computer.
 
-Run it from the vroid-cli flake: `nix run github:krscott/vroid-cli -- ...`, or
-`vroid-cli ...` inside its `nix develop` shell. It supports VRoid Studio 2.16.0
+Get it once with `nix shell github:krscott/vroid-cli`, or use `vroid-cli` inside
+the project's `nix develop` shell, and keep that build for the whole session. It supports VRoid Studio 2.16.0
 on x86_64 Linux.
 
 ```sh
@@ -32,12 +32,12 @@ vroid-cli --session alice stop
   nonzero with the reason on stderr.
 - Use category and parameter names exactly as `categories` and `parameters`
   return them. `set` accepts finite values within the parameter's `min..max`.
-  Use `--` before a value such as `-inf`; ordinary negatives like `-0.35` work.
+  Negatives like `-0.35` work; put `--` before exponent forms like `-1e-3`.
 - `save` needs a new `.vroid` path in an existing directory. It never
   overwrites. Choose a new versioned filename.
 - Opening another project requires `save`, `stop`, and `launch` first.
-- `stop` refuses while there are unsaved changes. Save first; use
-  `stop --force` only when discarding them is intended.
+- `stop` refuses while there are unsaved changes or a pending request. Save
+  or wait first; use `stop --force` only when discarding them is intended.
 - Never repeat a timed-out `open`, `set`, or `save` automatically. Inspect
   `status` and the result file named in the error first.
 
@@ -62,8 +62,8 @@ framewisp /abs/path/.vroid/alice/desktop screenshot /tmp/alice.png
 framewisp /abs/path/.vroid/alice/desktop click X Y
 ```
 
-Then run `launch` again. Framewisp is for setup, observation, and recording
-only; edits go through `vroid-cli`.
+Then run `launch` again; if it still refuses, `stop` and `launch`. Framewisp is
+for setup, observation, and recording only; edits go through `vroid-cli`.
 
 ## Recovery
 
