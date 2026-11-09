@@ -25,8 +25,9 @@
         config.allowUnfreePredicate =
           package:
           builtins.elem (lib.getName package) [
-            "vroid-studio"
-            "vroid-bridge"
+            "vroid-studio-app"
+            "vroid-studio-interop"
+            "vroid-bepinex"
           ];
       };
       # Framewisp hardcodes software rendering, which is too slow for VRoid.
@@ -36,11 +37,12 @@
             --replace-fail 'WLR_RENDERER="pixman"' 'WLR_RENDERER="gles2"'
         '';
       });
-      vroid-studio = pkgs.callPackage ./nix/vroid-studio.nix { };
-      vroid-bridge = pkgs.callPackage ./nix/bridge.nix { };
+      vroid-bepinex = pkgs.callPackage ./nix/bepinex.nix { };
+      vroid-bridge = pkgs.callPackage ./nix/bridge.nix { inherit vroid-bepinex; };
+      vroid-studio = pkgs.callPackage ./nix/vroid-studio.nix { inherit vroid-bepinex vroid-bridge; };
       vroid-cli = pkgs.python3Packages.callPackage ./default.nix {
         framewisp = framewisp-gles2;
-        inherit vroid-studio vroid-bridge;
+        inherit vroid-studio;
       };
       python = pkgs.python3.withPackages (
         ps: with ps; [

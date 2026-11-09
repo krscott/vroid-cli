@@ -324,17 +324,64 @@ def test_commands_wait_for_the_user_to_accept_terms(tmp_path: Path) -> None:
 
 
 def test_launch_reports_why_the_app_exited(tmp_path: Path) -> None:
-    # R-SES-5
+    # R-SES-12
     env = fake_framewisp(
         tmp_path,
         "Path(args[0]).mkdir(parents=True)\n"
-        "Path(args[0], 'app.log').write_text('Incomplete installation in wine\\n')\n"
+        "Path(args[0], 'app.log').write_text('wine: cannot find VRoidStudio.exe\\n')\n"
+        "Path(args[0], '../bepinex').mkdir()\n"
+        "Path(args[0], '../bepinex/LogOutput.log').write_text('[Fatal] no core\\n')\n"
         "Path(args[0], 'app-exit.json').write_text('{}')\n"
         "sys.exit(1)",
     )
     result = invoke(tmp_path, "launch", timeout=8, env=env)
     assert result.returncode == 1
-    assert "Incomplete installation in wine" in result.stderr
+    assert "wine: cannot find VRoidStudio.exe" in result.stderr
+    assert "[Fatal] no core" in result.stderr
+
+
+def test_launch_timeout_shows_this_launchs_bepinex_log(tmp_path: Path) -> None:
+    # R-SES-12
+    root = tmp_path / "state/test/bepinex"
+    root.mkdir(parents=True)
+    (root / "LogOutput.log").write_text("earlier run\n")
+    old = time.time() - 60
+    os.utime(root / "LogOutput.log", (old, old))
+    env = fake_framewisp(
+        tmp_path,
+        f"Path({str(root / 'preloader.log')!r}).write_text('UnauthorizedAccess\\n')\n"
+        "time.sleep(4)",
+    )
+    result = invoke(tmp_path, "launch", timeout=2, env=env)
+    assert result.returncode == 1
+    assert "not ready after 2s" in result.stderr
+    assert "UnauthorizedAccess" in result.stderr
+    assert "earlier run" not in result.stderr
+
+
+@pytest.mark.parametrize("logged_boot", ["test-boot", "old-boot"])
+def test_launch_refuses_outdated_interop_from_this_boot_only(
+    tmp_path: Path, logged_boot: str
+) -> None:
+    # The CLI recognizes this boot's BepInEx log by the bridge's load message.
+    plugin = (SOURCE / "plugin/Plugin.cs").read_text()
+    assert 'LogInfo($"vroid-cli bridge loaded; boot {rpc.Boot}")' in plugin
+    rpc = bridge(tmp_path)
+    (rpc.parent / "bepinex").mkdir()
+    (rpc.parent / "bepinex/LogOutput.log").write_text(
+        "[Warning:InteropManager] Interop assemblies are possibly out of date. "
+        "To disable this message, create file X with the following contents: Y\n"
+        f"[Info   :VroidBridge] vroid-cli bridge loaded; boot {logged_boot}\n"
+    )
+    env = running_desktop(tmp_path)
+    beating = heartbeats(rpc, 3)
+    result = invoke(tmp_path, "launch", timeout=8, env=env)
+    beating.join()
+    if logged_boot == "test-boot":
+        assert result.returncode == 1
+        assert "do not match its VRoid" in result.stderr
+    else:
+        assert result.returncode == 0, result.stderr
 
 
 def test_launch_reports_a_desktop_that_failed_before_vroid(tmp_path: Path) -> None:

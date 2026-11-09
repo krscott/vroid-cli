@@ -48,13 +48,13 @@ investigate or ask; never invent a rationale.
   Rationale: Stopping discards unsaved edits, which may be the only copy of an
   agent's work.
 
-- **R-SES-5** [test] An incomplete first installation is never repeated
+- **R-SES-5** [retired] An incomplete first installation is never repeated
   automatically. Launching it reports how to recover.
 
   Rationale: Its logs explain the failure, and a repeated installation over a
   partial prefix fails in less obvious ways.
 
-- **R-SES-6** [test] Launching after an upgrade installs the new bridge over the
+- **R-SES-6** [retired] Launching after an upgrade installs the new bridge over the
   old one, including read-only copies from earlier installs. A failed copy is
   retried on the next launch.
 
@@ -75,6 +75,29 @@ investigate or ask; never invent a rationale.
   Rationale: Accepting the terms is the user's decision, and vroid-cli never
   accepts them. Edits made through internal methods could otherwise bypass
   VRoid's own first-run flow.
+
+- **R-SES-10** [test] A session needs no installation step. `launch` runs the
+  VRoid and bridge that came with the vroid-cli build that ran it, in new
+  sessions and in sessions that earlier versions installed, and no session can
+  change them.
+
+  Rationale: Per-session installs took 10 minutes or more and about 2 GB each,
+  which made parallel agents and evals impractical. A per-session copy of the
+  bridge could go stale or be left partly copied, and users could not repair an
+  app directory they did not create.
+
+- **R-SES-11** [test] Garbage collection of the Nix store while a session's app
+  runs never removes files that app uses.
+
+  Rationale: Sessions run for hours next to the user's other Nix work. A
+  collection that removed VRoid's files would crash the app and lose unsaved
+  edits.
+
+- **R-SES-12** [test] When `launch` fails because the app exited or did not
+  become ready, its error shows the last lines of the log that explains why.
+
+  Rationale: The app runs on a private display, so an agent cannot see its
+  errors any other way.
 
 ## Requests (RPC)
 

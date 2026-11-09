@@ -21,6 +21,10 @@ DISPLAY = ("2560", "1440")
 # Mesa render devices; automatic NVIDIA selection stalled the compositor.
 PREFERRED_GPU_VENDORS = {"0x1002", "0x8086"}
 TERMS_ACCEPTED = "<AllAgreementsAreAccepted>Yes</AllAgreementsAreAccepted>"
+# Logged by BepInEx be.788 when UpdateInteropAssemblies is off and its hash differs.
+OUTDATED_INTEROP = "Interop assemblies are possibly out of date"
+# Logged by the bridge in plugin/Plugin.cs when it loads.
+BRIDGE_LOADED = "vroid-cli bridge loaded; boot {boot}"
 
 
 class Desktop(Enum):
@@ -125,15 +129,47 @@ def tail(path: Path, lines: int = 10) -> str:
 
 
 def exited(session: Session, *, since_ms: float = 0) -> str:
-    """Explain why the private desktop or VRoid stopped (R-SES-5)."""
+    """Explain why the private desktop or VRoid stopped (R-SES-12)."""
     # app.log belongs to the last run that started VRoid, which is this run
     # only if Framewisp recorded VRoid's exit during it.
     record = session.desktop / "app-exit.json"
     if record.exists() and record.stat().st_mtime * 1000 >= since_ms:
         log = session.desktop / "app.log"
-        return f"VRoid exited. Last lines of {log}:\n{tail(log)}"
+        return f"VRoid exited. Last lines of {log}:\n{tail(log)}" + bepinex_log(
+            session, since_ms=since_ms
+        )
     log = session.directory / "runner.log"
     return f"The private desktop exited. Last lines of {log}:\n{tail(log)}"
+
+
+def bepinex_log(session: Session, *, since_ms: float) -> str:
+    """The end of BepInEx's startup log, if this launch wrote it (R-SES-12)."""
+    # The preloader log exists only when BepInEx failed before its main log.
+    for log in [
+        session.directory / "bepinex/preloader.log",
+        session.directory / "bepinex/LogOutput.log",
+    ]:
+        if log.exists() and log.stat().st_mtime * 1000 >= since_ms:
+            return f"\nLast lines of {log}:\n{tail(log)}"
+    return ""
+
+
+def outdated_interop(session: Session, *, boot: str) -> str | None:
+    """Explain a mismatch BepInEx logged between VRoid and the prebuilt interop."""
+    log = session.directory / "bepinex/LogOutput.log"
+    try:
+        text = log.read_text(errors="replace")
+    except OSError:
+        return None
+    # BepInEx rewrites its log on every start, and the bridge logs its boot ID
+    # when it loads (plugin/Plugin.cs), so a log naming the boot is this run's.
+    if BRIDGE_LOADED.format(boot=boot) not in text or OUTDATED_INTEROP not in text:
+        return None
+    return (
+        "BepInEx reports that the interop assemblies built with this vroid-cli "
+        f"do not match its VRoid; see {log}. This build is broken: stop the "
+        "session without editing and report the log"
+    )
 
 
 def graphics_environment(
@@ -240,6 +276,8 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
             if status and status.fresh(since_ms=started_ms) and status.main:
                 if not status.compatible:
                     raise RuntimeError(incompatible())
+                if mismatch := outdated_interop(session, boot=status.boot):
+                    raise RuntimeError(mismatch)
                 if not terms_accepted(session):
                     raise RuntimeError(terms_pending(session))
                 return summary(session)
@@ -248,14 +286,14 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
             if runner is None and time.monotonic() >= next_check:
                 next_check = time.monotonic() + 5
                 if desktop_state(session) is not Desktop.RUNNING:
-                    raise RuntimeError(exited(session))
+                    raise RuntimeError(exited(session, since_ms=started_ms))
             if time.monotonic() >= deadline:
                 raise RuntimeError(
                     f"VRoid is not ready after {timeout_s:.0f}s and keeps starting. "
-                    "A first launch installs VRoid and generates bindings. "
                     "Run launch again to keep waiting; inspect "
                     f"{session.directory / 'player.log'} and "
-                    f"{session.directory / 'wine/drive_c/VRoidStudio/BepInEx/LogOutput.log'}"
+                    f"{session.directory / 'bepinex/LogOutput.log'}"
+                    + bepinex_log(session, since_ms=started_ms)
                 )
             time.sleep(0.2)
 

@@ -1,54 +1,52 @@
 #!/usr/bin/env bash
-# Install VRoid and the bridge into the session's Wine prefix, then run VRoid.
+# Run the store's VRoid with the bridge from the session's own Wine prefix.
 # vroid-cli launch runs this on the session's private desktop.
 set -euo pipefail
-shopt -s failglob
-
-fatal() {
-    printf '%s\n' "$*" >&2
-    exit 1
-}
 
 : "${VROID_SESSION_DIR:?Start sessions with vroid-cli launch}"
-: "${VROID_INSTALLER:?Missing packaged VRoid installer}"
-: "${VROID_BRIDGE_BUNDLE:?Missing packaged bridge bundle}"
+for name in VROID_WINE VROID_APP VROID_INTEROP VROID_BEPINEX VROID_BRIDGE; do
+    : "${!name:?Missing packaged $name; run the vroid-studio wrapper}"
+done
 
 export WINEPREFIX=$VROID_SESSION_DIR/wine
 export WINEDEBUG=fixme-all
-app_dir=$WINEPREFIX/drive_c/VRoidStudio
+# Without these overrides Wine's Mono and Gecko setup stalls on the private desktop.
+overrides='mscoree,mshtml='
+wine=$VROID_WINE/bin
 
-# R-SES-5: never repeat an incomplete installation automatically.
-if [[ ! -f $VROID_SESSION_DIR/installed ]]; then
-    if [[ -e $WINEPREFIX ]]; then
-        fatal "Incomplete installation in $WINEPREFIX. Inspect $VROID_SESSION_DIR/installer.log, then delete $VROID_SESSION_DIR or use another session name."
-    fi
-    WINEDLLOVERRIDES='mscoree,mshtml=' wine "$VROID_INSTALLER" \
-        /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER \
-        '/DIR=C:\VRoidStudio' "/LOG=Z:$VROID_SESSION_DIR/installer.log"
-    [[ -f $app_dir/VRoidStudio.exe ]] || fatal "VRoid installer did not create $app_dir/VRoidStudio.exe"
-    touch "$VROID_SESSION_DIR/installed"
+# Windows path of a Unix path.
+windows() {
+    printf 'Z:%s' "${1//\//\\}"
+}
+
+# Create the prefix before VRoid starts. Wine updates an existing one itself.
+shopt -s nullglob
+profiles=("$WINEPREFIX"/drive_c/users/*/AppData)
+shopt -u nullglob
+if ((${#profiles[@]} == 0)); then
+    WINEDLLOVERRIDES=$overrides "$wine/wineboot" -i
+    "$wine/wineserver" -w
 fi
 
-# R-SES-6: replace an earlier bridge, including read-only trees copied from the Nix store.
-marker=$app_dir/.vroid-bridge-bundle
-if [[ ! -f $marker || $(<"$marker") != "$VROID_BRIDGE_BUNDLE" ]]; then
-    for entry in "$VROID_BRIDGE_BUNDLE"/*; do
-        installed=$app_dir/${entry##*/}
-        if [[ -e $installed ]]; then
-            chmod -R u+w "$installed"
-        fi
-    done
-    cp -r --no-preserve=mode --remove-destination "$VROID_BRIDGE_BUNDLE/." "$app_dir/"
-    printf '%s\n' "$VROID_BRIDGE_BUNDLE" >"$marker"
-fi
+# BepInEx's root: its own files are links into the store; config, cache, and
+# logs are the session's. BepInEx rewrites its config, so it gets a copy.
+root=$VROID_SESSION_DIR/bepinex
+mkdir -p "$root/config"
+ln -sfn "$VROID_BEPINEX/BepInEx/core" "$root/core"
+ln -sfn "$VROID_BRIDGE" "$root/plugins"
+cp --no-preserve=mode "$VROID_BEPINEX/BepInEx/config/BepInEx.cfg" "$root/config/BepInEx.cfg"
 
-export WINEDLLOVERRIDES='winhttp=n,b;mscoree,mshtml='
+export WINEDLLOVERRIDES="winhttp=n,b;$overrides"
 export VROID_BRIDGE_DIR=Z:$VROID_SESSION_DIR/rpc
-# Interop generation runs out of managed memory without an explicit ceiling.
-# The heap limit is hexadecimal bytes: 0x400000000 is 16 GiB.
-export DOTNET_PROCESSOR_COUNT=${DOTNET_PROCESSOR_COUNT:-2}
-export DOTNET_GCHeapHardLimit=${DOTNET_GCHeapHardLimit:-400000000}
+# BepInEx otherwise writes startup failures next to the read-only exe.
+export BEPINEX_PRELOADER_LOG
+BEPINEX_PRELOADER_LOG=$(windows "$root/preloader.log")
 
-exec wine "$app_dir/VRoidStudio.exe" \
+exec "$wine/wine" "$VROID_APP/VRoidStudio.exe" \
     -screen-width 2560 -screen-height 1440 -screen-fullscreen 0 \
-    -logFile "Z:$VROID_SESSION_DIR/player.log"
+    -logFile "$(windows "$VROID_SESSION_DIR/player.log")" \
+    --doorstop-enabled true \
+    --doorstop-target-assembly "$(windows "$root/core/BepInEx.Unity.IL2CPP.dll")" \
+    --doorstop-clr-corlib-dir "$(windows "$VROID_BEPINEX/dotnet")" \
+    --doorstop-clr-runtime-coreclr-path "$(windows "$VROID_BEPINEX/dotnet/coreclr.dll")" \
+    --unhollowed-path "$(windows "$VROID_INTEROP")"

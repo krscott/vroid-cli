@@ -87,12 +87,11 @@ ears, which vroid-cli can't add yet.
 
 ## Timing and sandboxes
 
-The first `launch` of a session installs VRoid and generates app bindings, which
-can take 10 minutes or more. Give `launch` a tool timeout of at least 15
-minutes, or run it in the background, and pass `"timeout": 1200`; the default
-is 600 seconds. If it times out, the app keeps starting: run `launch` again to
-keep waiting. Commands need local graphics and Unix sockets, so a sandboxed
-harness may need its usual escalation.
+A new session's first `launch` is ready in about 15 seconds, later ones in a
+few seconds; the default timeout is 120 seconds. If it times out, the app
+keeps starting: run `launch` again to keep waiting. Commands need local
+graphics and Unix sockets, so a sandboxed harness may need its usual
+escalation.
 
 ## First run
 
@@ -116,12 +115,10 @@ for setup, observation, and recording only; edits go through `vroid-cli`.
 last heartbeat, including `modified` for unsaved changes. Session state lives in
 `.vroid/NAME/` at the Git worktree root (the current directory outside Git), or
 under `VROID_STATE_DIR`. On failure, read `runner.log`, `player.log`,
-`installer.log`, and `wine/drive_c/VRoidStudio/BepInEx/LogOutput.log` there.
+`bepinex/LogOutput.log`, and `bepinex/preloader.log` there.
 
 - A pending request blocks new commands. Its result appears in
   `rpc/results/ID.json`. Restarting the session marks it as having an unknown
   outcome; check the project before editing again.
-- An incomplete first installation is not repeated. Keep its logs, then delete
-  the session directory or use another session name.
 - If the private desktop was not shut down cleanly, run
   `framewisp /abs/path/.vroid/NAME/desktop recover` as the error says.

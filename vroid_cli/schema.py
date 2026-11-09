@@ -61,7 +61,7 @@ class Launch(Model):
     """Start the app, or wait until it is ready."""
 
     method: Literal["launch"]
-    timeout: PositiveFloat = Field(600.0, description="seconds to wait for readiness")
+    timeout: PositiveFloat = Field(120.0, description="seconds to wait for readiness")
 
 
 class Status(Model):

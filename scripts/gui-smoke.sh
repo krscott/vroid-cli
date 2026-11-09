@@ -93,7 +93,10 @@ edits=(
     'Face|Face Sets|Eye Size Y'
 )
 
-vroid '{"method": "launch", "timeout": 1200}' >/dev/null
+launched=$(vroid '{"method": "launch", "timeout": 1200}')
+# launch's interop check reads the BepInEx log of the boot that reported ready.
+grep -qF "boot $(jq -r .bridge.boot <<<"$launched")" "$(jq -r .directory <<<"$launched")/bepinex/LogOutput.log" ||
+    fatal "BepInEx's log did not name the bridge's boot when launch returned"
 inputs_before=$(input_events)
 jq -cn --arg path "$source" '{method: "open", path: $path}' | vroid - >/dev/null
 vroid '{"method": "dump"}' >"$out/original.json"
@@ -149,7 +152,10 @@ inputs_after=$(input_events)
 ((inputs_after == inputs_before)) || fatal "input log grew from $inputs_before to $inputs_after events"
 
 vroid '{"method": "stop"}' >/dev/null
-vroid '{"method": "launch", "timeout": 1200}' >/dev/null
+launched=$(vroid '{"method": "launch", "timeout": 1200}')
+# launch's interop check reads the BepInEx log of the boot that reported ready.
+grep -qF "boot $(jq -r .bridge.boot <<<"$launched")" "$(jq -r .directory <<<"$launched")/bepinex/LogOutput.log" ||
+    fatal "BepInEx's log did not name the bridge's boot when launch returned"
 inputs_before=$(input_events)
 jq -cn --arg path "$edited" '{method: "open", path: $path}' | vroid - >/dev/null
 for edit in "${edits[@]}"; do
