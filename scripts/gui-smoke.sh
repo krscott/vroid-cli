@@ -108,7 +108,8 @@ render() {
 # Check a rendered PNG: PATH FRAME WIDTH HEIGHT. Its size must match, it must
 # show the character, and the edges that frame the character must be
 # background: every edge for a body; for a head, whose frame cuts through the
-# neck and may show the shoulders, the top and the upper half of each side.
+# neck and may show the shoulders, the top and the upper three quarters of each
+# side, which hold the ears.
 check_image() {
     python3 - "$@" <<'PY' || fatal "$1 is not a framed render; see above"
 import struct
@@ -150,7 +151,7 @@ for y in range(h):
     rows.append([bytes(line[x : x + 3]) for x in range(0, stride, step)])
     previous = line
 background = rows[0][0]
-sides = rows[: h // 2] if frame == "head" else rows
+sides = rows[: h * 3 // 4] if frame == "head" else rows
 edges = {"top": rows[0], "left": [r[0] for r in sides], "right": [r[-1] for r in sides]}
 if frame == "body":
     edges["bottom"] = rows[-1]
