@@ -77,7 +77,7 @@ new process session, logging to `runner.log`. A running app is waited for. An
 exited app fails with instructions to wait or stop. If the runner exits during
 the wait, the error shows the end of `desktop/app.log` when Framewisp recorded
 VRoid's exit during this launch, which is where the launcher script's own
-errors land, followed by the end of BepInEx's log (R-SES-12). Otherwise the
+errors land, followed by the end of BepInEx's log (R-SES-11). Otherwise the
 desktop failed before VRoid started, `app.log` may be from an earlier run, and
 the error shows the end of `runner.log`. A timeout also shows the end of
 BepInEx's log, or explains an interop mismatch it reports.
@@ -126,7 +126,7 @@ rather than next to the read-only exe.
 
 ## Shared install
 
-All sessions run one read-only VRoid from the Nix store (R-SES-10). A session
+All sessions run one read-only VRoid from the Nix store (R-SES-9). A session
 holds only its prefix and BepInEx root, about 600 MB; a new one is ready in
 about 15 s, most of it creating the prefix. Upgrades are new store paths, so
 nothing is copied and no marker records a version.
@@ -160,7 +160,7 @@ nothing is copied and no marker records a version.
   launcher passes them to Wine.
   Nix's garbage collector treats a store path in a running process's
   environment as a root, so every Wine process keeps the app's files for its
-  whole life (R-SES-11). A stopped session needs nothing from the store; its
+  whole life (R-SES-10). A stopped session needs nothing from the store; its
   links are replaced at the next launch.
 
 ## File protocol

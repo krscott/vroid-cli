@@ -326,7 +326,7 @@ def test_commands_wait_for_the_user_to_accept_terms(tmp_path: Path) -> None:
 
 
 def test_launch_reports_why_the_app_exited(tmp_path: Path) -> None:
-    # R-SES-12
+    # R-SES-11
     env = fake_framewisp(
         tmp_path,
         "Path(args[0]).mkdir(parents=True)\n"
@@ -352,7 +352,7 @@ def test_launch_reports_why_the_app_exited(tmp_path: Path) -> None:
 def test_launch_timeout_explains_the_bepinex_log(
     tmp_path: Path, log: str, shown: str
 ) -> None:
-    # R-SES-12
+    # R-SES-11
     target = tmp_path / "state/test/bepinex/LogOutput.log"
     env = fake_framewisp(
         tmp_path,
@@ -368,7 +368,7 @@ def test_launch_timeout_explains_the_bepinex_log(
 
 
 def test_launch_fails_at_once_when_bepinex_fails_to_start(tmp_path: Path) -> None:
-    # R-SES-12: BepInEx then shows a dialog and VRoid never becomes ready.
+    # R-SES-11: BepInEx then shows a dialog and VRoid never becomes ready.
     preloader = tmp_path / "state/test/bepinex/preloader.log"
     env = fake_framewisp(
         tmp_path,
@@ -388,7 +388,7 @@ def test_launch_fails_at_once_when_bepinex_fails_to_start(tmp_path: Path) -> Non
 def test_resumed_launch_reports_the_running_apps_bepinex_failure(
     tmp_path: Path,
 ) -> None:
-    # R-SES-12: a launch after a timeout still explains the same app's failure.
+    # R-SES-11: a launch after a timeout still explains the same app's failure.
     rpc = bridge(tmp_path, heartbeat=0)
     preloader = rpc.parent / "bepinex/preloader.log"
     preloader.parent.mkdir()

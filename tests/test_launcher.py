@@ -94,7 +94,7 @@ def option(call: dict[str, Any], name: str) -> Path:
 
 
 def test_new_session_runs_the_shared_install(writable: Path) -> None:
-    # R-SES-10
+    # R-SES-9
     session = writable / "session"
     paths = store(writable, "1")
     boot, server, app = launch(session, paths)
@@ -118,7 +118,7 @@ def test_new_session_runs_the_shared_install(writable: Path) -> None:
 
 
 def test_upgrade_switches_store_paths(writable: Path) -> None:
-    # R-SES-10
+    # R-SES-9
     session = writable / "session"
     launch(session, store(writable, "1"))
     config = session / "bepinex/config/BepInEx.cfg"
@@ -136,7 +136,7 @@ def test_upgrade_switches_store_paths(writable: Path) -> None:
 
 
 def test_installed_session_uses_the_shared_install(writable: Path) -> None:
-    # R-SES-10
+    # R-SES-9
     session = writable / "session"
     old = session / "wine/drive_c/VRoidStudio"
     for path in ["VRoidStudio.exe", "BepInEx/interop/old.dll", "winhttp.dll"]:
@@ -154,7 +154,7 @@ def test_installed_session_uses_the_shared_install(writable: Path) -> None:
 
 
 def test_app_environment_names_its_store_paths(writable: Path) -> None:
-    # R-SES-11: Nix keeps store paths named in a running process's
+    # R-SES-10: Nix keeps store paths named in a running process's
     # environment, so every store path the app reads must be named there.
     session = writable / "session"
     paths = store(writable, "1")

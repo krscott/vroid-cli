@@ -127,7 +127,7 @@ stdenvNoCC.mkDerivation {
   dontUnpack = true;
   nativeBuildInputs = [ makeWrapper ];
   # Every store path the running app reads is in its environment, which
-  # keeps it from Nix's garbage collector while the app runs (R-SES-11).
+  # keeps it from Nix's garbage collector while the app runs (R-SES-10).
   installPhase = ''
     runHook preInstall
     install -Dm555 ${../scripts/vroid-studio.sh} "$out/libexec/vroid-studio"

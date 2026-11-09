@@ -76,7 +76,7 @@ investigate or ask; never invent a rationale.
   accepts them. Edits made through internal methods could otherwise bypass
   VRoid's own first-run flow.
 
-- **R-SES-10** [test] A session needs no installation step. `launch` runs the
+- **R-SES-9** [test] A session needs no installation step. `launch` runs the
   VRoid and bridge that came with the vroid-cli build that ran it, in new
   sessions and in sessions that earlier versions installed, and no session can
   change them.
@@ -86,14 +86,14 @@ investigate or ask; never invent a rationale.
   bridge could go stale or be left partly copied, and users could not repair an
   app directory they did not create.
 
-- **R-SES-11** [test] Garbage collection of the Nix store while a session's app
+- **R-SES-10** [test] Garbage collection of the Nix store while a session's app
   runs never removes files that app uses.
 
   Rationale: Sessions run for hours next to the user's other Nix work. A
   collection that removed VRoid's files would crash the app and lose unsaved
   edits.
 
-- **R-SES-12** [test] When `launch` fails because the app exited or did not
+- **R-SES-11** [test] When `launch` fails because the app exited or did not
   become ready, its error shows the last lines of the log that explains why.
 
   Rationale: The app runs on a private display, so an agent cannot see its

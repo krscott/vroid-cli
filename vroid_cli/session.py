@@ -129,7 +129,7 @@ def tail(path: Path, lines: int = 10) -> str:
 
 
 def exited(session: Session, *, since_ms: float = 0) -> str:
-    """Explain why the private desktop or VRoid stopped (R-SES-12)."""
+    """Explain why the private desktop or VRoid stopped (R-SES-11)."""
     # app.log belongs to the last run that started VRoid, which is this run
     # only if Framewisp recorded VRoid's exit during it.
     record = session.desktop / "app-exit.json"
@@ -163,7 +163,7 @@ def bepinex_failed(session: Session) -> str | None:
 
 
 def bepinex_log(session: Session) -> str:
-    """The end of BepInEx's log of the current app run (R-SES-12)."""
+    """The end of BepInEx's log of the current app run (R-SES-11)."""
     if failure := bepinex_failed(session):
         return failure
     _, log = bepinex_logs(session)
