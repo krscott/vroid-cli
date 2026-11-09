@@ -1,0 +1,167 @@
+# vroid-cli requirements
+
+Each requirement captures valuable behaviour or an invariant users rely on,
+including latent durability, privacy, compatibility, and recoverability
+guarantees. `DESIGN.md` describes how the requirements are met.
+
+## Format
+
+Write one requirement per bullet, as `- **R-AREA-N** [tag] Statement.` State
+observable behaviour, not implementation, in short sentences.
+
+Follow new or substantively changed requirements with a brief, indented
+`Rationale:` paragraph. Explain why the guarantee matters, not how to implement
+it; name non-obvious constraints when useful. Backfill existing rationales only
+when relevant to the task, without a project-wide sweep. If the reason is unknown,
+investigate or ask; never invent a rationale.
+
+- The ID is stable. Never renumber or reuse an ID. To drop a requirement, keep
+  its bullet and change its tag to `[retired]`.
+- `[test]`: a test that `just test` or `nix flake check` runs covers it. Each
+  covering test carries the ID in a comment.
+- `[manual: how]`: no automated test yet. The text says how an agent checks it.
+- `[retired]`: no longer required. Kept so the ID stays taken.
+
+## Sessions (SES)
+
+- **R-SES-1** [test] A command that controls a session fails without effect
+  while another command controls the same session.
+
+  Rationale: Interleaved commands from two agents could open, edit, or save the
+  wrong project, and neither agent could tell what happened.
+
+- **R-SES-2** [test] `launch` reports success only after the app reports ready
+  after that launch began.
+
+  Rationale: A heartbeat file left by the previous process looks recent for a
+  few seconds and would otherwise report a dead or still-starting app as ready.
+
+- **R-SES-3** [test] Session state never appears as untracked files in Git,
+  including when it is created inside another repository.
+
+  Rationale: Session state holds proprietary app files, Wine prefixes, and
+  logs that must never be committed by accident.
+
+- **R-SES-4** [test] `stop` refuses while the app last reported unsaved changes
+  or a request is pending, unless forced.
+
+  Rationale: Stopping discards unsaved edits, which may be the only copy of an
+  agent's work.
+
+- **R-SES-5** [test] An incomplete first installation is never repeated
+  automatically. Launching it reports how to recover.
+
+  Rationale: Its logs explain the failure, and a repeated installation over a
+  partial prefix fails in less obvious ways.
+
+- **R-SES-6** [test] Launching after an upgrade installs the new bridge over the
+  old one, including read-only copies from earlier installs. A failed copy is
+  retried on the next launch.
+
+  Rationale: A stale or partially copied bridge fails in confusing ways, and
+  users cannot repair an app directory they did not create.
+
+- **R-SES-7** [manual: while a session is running, confirm no VRoid window
+  appears on the user's desktop and the user's input reaches only their own
+  apps] A session's app runs on a private display. It never draws on or reads
+  input from the user's desktop.
+
+  Rationale: Users keep working on their computer while agents edit
+  characters.
+
+- **R-SES-8** [test] `launch` and edit commands fail with instructions until the
+  user has accepted VRoid's first-run terms in that session.
+
+  Rationale: Accepting the terms is the user's decision, and vroid-cli never
+  accepts them. Edits made through internal methods could otherwise bypass
+  VRoid's own first-run flow.
+
+## Requests (RPC)
+
+- **R-RPC-1** [test] A request runs only in the app instance it was addressed
+  to.
+
+  Rationale: A request prepared for an app that has since restarted refers to
+  state that no longer exists.
+
+- **R-RPC-2** [test] A request interrupted by an app restart is reported as
+  having an unknown outcome and never runs again. A result written before the
+  restart is kept.
+
+  Rationale: Replaying a mutation after an unknown outcome could apply it twice
+  or apply it to a different project.
+
+- **R-RPC-3** [test] A pending request blocks every new request and stays in
+  place.
+
+  Rationale: The pending request's outcome must be known before another edit
+  builds on it.
+
+- **R-RPC-4** [test] Commands never send requests to an app whose heartbeat is
+  stale.
+
+  Rationale: A request to a dead or hung app stays pending and blocks the
+  session until it restarts.
+
+- **R-RPC-5** [test] A request runs at most once. The CLI never repeats a
+  request automatically.
+
+  Rationale: A repeated mutation can apply twice after an ambiguous failure.
+
+- **R-RPC-6** [test] Every request's result stays available for inspection
+  after its command ends.
+
+  Rationale: After a timeout or crash, the result shows whether an edit or save
+  happened.
+
+## Command output (CLI)
+
+- **R-CLI-1** [test] A successful command prints exactly one JSON value on
+  stdout and exits 0.
+
+  Rationale: Agents and scripts parse stdout directly.
+
+- **R-CLI-2** [test] A failed command exits nonzero, prints its reason on
+  stderr, and prints nothing on stdout.
+
+  Rationale: Callers must never mistake a partial or diagnostic output for a
+  result.
+
+## Editing (EDIT)
+
+- **R-EDIT-1** [manual: run `just gui-smoke SESSION SOURCE.vroid` with an
+  editable project] A saved Face or Body numeric value reads back unchanged
+  after a full restart and reopen.
+
+  Rationale: Saved projects are the deliverable of an editing session.
+
+- **R-EDIT-2** [test] `set` rejects a value that is not finite before
+  contacting the app.
+
+  Rationale: Non-finite values can corrupt a model without any visible error.
+
+- **R-EDIT-3** [manual: `just gui-smoke` sets a value above the maximum and
+  checks the error and the unchanged value] `set` rejects a value outside the
+  parameter's bounds and leaves the model unchanged.
+
+  Rationale: VRoid's own controls never produce out-of-range values, so the
+  app's behaviour for them is unknown.
+
+- **R-EDIT-4** [test] `save` refuses an existing destination and leaves it
+  unchanged.
+
+  Rationale: The destination may be an earlier deliverable.
+
+- **R-EDIT-5** [manual: `just gui-smoke` checks that the session's Framewisp
+  input log is unchanged by the workflow] Editing sends no pointer or keyboard
+  input to the app.
+
+  Rationale: Synthetic input depends on the exact screen layout and fails
+  silently when it changes.
+
+- **R-EDIT-6** [manual: `just gui-smoke` checks that each `set` returns after a
+  completed rebuild and that values read back after `open`] `open` and `set`
+  succeed only after the model has finished rebuilding with the result.
+
+  Rationale: Commands that run during a rebuild read stale values or save a
+  half-rebuilt model.

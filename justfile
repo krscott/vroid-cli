@@ -3,23 +3,22 @@ set positional-arguments
 default:
     just --list
 
+# Build the Nix package, including the bridge and all tests.
 build:
-    printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'printf '\''Hello from hello.sh\n'\''' > hello.sh
-    chmod +x hello.sh
+    nix build -L
 
-run: build
-    ./hello.sh
+# Run the packaged CLI.
+run *args:
+    nix run -L . -- "$@"
 
-# Test the locally built program.
-test: build
-    #!/usr/bin/env bash
-    set -euo pipefail
-    expected='Hello from hello.sh'
-    actual=$(./hello.sh)
-    if [[ "$actual" != "$expected" ]]; then
-        printf 'Expected: %s\nActual: %s\n' "$expected" "$actual" >&2
-        exit 1
-    fi
+# Run the Python and bridge protocol tests from the working tree.
+test:
+    python -m pytest -q
+    dotnet run --project tests/protocol
+
+# Exercise a real session; needs graphics and completed first-run dialogs.
+gui-smoke session source:
+    scripts/gui-smoke.sh "$@"
 
 # Format files, or all tracked files when no files are provided.
 format *files:
@@ -64,6 +63,15 @@ _format mode *files:
                     nixfmt "$file"
                 fi
             ;;
+            *.py)
+                if [[ "$mode" == check ]]; then
+                    black --check --quiet "$file"
+                    isort --check-only --quiet "$file"
+                else
+                    black --quiet "$file"
+                    isort --quiet "$file"
+                fi
+            ;;
             *.sh|.githooks/*|*/.githooks/*)
                 if [[ "$mode" == check ]]; then
                     shfmt -d -i 4 "$file"
@@ -74,7 +82,7 @@ _format mode *files:
         esac
     done
 
-# Check tracked shell scripts and Git hooks.
+# Check tracked shell scripts and Git hooks, and type-check Python.
 lint:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -84,6 +92,8 @@ lint:
             *.sh|.githooks/*) shellcheck "$file" ;;
         esac
     done < <(git ls-files -z)
+    python -m mypy .
+    pyright
 
 # Run non-mutating formatting, shell, and Nix checks.
 check: format-check lint

@@ -1,0 +1,41 @@
+[project]
+name = "vroid_cli"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+vroid-cli = "vroid_cli.__main__:main"
+
+[build-system]
+requires = ["setuptools >= 61.2"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["vroid_cli"]
+
+[tool.setuptools.package-data]
+"vroid_cli" = ["py.typed"]
+
+[tool.black]
+target-version = ["py312"]
+
+[tool.isort]
+profile = "black"
+skip = [".direnv", "result", ".venv", ".vroid"]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+reportMissingTypeStubs = "none"
+exclude = [".direnv", "result", ".venv", ".vroid"]
+
+[tool.mypy]
+strict = true
+exclude = [".direnv", "result", ".venv", ".vroid"]
+pretty = true
+show_column_numbers = true
+show_error_context = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

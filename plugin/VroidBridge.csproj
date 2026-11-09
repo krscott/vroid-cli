@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <AssemblyName>VroidBridge</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RestoreSources></RestoreSources>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="$(LoaderDir)/dotnet/System*.dll" />
+    <Reference Include="$(LoaderDir)/dotnet/mscorlib.dll" />
+    <Reference Include="$(LoaderDir)/dotnet/netstandard.dll" />
+    <Reference Include="$(LoaderDir)/BepInEx/core/BepInEx.Core.dll" />
+    <Reference Include="$(LoaderDir)/BepInEx/core/BepInEx.Unity.IL2CPP.dll" />
+    <Reference Include="$(LoaderDir)/BepInEx/core/Il2CppInterop.Runtime.dll" />
+    <Reference Include="$(LoaderDir)/BepInEx/core/0Harmony.dll" />
+  </ItemGroup>
+</Project>

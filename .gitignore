@@ -1,5 +1,10 @@
 .direnv/
 .envrc
 .vscode/
-hello.sh
 result
+result-*
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+bin/
+obj/
