@@ -13,6 +13,7 @@
 let
   version = "2.16.0";
   wine = wineWow64Packages.unstable;
+  config = ../plugin/BepInEx.cfg;
   meta = {
     homepage = "https://vroid.com/en/studio";
     license = lib.licenses.unfree;
@@ -42,7 +43,8 @@ let
     buildPhase = ''
       runHook preBuild
       ${headlessWine}
-      WINEDLLOVERRIDES='mscoree,mshtml=' wine "$src" \
+      # Any dialog would wait forever under the null driver.
+      WINEDLLOVERRIDES='mscoree,mshtml=' timeout 600 wine "$src" \
         /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER \
         '/DIR=C:\VRoidStudio' "/LOG=Z:$TMPDIR/installer.log"
       wineserver -w
@@ -79,7 +81,7 @@ let
       root=$TMPDIR/bepinex
       mkdir -p "$root/config" "$out/unity-libs"
       ln -s ${vroid-bepinex}/BepInEx/core "$root/core"
-      install -m644 ${vroid-bepinex}/BepInEx/config/BepInEx.cfg "$root/config/"
+      install -m644 ${config} "$root/config/BepInEx.cfg"
       cp ${vroid-bepinex}/BepInEx/unity-libs/*.zip "$out/unity-libs/"
       w() { printf 'Z:%s' "''${1//\//\\}"; }
       export WINEDLLOVERRIDES='winhttp=n,b;mscoree,mshtml='
@@ -95,10 +97,12 @@ let
         --doorstop-clr-runtime-coreclr-path "$(w ${vroid-bepinex}/dotnet/coreclr.dll)" \
         --unhollowed-path "$(w "$out")" >"$TMPDIR/wine.log" 2>&1 &
       pid=$!
-      # BepInEx writes the hash last, then keeps VRoid running.
+      # BepInEx writes the hash last, then keeps VRoid running, also after
+      # logging a generation failure.
       start=$SECONDS
       until [[ -s $out/interop/assembly-hash.txt ]]; do
-        if ! kill -0 "$pid" 2>/dev/null || ((SECONDS - start > 1200)); then
+        if ! kill -0 "$pid" 2>/dev/null || ((SECONDS - start > 1200)) ||
+          grep -qs 'Failed to generate Il2Cpp interop' "$root/LogOutput.log"; then
           tail -n 40 "$root/LogOutput.log" "$TMPDIR"/{preloader,player,wine}.log || true
           echo "VRoid exited or timed out before BepInEx generated interop assemblies" >&2
           exit 1
@@ -134,10 +138,10 @@ stdenvNoCC.mkDerivation {
       --set VROID_INTEROP ${interop} \
       --set VROID_BEPINEX ${vroid-bepinex} \
       --set VROID_BRIDGE ${vroid-bridge} \
+      --set VROID_BEPINEX_CONFIG ${config} \
       --prefix PATH : ${lib.makeBinPath [ coreutils ]}
     runHook postInstall
   '';
-  passthru = { inherit app interop; };
   meta = {
     description = "Runs the store's VRoid Studio with the vroid-cli bridge in a session's Wine prefix";
     homepage = "https://github.com/krscott/vroid-cli";

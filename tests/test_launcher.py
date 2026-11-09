@@ -42,7 +42,6 @@ def store(tmp_path: Path, version: str) -> dict[str, str]:
         "VROID_INTEROP": ["interop/assembly-hash.txt", "unity-libs/UnityEngine.dll"],
         "VROID_BEPINEX": [
             "BepInEx/core/BepInEx.Unity.IL2CPP.dll",
-            "BepInEx/config/BepInEx.cfg",
             "dotnet/coreclr.dll",
         ],
         "VROID_BRIDGE": ["VroidBridge.dll"],
@@ -60,6 +59,8 @@ def store(tmp_path: Path, version: str) -> dict[str, str]:
         (wine / program).write_text(f"#!{sys.executable}\n{WINE}")
         (wine / program).chmod(0o755)
     paths["VROID_WINE"] = str(wine.parent)
+    (root / "BepInEx.cfg").write_text(version)
+    paths["VROID_BEPINEX_CONFIG"] = str(root / "BepInEx.cfg")
     for item in sorted(root.rglob("*"), reverse=True):
         item.chmod(0o555 if item.is_dir() or item.parent == wine else 0o444)
     return paths

@@ -88,8 +88,9 @@ ears, which vroid-cli can't add yet.
 ## Timing and sandboxes
 
 A new session's first `launch` is ready in about 15 seconds, later ones in a
-few seconds; the default timeout is 120 seconds. If it times out, the app
-keeps starting: run `launch` again to keep waiting. Commands need local
+few seconds; the default timeout is 120 seconds. Give `launch` a tool timeout
+above that, or run it in the background. If it times out, the app keeps
+starting: run `launch` again to keep waiting. Commands need local
 graphics and Unix sockets, so a sandboxed harness may need its usual
 escalation.
 

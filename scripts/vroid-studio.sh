@@ -4,7 +4,7 @@
 set -euo pipefail
 
 : "${VROID_SESSION_DIR:?Start sessions with vroid-cli launch}"
-for name in VROID_WINE VROID_APP VROID_INTEROP VROID_BEPINEX VROID_BRIDGE; do
+for name in VROID_WINE VROID_APP VROID_INTEROP VROID_BEPINEX VROID_BRIDGE VROID_BEPINEX_CONFIG; do
     : "${!name:?Missing packaged $name; run the vroid-studio wrapper}"
 done
 
@@ -34,7 +34,7 @@ root=$VROID_SESSION_DIR/bepinex
 mkdir -p "$root/config"
 ln -sfn "$VROID_BEPINEX/BepInEx/core" "$root/core"
 ln -sfn "$VROID_BRIDGE" "$root/plugins"
-cp --no-preserve=mode "$VROID_BEPINEX/BepInEx/config/BepInEx.cfg" "$root/config/BepInEx.cfg"
+cp --no-preserve=mode "$VROID_BEPINEX_CONFIG" "$root/config/BepInEx.cfg"
 
 export WINEDLLOVERRIDES="winhttp=n,b;$overrides"
 export VROID_BRIDGE_DIR=Z:$VROID_SESSION_DIR/rpc

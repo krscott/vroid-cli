@@ -13,6 +13,8 @@ from typing import Any
 
 import pytest
 
+from vroid_cli.session import BRIDGE_LOADED, OUTDATED_INTEROP
+
 SOURCE = Path(__file__).resolve().parent.parent
 
 
@@ -340,23 +342,91 @@ def test_launch_reports_why_the_app_exited(tmp_path: Path) -> None:
     assert "[Fatal] no core" in result.stderr
 
 
-def test_launch_timeout_shows_this_launchs_bepinex_log(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "log, shown",
+    [
+        ("[Error  :   BepInEx] plugin failed\n", "plugin failed"),
+        (f"[Warning:InteropManager] {OUTDATED_INTEROP}.\n", "do not match its VRoid"),
+    ],
+)
+def test_launch_timeout_explains_the_bepinex_log(
+    tmp_path: Path, log: str, shown: str
+) -> None:
     # R-SES-12
-    root = tmp_path / "state/test/bepinex"
-    root.mkdir(parents=True)
-    (root / "LogOutput.log").write_text("earlier run\n")
-    old = time.time() - 60
-    os.utime(root / "LogOutput.log", (old, old))
+    target = tmp_path / "state/test/bepinex/LogOutput.log"
     env = fake_framewisp(
         tmp_path,
-        f"Path({str(root / 'preloader.log')!r}).write_text('UnauthorizedAccess\\n')\n"
+        f"target = Path({str(target)!r})\n"
+        "target.parent.mkdir(parents=True, exist_ok=True)\n"
+        f"target.write_text({log!r})\n"
         "time.sleep(4)",
     )
     result = invoke(tmp_path, "launch", timeout=2, env=env)
     assert result.returncode == 1
     assert "not ready after 2s" in result.stderr
-    assert "UnauthorizedAccess" in result.stderr
-    assert "earlier run" not in result.stderr
+    assert shown in result.stderr
+
+
+def test_launch_fails_at_once_when_bepinex_fails_to_start(tmp_path: Path) -> None:
+    # R-SES-12: BepInEx then shows a dialog and VRoid never becomes ready.
+    preloader = tmp_path / "state/test/bepinex/preloader.log"
+    env = fake_framewisp(
+        tmp_path,
+        f"preloader = Path({str(preloader)!r})\n"
+        "preloader.parent.mkdir(parents=True, exist_ok=True)\n"
+        "preloader.write_text('UnauthorizedAccessException\\n')\n"
+        "time.sleep(10)",
+    )
+    started = time.monotonic()
+    result = invoke(tmp_path, "launch", timeout=30, env=env)
+    assert time.monotonic() - started < 8
+    assert result.returncode == 1
+    assert "BepInEx failed to start" in result.stderr
+    assert "UnauthorizedAccessException" in result.stderr
+
+
+def test_resumed_launch_reports_the_running_apps_bepinex_failure(
+    tmp_path: Path,
+) -> None:
+    # R-SES-12: a launch after a timeout still explains the same app's failure.
+    rpc = bridge(tmp_path, heartbeat=0)
+    preloader = rpc.parent / "bepinex/preloader.log"
+    preloader.parent.mkdir()
+    preloader.write_text("UnauthorizedAccessException\n")
+    old = time.time() - 600
+    os.utime(preloader, (old, old))
+    result = invoke(tmp_path, "launch", timeout=30, env=running_desktop(tmp_path))
+    assert result.returncode == 1
+    assert "BepInEx failed to start" in result.stderr
+    assert "UnauthorizedAccessException" in result.stderr
+    assert preloader.exists()
+
+
+def test_launch_ignores_bepinex_logs_from_an_earlier_run(tmp_path: Path) -> None:
+    rpc = bridge(tmp_path, boot="old-boot")
+    root = rpc.parent / "bepinex"
+    root.mkdir()
+    (root / "preloader.log").write_text("earlier failure\n")
+    (root / "LogOutput.log").write_text(
+        f"[Warning:InteropManager] {OUTDATED_INTEROP}.\n"
+        f"[Info   :VroidBridge] {BRIDGE_LOADED.format(boot='new-boot')}\n"
+    )
+    marker = tmp_path / "started"
+    env = fake_framewisp(tmp_path, f"Path({str(marker)!r}).touch()\ntime.sleep(5)")
+
+    def new_instance() -> None:
+        deadline = time.monotonic() + 5
+        while not marker.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        write_status(rpc, boot="new-boot")
+
+    thread = threading.Thread(target=new_instance)
+    thread.start()
+    result = invoke(tmp_path, "launch", timeout=8, env=env)
+    thread.join()
+    assert result.returncode == 0, result.stderr
+    assert not (root / "preloader.log").exists()
+    assert not (root / "LogOutput.log").exists()
 
 
 @pytest.mark.parametrize("logged_boot", ["test-boot", "old-boot"])
@@ -365,13 +435,13 @@ def test_launch_refuses_outdated_interop_from_this_boot_only(
 ) -> None:
     # The CLI recognizes this boot's BepInEx log by the bridge's load message.
     plugin = (SOURCE / "plugin/Plugin.cs").read_text()
-    assert 'LogInfo($"vroid-cli bridge loaded; boot {rpc.Boot}")' in plugin
+    assert BRIDGE_LOADED.format(boot="{rpc.Boot}") in plugin
     rpc = bridge(tmp_path)
     (rpc.parent / "bepinex").mkdir()
     (rpc.parent / "bepinex/LogOutput.log").write_text(
-        "[Warning:InteropManager] Interop assemblies are possibly out of date. "
-        "To disable this message, create file X with the following contents: Y\n"
-        f"[Info   :VroidBridge] vroid-cli bridge loaded; boot {logged_boot}\n"
+        f"[Warning:InteropManager] {OUTDATED_INTEROP}. To disable this message, "
+        "create file X with the following contents: Y\n"
+        f"[Info   :VroidBridge] {BRIDGE_LOADED.format(boot=logged_boot)}\n"
     )
     env = running_desktop(tmp_path)
     beating = heartbeats(rpc, 3)

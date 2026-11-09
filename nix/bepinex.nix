@@ -1,6 +1,6 @@
-# BepInEx with its Doorstop proxy, .NET runtime, Unity base libraries, and
-# loader config. Sessions link to it read-only; the bridge plugin is separate,
-# so plugin changes do not rebuild the interop assemblies.
+# BepInEx with its Doorstop proxy, .NET runtime, and Unity base libraries.
+# Sessions link to it read-only. The bridge plugin and BepInEx.cfg are
+# separate, so changing them reinstalls neither VRoid nor BepInEx.
 {
   lib,
   stdenvNoCC,
@@ -26,7 +26,6 @@ stdenvNoCC.mkDerivation {
     runHook preInstall
     unzip -q ${loader} -d "$out"
     install -Dm444 ${unity} "$out/BepInEx/unity-libs/6000.0.62.zip"
-    install -Dm444 ${../plugin/BepInEx.cfg} "$out/BepInEx/config/BepInEx.cfg"
     runHook postInstall
   '';
   meta = {

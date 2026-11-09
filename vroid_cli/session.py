@@ -135,28 +135,58 @@ def exited(session: Session, *, since_ms: float = 0) -> str:
     record = session.desktop / "app-exit.json"
     if record.exists() and record.stat().st_mtime * 1000 >= since_ms:
         log = session.desktop / "app.log"
-        return f"VRoid exited. Last lines of {log}:\n{tail(log)}" + bepinex_log(
-            session, since_ms=since_ms
+        return (
+            f"VRoid exited. Last lines of {log}:\n{tail(log)}\n{bepinex_log(session)}"
         )
     log = session.directory / "runner.log"
     return f"The private desktop exited. Last lines of {log}:\n{tail(log)}"
 
 
-def bepinex_log(session: Session, *, since_ms: float) -> str:
-    """The end of BepInEx's startup log, if this launch wrote it (R-SES-12)."""
-    # The preloader log exists only when BepInEx failed before its main log.
-    for log in [
-        session.directory / "bepinex/preloader.log",
-        session.directory / "bepinex/LogOutput.log",
-    ]:
-        if log.exists() and log.stat().st_mtime * 1000 >= since_ms:
-            return f"\nLast lines of {log}:\n{tail(log)}"
-    return ""
+def bepinex_logs(session: Session) -> tuple[Path, Path]:
+    """BepInEx's startup failure log and main log. launch removes both before
+    it starts the desktop, so either one belongs to the app that desktop runs."""
+    root = session.directory / "bepinex"
+    return root / "preloader.log", root / "LogOutput.log"
+
+
+def bepinex_failed(session: Session) -> str | None:
+    """Explain a BepInEx startup failure, which leaves VRoid behind a dialog."""
+    preloader, _ = bepinex_logs(session)
+    if not preloader.exists():
+        return None
+    return (
+        "BepInEx failed to start, so VRoid waits behind its error dialog and "
+        "never becomes ready. Run stop. Unless the log shows a problem in the "
+        "session directory, this vroid-cli build is broken; report the log. "
+        f"Last lines of {preloader}:\n{tail(preloader)}"
+    )
+
+
+def bepinex_log(session: Session) -> str:
+    """The end of BepInEx's log of the current app run (R-SES-12)."""
+    if failure := bepinex_failed(session):
+        return failure
+    _, log = bepinex_logs(session)
+    try:
+        text = log.read_text(errors="replace")
+    except OSError:
+        return ""
+    if OUTDATED_INTEROP in text:
+        return mismatch(log)
+    return f"Last lines of {log}:\n{tail(log)}"
+
+
+def mismatch(log: Path) -> str:
+    return (
+        "BepInEx reports that the interop assemblies built with this vroid-cli "
+        f"do not match its VRoid; see {log}. This build is broken: stop the "
+        "session without editing and report the log"
+    )
 
 
 def outdated_interop(session: Session, *, boot: str) -> str | None:
-    """Explain a mismatch BepInEx logged between VRoid and the prebuilt interop."""
-    log = session.directory / "bepinex/LogOutput.log"
+    """Explain a mismatch BepInEx logged in the ready bridge's boot."""
+    _, log = bepinex_logs(session)
     try:
         text = log.read_text(errors="replace")
     except OSError:
@@ -165,11 +195,7 @@ def outdated_interop(session: Session, *, boot: str) -> str | None:
     # when it loads (plugin/Plugin.cs), so a log naming the boot is this run's.
     if BRIDGE_LOADED.format(boot=boot) not in text or OUTDATED_INTEROP not in text:
         return None
-    return (
-        "BepInEx reports that the interop assemblies built with this vroid-cli "
-        f"do not match its VRoid; see {log}. This build is broken: stop the "
-        "session without editing and report the log"
-    )
+    return mismatch(log)
 
 
 def graphics_environment(
@@ -247,6 +273,8 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
                 "again; if this persists, run stop"
             )
         if desktop is Desktop.STOPPED:
+            for stale in bepinex_logs(session):
+                stale.unlink(missing_ok=True)
             with (session.directory / "runner.log").open("ab") as log:
                 runner = subprocess.Popen(
                     [
@@ -276,11 +304,13 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
             if status and status.fresh(since_ms=started_ms) and status.main:
                 if not status.compatible:
                     raise RuntimeError(incompatible())
-                if mismatch := outdated_interop(session, boot=status.boot):
-                    raise RuntimeError(mismatch)
+                if outdated := outdated_interop(session, boot=status.boot):
+                    raise RuntimeError(outdated)
                 if not terms_accepted(session):
                     raise RuntimeError(terms_pending(session))
                 return summary(session)
+            if failure := bepinex_failed(session):
+                raise RuntimeError(failure)
             if runner is not None and runner.poll() is not None:
                 raise RuntimeError(exited(session, since_ms=started_ms))
             if runner is None and time.monotonic() >= next_check:
@@ -292,8 +322,8 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
                     f"VRoid is not ready after {timeout_s:.0f}s and keeps starting. "
                     "Run launch again to keep waiting; inspect "
                     f"{session.directory / 'player.log'} and "
-                    f"{session.directory / 'bepinex/LogOutput.log'}"
-                    + bepinex_log(session, since_ms=started_ms)
+                    f"{session.directory / 'bepinex/LogOutput.log'}\n"
+                    + bepinex_log(session)
                 )
             time.sleep(0.2)
 
