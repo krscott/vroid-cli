@@ -20,7 +20,6 @@ SESSION_NAME = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}")
 DISPLAY = ("2560", "1440")
 # Mesa render devices; automatic NVIDIA selection stalled the compositor.
 PREFERRED_GPU_VENDORS = {"0x1002", "0x8086"}
-TERMS_ACCEPTED = "<AllAgreementsAreAccepted>Yes</AllAgreementsAreAccepted>"
 
 
 class Desktop(Enum):
@@ -153,13 +152,10 @@ def graphics_environment(
 
 
 def terms_accepted(session: Session) -> bool:
-    """Whether VRoid's preferences record its accepted first-run terms (R-SES-9)."""
+    """Whether VRoid has preferences, which it writes only after acceptance (R-SES-9)."""
     users = session.directory / "wine/drive_c/users"
     return any(
-        TERMS_ACCEPTED in path.read_text(encoding="utf-8-sig", errors="replace")
-        for path in users.glob(
-            "*/AppData/LocalLow/pixiv/VRoid Studio/preferences/editoroption.xml"
-        )
+        users.glob("*/AppData/LocalLow/pixiv/VRoid Studio/preferences/editoroption.xml")
     )
 
 

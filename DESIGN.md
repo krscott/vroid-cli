@@ -76,10 +76,11 @@ earlier run, and the error shows the end of `runner.log`.
 It then waits for a bridge heartbeat that is fresh, was written after the
 launch began, and has found the main view model (R-SES-2). The bridge also
 finds it on VRoid's welcome screen, so an app that an earlier version started
-and left at the first-run dialogs looks ready. `launch` checks VRoid's
-preferences (below) for accepted terms and otherwise fails with instructions to
-stop and launch, which accepts them (R-SES-9). An older heartbeat
-can look fresh for a few seconds after the previous app exits. The wait fails
+and left at the first-run dialogs looks ready. When VRoid's preferences file
+(below) does not exist, `launch` fails with instructions to stop and launch,
+which accepts the terms (R-SES-9); `status` and request commands do not check.
+An older heartbeat can look fresh for a few seconds after the previous app
+exits. The wait fails
 early if the runner exits. On timeout the app keeps starting; running `launch`
 again resumes the wait. A bridge reporting another protocol version fails with
 instructions to stop and relaunch; bridges from other builds with the same

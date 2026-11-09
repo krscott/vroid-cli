@@ -79,13 +79,8 @@ def bridge(tmp_path: Path, *, terms: bool = True, **fields: Any) -> Path:
     (rpc / "results").mkdir(parents=True)
     write_status(rpc, **fields)
     if terms:
-        preferences = rpc.parent / PREFERENCES
-        preferences.mkdir(parents=True)
-        (preferences / "editoroption.xml").write_text(
-            "\ufeff<EditorOption><Preference><AllAgreementsAreAccepted>Yes"
-            "</AllAgreementsAreAccepted></Preference></EditorOption>",
-            encoding="utf-8",
-        )
+        (rpc.parent / PREFERENCES).mkdir(parents=True)
+        (rpc.parent / PREFERENCES / "editoroption.xml").touch()
     return rpc
 
 

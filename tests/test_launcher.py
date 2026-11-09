@@ -153,7 +153,7 @@ def saved_preferences(session: Path, accepted: str) -> tuple[Path, bytes]:
     preferences = session / PREFERENCES
     preferences.parent.mkdir(parents=True)
     content = (
-        '﻿<?xml version="1.0" encoding="utf-8"?>\r\n<EditorOption>\r\n'
+        '\ufeff<?xml version="1.0" encoding="utf-8"?>\r\n<EditorOption>\r\n'
         "  <Preference>\r\n    <LanguageMode>Ja</LanguageMode>\r\n"
         f"    <AllAgreementsAreAccepted>{accepted}</AllAgreementsAreAccepted>\r\n"
         "    <UpdatedPrivacyPolicyAreAccepted>Yes</UpdatedPrivacyPolicyAreAccepted>\r\n"

@@ -51,7 +51,7 @@ shopt -s nullglob
 profiles=("$WINEPREFIX"/drive_c/users/*/AppData)
 shopt -u nullglob
 shopt -s failglob
-((${#profiles[@]} == 1)) || fatal "Expected one Wine user profile in $WINEPREFIX/drive_c/users; found ${#profiles[@]}"
+((${#profiles[@]} == 1)) || fatal "Expected one Wine user profile in $WINEPREFIX/drive_c/users; found ${#profiles[@]}. Inspect that directory, then delete $VROID_SESSION_DIR or use another session name."
 preferences="${profiles[0]}/LocalLow/pixiv/VRoid Studio/preferences/editoroption.xml"
 if [[ ! -e $preferences ]]; then
     mkdir -p "${preferences%/*}"
