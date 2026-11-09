@@ -47,6 +47,7 @@
           black
           isort
           mypy
+          pydantic
           pytest
         ]
       );

@@ -275,7 +275,8 @@ def stop(session: Session, *, force: bool) -> dict[str, Any]:
             if not force and (pending or (status is not None and status.modified)):
                 raise RuntimeError(
                     "The app has unsaved changes or a pending request. "
-                    "Save or wait first, or pass --force to discard them"
+                    'Save or wait first, or send {"method": "stop", "force": true} '
+                    "to discard them"
                 )
             result = subprocess.run(
                 ["framewisp", str(session.desktop), "stop"],

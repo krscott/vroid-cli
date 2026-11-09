@@ -36,7 +36,7 @@ RpcDirectory Rpc(string directory, string boot, bool modified = false) =>
 void Send(string directory, string id, string boot) =>
     File.WriteAllText(Path.Combine(directory, "request.json"), JsonSerializer.Serialize(new
     {
-        id, boot, method = "set", timeout_ms = 1000, section = "Body",
+        id, boot, method = "categories", timeout_ms = 1000, section = "Body",
     }));
 
 JsonElement Result(string directory, string id) =>

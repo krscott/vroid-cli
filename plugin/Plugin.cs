@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using System.Text.Json;
 using BepInEx;
 using BepInEx.Logging;
 using BepInEx.Unity.IL2CPP;
@@ -22,6 +23,8 @@ public sealed class Plugin : BasePlugin
     private static Request? current;
     private static IEnumerator<bool>? operation;
     private static object? result;
+    // Values the current operation changed, reported if it fails.
+    private static readonly List<string> Changed = new();
     private static readonly Stopwatch Elapsed = new();
     private static readonly Stopwatch SinceHeartbeat = new();
 
@@ -95,6 +98,7 @@ public sealed class Plugin : BasePlugin
             {
                 Elapsed.Restart();
                 result = null;
+                Changed.Clear();
                 operation = Execute(current).GetEnumerator();
             }
             if (operation != null)
@@ -107,7 +111,12 @@ public sealed class Plugin : BasePlugin
         }
         catch (Exception error)
         {
-            if (current != null) Complete(false, (error.InnerException ?? error).Message);
+            if (current != null)
+            {
+                var message = (error.InnerException ?? error).Message;
+                if (Changed.Count > 0) message += $" Changed before the failure: {string.Join(", ", Changed)}";
+                Complete(false, message);
+            }
             else Diagnostics.LogError(error);
         }
     }
@@ -170,6 +179,176 @@ public sealed class Plugin : BasePlugin
         };
     }
 
+    private static readonly string[] Sections = { "Face", "Body" };
+
+    // A label that occurs more than once in a category takes its values as an array, in app order.
+    private sealed record Wanted(string Label, float[] Values, bool Repeated);
+    private sealed record CategoryEdit(string Name, Wanted[] Values);
+    private sealed record Category(string Name, object[] Parameters);
+
+    private static string Name(object category) => (string?)Reflect.Get(category, "Name") ?? "";
+    private static string Label(object parameter) => (string?)Reflect.Get(parameter, "Label") ?? "";
+    private static string Member(object parameter) => Reflect.Get(parameter, "CombinedValue") == null ? "Value" : "CombinedValue";
+    private static float Read(object parameter) => Convert.ToSingle(Reflect.Get(parameter, Member(parameter))
+        ?? throw new InvalidOperationException($"Parameter {Label(parameter)} has no value"));
+
+    private static object Selector(string section) => Selectors.Values.FirstOrDefault(
+        value => value.GetType().FullName!.Contains("." + section + "Editor.")) ?? throw new InvalidOperationException("No selector");
+
+    // Switches to a section's editor and returns its categories once its selector is captured.
+    private static IEnumerable<object[]?> Enter(string section)
+    {
+        if (!Sections.Contains(section)) throw new ArgumentException("Only Face and Body are supported");
+        Reflect.Call(Root, "set_EditMode", Enum.Parse(Reflect.Type("VRoid.Studio.EditRootScreen.EditMode"), section + "Editor"));
+        while (!Selectors.Values.Any(value => value.GetType().FullName!.Contains("." + section + "Editor.")))
+            yield return null;
+        yield return Reflect.Items(Reflect.Get(Reflect.Get(Selector(section), "Categories"), "Children")).ToArray();
+    }
+
+    // Selects each named category, or every category in app order, and yields
+    // it while it is selected; null means wait a frame.
+    private static IEnumerable<Category?> Visit(string section, IEnumerable<string>? names)
+    {
+        object[]? categories = null;
+        foreach (var step in Enter(section))
+        {
+            if (step == null) yield return null;
+            else categories = step;
+        }
+        var selected = names == null ? categories! : names.Select(name => Single(categories!, value => Name(value) == name, "category", name)).ToArray();
+        foreach (var category in selected)
+        {
+            Reflect.Call(Selector(section), "set_SelectedCategory", category);
+            yield return null;
+            while (updating) yield return null;
+            var node = Reflect.Get(category, "ParameterCategoryViewModel") ?? category;
+            yield return new Category(Name(category), Reflect.Items(Reflect.Get(node, "Parameters")).ToArray());
+        }
+    }
+
+    private static CategoryEdit[] Edits(Request request, string section) =>
+        request.Body.TryGetProperty(section, out var categories)
+            ? categories.EnumerateObject().Select(category => new CategoryEdit(category.Name,
+                category.Value.EnumerateObject().Select(parameter => parameter.Value.ValueKind == JsonValueKind.Array
+                    ? new Wanted(parameter.Name, parameter.Value.EnumerateArray().Select(value => (float)value.GetDouble()).ToArray(), true)
+                    : new Wanted(parameter.Name, new[] { (float)parameter.Value.GetDouble() }, false)).ToArray())).ToArray()
+            : Array.Empty<CategoryEdit>();
+
+    // Resolves each wanted value to its parameter and checks its bounds,
+    // adding a message to `errors` for each value it cannot set (R-EDIT-3).
+    private static List<(object Parameter, float Target, string Path)> Match(string section, Category category, CategoryEdit edit, List<string> errors)
+    {
+        var matched = new List<(object, float, string)>();
+        foreach (var wanted in edit.Values)
+        {
+            var path = $"{section}/{category.Name}/{wanted.Label}";
+            var found = category.Parameters.Where(parameter => Label(parameter) == wanted.Label).ToArray();
+            if (found.Length == 0)
+            {
+                errors.Add($"{path}: unknown parameter; list them first");
+                continue;
+            }
+            if (found.Length != wanted.Values.Length || (found.Length == 1 && wanted.Repeated))
+            {
+                errors.Add(found.Length == 1
+                    ? $"{path}: give one number"
+                    : $"{path}: {found.Length} parameters have this label; give an array of {found.Length} numbers in app order");
+                continue;
+            }
+            foreach (var (parameter, index) in found.Select((parameter, index) => (parameter, index)))
+            {
+                var target = wanted.Values[index];
+                var min = Convert.ToSingle(Reflect.Get(parameter, "MinValue"));
+                var max = Convert.ToSingle(Reflect.Get(parameter, "MaxValue"));
+                var where = wanted.Repeated ? $"{path}[{index}]" : path;
+                if (!float.IsFinite(target)) errors.Add($"{where}: value is not finite");
+                else if (target < min || target > max) errors.Add($"{where}: {target} is outside {min}..{max}");
+                else
+                    matched.Add((parameter, target, where));
+            }
+        }
+        return matched;
+    }
+
+    // Values grouped by label in app order; repeated labels become arrays.
+    private static Dictionary<string, object> Values(IEnumerable<object> parameters) =>
+        parameters.GroupBy(Label).ToDictionary(group => group.Key,
+            group => group.Count() == 1 ? (object)Read(group.First()) : group.Select(Read).ToArray());
+
+    private static IEnumerable<bool> Apply(Request request)
+    {
+        var edits = Sections.ToDictionary(section => section, section => Edits(request, section));
+        // Check every value before changing any.
+        var errors = new List<string>();
+        var undo = new Dictionary<string, object> { ["method"] = "apply" };
+        foreach (var section in Sections.Where(section => edits[section].Length > 0))
+        {
+            var previous = new Dictionary<string, object>();
+            foreach (var category in Visit(section, edits[section].Select(edit => edit.Name)))
+            {
+                if (category == null)
+                {
+                    yield return true;
+                    continue;
+                }
+                var edit = edits[section].Single(edit => edit.Name == category.Name);
+                var matched = Match(section, category, edit, errors).Select(item => item.Parameter).ToHashSet();
+                previous[category.Name] = Values(category.Parameters.Where(matched.Contains));
+            }
+            undo[section] = previous;
+        }
+        if (errors.Count > 0) throw new ArgumentException(string.Join("; ", errors) + ". Nothing changed");
+        var changed = 0;
+        foreach (var section in Sections.Where(section => edits[section].Length > 0))
+        {
+            foreach (var category in Visit(section, edits[section].Select(edit => edit.Name)))
+            {
+                if (category == null)
+                {
+                    yield return true;
+                    continue;
+                }
+                var edit = edits[section].Single(edit => edit.Name == category.Name);
+                foreach (var (parameter, target, path) in Match(section, category, edit, errors))
+                {
+                    if (Read(parameter) == target) continue;
+                    var before = rebuilt;
+                    // Set first so an interrupted edit still counts as unsaved.
+                    modified = true;
+                    Reflect.Call(parameter, "set_" + Member(parameter), target);
+                    Changed.Add(path);
+                    changed++;
+                    while (rebuilt == before || updating) yield return true;
+                }
+            }
+        }
+        if (errors.Count > 0) throw new InvalidOperationException(string.Join("; ", errors));
+        result = new { changed, undo };
+    }
+
+    private static IEnumerable<bool> Dump()
+    {
+        var dump = new Dictionary<string, object> { ["method"] = "apply" };
+        foreach (var section in Sections)
+        {
+            var categories = new Dictionary<string, object>();
+            foreach (var category in Visit(section, null))
+            {
+                if (category == null)
+                {
+                    yield return true;
+                    continue;
+                }
+                if (category.Parameters.Length == 0) continue;
+                if (categories.ContainsKey(category.Name))
+                    throw new InvalidOperationException($"Two {section} categories are named {category.Name}; a template cannot hold both");
+                categories[category.Name] = Values(category.Parameters);
+            }
+            dump[section] = categories;
+        }
+        result = dump;
+    }
+
     private static IEnumerable<bool> Execute(Request request)
     {
         while (updating) yield return true;
@@ -188,62 +367,35 @@ public sealed class Plugin : BasePlugin
                 break;
             }
             case "categories":
-            case "parameters":
-            case "set":
             {
-                var mode = request.Text("section") switch
+                foreach (var step in Enter(request.Text("section")))
                 {
-                    "Face" => "FaceEditor",
-                    "Body" => "BodyEditor",
-                    _ => throw new ArgumentException("Only Face and Body are supported"),
-                };
-                Reflect.Call(Root, "set_EditMode", Enum.Parse(Reflect.Type("VRoid.Studio.EditRootScreen.EditMode"), mode));
-                object? selector;
-                while ((selector = Selectors.Values.FirstOrDefault(value => value.GetType().FullName!.Contains("." + mode + "."))) == null)
-                    yield return true;
-                var categories = Reflect.Items(Reflect.Get(Reflect.Get(selector, "Categories"), "Children")).ToArray();
-                if (request.Method == "categories")
-                {
-                    result = categories.Select(value => Reflect.Get(value, "Name")).ToArray();
-                    break;
+                    if (step == null) yield return true;
+                    else result = step.Select(Name).ToArray();
                 }
-                var name = request.Text("category");
-                var category = Single(categories, value => (string?)Reflect.Get(value, "Name") == name, "category", name);
-                Reflect.Call(selector, "set_SelectedCategory", category);
-                yield return true;
-                while (updating) yield return true;
-                var node = Reflect.Get(category, "ParameterCategoryViewModel") ?? category;
-                var parameters = Reflect.Items(Reflect.Get(node, "Parameters")).ToArray();
-                if (request.Method == "parameters")
-                {
-                    result = parameters.Select(value => new
-                    {
-                        label = Reflect.Get(value, "Label"),
-                        value = Reflect.Get(value, "CombinedValue") ?? Reflect.Get(value, "Value"),
-                        min = Reflect.Get(value, "MinValue"),
-                        max = Reflect.Get(value, "MaxValue"),
-                    }).ToArray();
-                    break;
-                }
-                var label = request.Text("parameter");
-                var parameter = Single(parameters, value => (string?)Reflect.Get(value, "Label") == label, "parameter", label);
-                var target = (float)request.Number("value");
-                var min = Convert.ToSingle(Reflect.Get(parameter, "MinValue"));
-                var max = Convert.ToSingle(Reflect.Get(parameter, "MaxValue"));
-                if (!float.IsFinite(target) || target < min || target > max)
-                    throw new ArgumentException($"Value must be finite and within {min}..{max}");
-                var member = Reflect.Get(parameter, "CombinedValue") == null ? "Value" : "CombinedValue";
-                var previous = Convert.ToSingle(Reflect.Get(parameter, member));
-                if (previous != target)
-                {
-                    var before = rebuilt;
-                    modified = true;
-                    Reflect.Call(parameter, "set_" + member, target);
-                    while (rebuilt == before || updating) yield return true;
-                }
-                result = new { parameter = label, previous, value = Reflect.Get(parameter, member) };
                 break;
             }
+            case "parameters":
+            {
+                foreach (var category in Visit(request.Text("section"), new[] { request.Text("category") }))
+                {
+                    if (category == null) yield return true;
+                    else result = category.Parameters.Select(value => new
+                    {
+                        label = Label(value),
+                        value = Read(value),
+                        min = Convert.ToSingle(Reflect.Get(value, "MinValue")),
+                        max = Convert.ToSingle(Reflect.Get(value, "MaxValue")),
+                    }).ToArray();
+                }
+                break;
+            }
+            case "dump":
+                foreach (var step in Dump()) yield return step;
+                break;
+            case "apply":
+                foreach (var step in Apply(request)) yield return step;
+                break;
             case "save":
             {
                 var path = request.Text("path");

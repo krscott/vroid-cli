@@ -18,13 +18,13 @@ fresh check of every internal name below.
 
 | Path | Role |
 | --- | --- |
-| `vroid_cli/` | Python CLI: argument checks, sessions, lifecycle, requests |
+| `vroid_cli/` | Python CLI: request and result models (`schema.py`), sessions, lifecycle, bridge requests |
 | `plugin/` | C# BepInEx IL2CPP plugin ("bridge") running inside VRoid |
 | `scripts/vroid-studio.sh` | Runs on the private display: installs VRoid and the bridge, then starts VRoid |
 | `nix/vroid-studio.nix` | The installer, fetched by hash, and the launcher wrapper with Wine |
 | `nix/bridge.nix` | BepInEx, Unity base libraries, plugin, and loader config as one bundle |
 | `default.nix` | The `vroid-cli` package; its wrapper sets `VROID_BRIDGE_BUNDLE`, `VROID_CLI_SKILL`, and `PATH` |
-| `.agents/skills/vroid-cli/` | Shared agent skill, also printed by `vroid-cli --agent-skill` |
+| `.agents/skills/vroid-cli/` | Shared agent skill, printed with the JSON Schema by `vroid-cli --agent-skill` |
 
 The flake permits only the unfree `vroid-studio` and `vroid-bridge` packages.
 Framewisp's headless compositor hardcodes the Pixman software renderer; the
@@ -91,7 +91,7 @@ The compositor uses the first AMD or Intel render node unless
 testing, and NVIDIA-only hosts are unvalidated.
 
 `stop` refuses while the last bridge status reports `modified` or
-`request.json` exists, unless `--force` (R-SES-4). It then runs `framewisp
+`request.json` exists, unless `force` is true (R-SES-4). It then runs `framewisp
 DESKTOP stop`, which waits for the app and compositor to exit. For an exited
 app it waits for the runner to finish. A stopped desktop is already stopped.
 
@@ -128,9 +128,9 @@ temporary file renamed over its target, so readers never see partial files.
   seconds. `protocol` is `PROTOCOL` in `vroid_cli/rpc.py` and
   `RpcDirectory.Protocol` in `plugin/Bridge.cs`; bump both for incompatible
   changes.
-- `request.json`: at most one pending request, written by the CLI, with `id`
-  (32 lowercase hex digits), `boot`, `method`, `timeout_ms`, and arguments.
-  Paths are Wine paths (`Z:/...`).
+- `request.json`: at most one pending request, written by the CLI: the
+  validated request's fields plus `id` (32 lowercase hex digits), `boot`, and
+  `timeout_ms`. Paths are Wine paths (`Z:/...`).
 - `results/ID.json`: `{"ok", "result", "error"}`, written by the bridge before
   it removes the request. Results are never deleted (R-RPC-6).
 
@@ -196,15 +196,32 @@ Operations:
 | `open` | `MainViewModel.ImportFileAndMoveToEditRoot(path, false, false)` | Edit root captured and one rebuild finished |
 | `categories` | Edit root `set_EditMode(FaceEditor or BodyEditor)`, selector `Categories.Children[].Name` | Selector captured |
 | `parameters` | Selector `set_SelectedCategory`, then the category's `Parameters[]` `Label`, `CombinedValue` or `Value`, `MinValue`, `MaxValue` | No rebuild running |
-| `set` | Parameter `set_CombinedValue` or `set_Value` | One rebuild finished (R-EDIT-6) |
+| `dump` | `parameters` for every Face and Body category in app order | No rebuild running |
+| `apply` | `parameters` for each named category, then parameter `set_CombinedValue` or `set_Value` per changed value | One rebuild finished per changed value (R-EDIT-6) |
 | `save` | Edit root `_mainActionHandler.SaveSync(path, true)` | Call returned true and the file is nonempty |
 
 `open` refuses once a project is open; changing projects needs a restart.
-`set` checks the value against the live bounds before assigning it (R-EDIT-3)
-and sets `modified` first, so an interrupted edit still counts as unsaved.
-Successful `open` and `save` clear `modified`. Duplicate category or parameter
-labels exist (Face Sets has two "Nose Size" entries); selecting one by an
-ambiguous name fails instead of guessing.
+Successful `open` and `save` clear `modified`.
+
+A template is an `apply` request: `Face` and `Body` map category names to
+parameter labels to values. Labels repeat within some categories (Face Sets
+and Nose each have two "Nose Size" parameters), so a repeated label maps to an
+array of its values in app order. `dump` emits every category that has
+parameters, with float32 values in their shortest round-trip form, so applying
+the output reproduces it exactly (R-EDIT-7). It fails if two categories in a
+section share a name; none do in 2.16.0. Selecting a category by an ambiguous
+name also fails instead of guessing.
+
+`apply` runs in two passes. The first visits every named category and
+resolves every value to its parameters, checking the label's count and the
+live bounds, and collects every refusal. Any refusal fails the request before
+a value changes (R-EDIT-3). The second pass revisits the categories and sets
+each value that differs, waiting for its rebuild. It sets `modified` before
+the first change, so an interrupted edit still counts as unsaved. The result
+counts the changed values and holds an `undo` template of the previous values.
+If the second pass fails, the error lists the values already changed. In
+2.16.0 a full template applies in about 2 seconds, well within the request
+timeout.
 
 IL2CPP reflection must convert native objects to their most derived proxy type.
 `Reflect.Concrete` maps `System.*` class names to `Il2CppSystem.*` proxies and
@@ -214,10 +231,22 @@ enumerator.
 
 ## Command line
 
-The CLI validates arguments before touching session state: section names,
-finite `set` values (R-EDIT-2), `.vroid` suffixes, an existing `open` source,
-and a new `save` destination in an existing directory (R-EDIT-4). The bridge
-rechecks the destination before saving.
+`vroid-cli SESSION REQUEST` takes the request as JSON text, `@PATH`, or `-` for
+stdin. Every method is a request, so saved requests work in any session.
+`vroid_cli/schema.py` defines each request as a pydantic model with
+`strict=True`, `extra="forbid"`, and `allow_inf_nan=False`, discriminated on
+`method`. pydantic's defaults would accept `NaN`, coerce `"0.5"`, and drop
+misspelled fields (R-CLI-3). Its JSON parser keeps the last of repeated keys,
+so the CLI rejects repeated keys first. Model validators check finite values
+(R-EDIT-2), `.vroid` suffixes, an existing `open` source, and a new `save`
+destination in an existing directory (R-EDIT-4), all before touching session
+state. The bridge rechecks the destination before saving. Validation errors
+print one `FIELD: REASON` line each.
+
+Every result, including the bridge's, is validated against its result model
+before printing, so `--agent-skill` (or `--help`), which prints the skill and
+the generated request and result JSON Schema, describes the actual output. A
+result that fails validation is an error that says the method ran.
 
 A successful command prints one JSON value (R-CLI-1). A failure prints
 `vroid-cli: REASON` on stderr and nothing on stdout, exiting 1, or 2 for usage
@@ -232,6 +261,6 @@ errors (R-CLI-2).
 - `tests/protocol`: the bridge's file protocol under the .NET SDK.
 
 `scripts/gui-smoke.sh`, run by `just gui-smoke`, drives a real session through
-open, edit, refusal, save, restart, and reopen, and checks the Framewisp input
-log. It needs graphics access and a session whose first-run dialogs are
+open, dump, edit, refusal, save, restart, reopen, and reapplying the first
+dump, and checks the Framewisp input log. It needs graphics access and a session whose first-run dialogs are
 complete.

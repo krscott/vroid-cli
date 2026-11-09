@@ -15,40 +15,59 @@ inside the project's `nix develop` shell. Keep that build for the whole
 session. It supports VRoid Studio 2.16.0
 on x86_64 Linux.
 
+Every command is `vroid-cli SESSION REQUEST`. `REQUEST` is a JSON object,
+`@path` to read one from a file, or `-` to read stdin:
+
 ```sh
-vroid-cli --session alice launch
-vroid-cli --session alice open ./alice.vroid
-vroid-cli --session alice categories Body
-vroid-cli --session alice parameters Body "Whole Body"
-vroid-cli --session alice set Body "Whole Body" "Head Size" 0.125
-vroid-cli --session alice save ./alice-v2.vroid
-vroid-cli --session alice stop
+vroid-cli alice '{"method": "launch"}'
+vroid-cli alice '{"method": "open", "path": "./alice.vroid"}'
+vroid-cli alice '{"method": "categories", "section": "Body"}'
+vroid-cli alice '{"method": "parameters", "section": "Body", "category": "Whole Body"}'
+vroid-cli alice '{"method": "apply", "Body": {"Whole Body": {"Head Size": 0.125}}}'
+vroid-cli alice '{"method": "dump"}' > alice.json
+vroid-cli alice @alice.json
+vroid-cli alice '{"method": "save", "path": "./alice-v2.vroid"}'
+vroid-cli alice '{"method": "stop"}'
 ```
+
+The JSON Schema at the end of `vroid-cli --agent-skill` lists every request
+field and result.
 
 ## Rules
 
-- Give each agent its own `--session NAME` and keep it on every command. A
-  second command on a busy session fails at once; wait and run it again.
+- Give each agent its own session name and use it on every command. A second
+  command on a busy session fails at once; wait and run it again.
 - A successful command prints one JSON value on stdout. A failed command exits
-  nonzero with the reason on stderr.
+  nonzero with the reason on stderr; exit 2 means the request was invalid and
+  nothing ran.
+- Requests are strict: misspelled fields, strings for numbers, and repeated
+  keys are refused.
 - Use category and parameter names exactly as `categories` and `parameters`
-  return them. `set` accepts finite values within the parameter's `min..max`.
-  Negatives like `-0.35` work; put `--` before exponent forms like `-1e-3`.
+  return them. A label that appears more than once in a category, like "Nose
+  Size" in Face Sets, takes an array with one value per occurrence, in
+  `parameters` order.
+- `apply` accepts finite values within each parameter's `min..max`. It checks
+  every value before changing any; one bad value refuses the whole request.
+  Its result's `undo` is an `apply` request that restores the previous values.
+- `dump` returns an `apply` request with every Face and Body value. Save it as
+  a template, edit or diff it with JSON tools, and apply it in any session.
 - `save` needs a new `.vroid` path in an existing directory. It never
   overwrites. Choose a new versioned filename.
 - Opening another project requires `save`, `stop`, and `launch` first.
 - `stop` refuses while there are unsaved changes or a pending request. Save
-  or wait first; use `stop --force` only when discarding them is intended.
-- Never repeat a timed-out `open`, `set`, or `save` automatically. Inspect
+  or wait first; send `{"method": "stop", "force": true}` only when discarding
+  them is intended.
+- Never repeat a timed-out `open`, `apply`, or `save` automatically. Inspect
   `status` and the result file named in the error first.
 
 ## Timing and sandboxes
 
 The first `launch` of a session installs VRoid and generates app bindings, which
 can take 10 minutes or more. Give `launch` a tool timeout of at least 15
-minutes, or run it in the background. If it times out, the app keeps starting:
-run `launch` again to keep waiting. Commands need local graphics and Unix
-sockets, so a sandboxed harness may need its usual escalation.
+minutes, or run it in the background, and pass `"timeout": 1200`; the default
+is 600 seconds. If it times out, the app keeps starting: run `launch` again to
+keep waiting. Commands need local graphics and Unix sockets, so a sandboxed
+harness may need its usual escalation.
 
 ## First run
 

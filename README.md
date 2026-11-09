@@ -7,7 +7,8 @@ display and changes characters through VRoid's internal methods. It uses no
 mouse or keyboard input, OCR, MCP server, or account login.
 
 This first version opens existing `.vroid` projects, reads and changes Face and
-Body numeric parameters, and saves projects. Character creation, presets,
+Body numeric parameters, dumps and applies them as JSON templates, and saves
+projects. Character creation, presets,
 colors, hair and texture tools, and VRM export are not supported yet.
 
 ## Requirements
@@ -23,19 +24,37 @@ colors, hair and texture tools, and VRM export are not supported yet.
 
 ## Usage
 
+Every command is `vroid-cli SESSION REQUEST`, where `REQUEST` is a JSON object,
+`@path` to read one from a file, or `-` to read stdin:
+
 ```sh
 nix develop   # or: nix shell github:krscott/vroid-cli
-vroid-cli --session demo launch
-vroid-cli --session demo open ./source.vroid
-vroid-cli --session demo categories Body
-vroid-cli --session demo parameters Body "Whole Body"
-vroid-cli --session demo set Body "Whole Body" "Head Size" 0.125
-vroid-cli --session demo save ./edited.vroid
-vroid-cli --session demo stop
+vroid-cli demo '{"method": "launch"}'
+vroid-cli demo '{"method": "open", "path": "./source.vroid"}'
+vroid-cli demo '{"method": "categories", "section": "Body"}'
+vroid-cli demo '{"method": "parameters", "section": "Body", "category": "Whole Body"}'
+vroid-cli demo '{"method": "apply", "Body": {"Whole Body": {"Head Size": 0.125}}}'
+vroid-cli demo '{"method": "save", "path": "./edited.vroid"}'
+vroid-cli demo '{"method": "stop"}'
 ```
 
 A successful command prints one JSON value on stdout. A failure exits nonzero
-with its reason on stderr. `vroid-cli --help` lists the commands.
+with its reason on stderr. `vroid-cli --help` prints the agent guide and the
+JSON Schema of every request and result.
+
+### Templates
+
+`dump` prints every Face and Body value as an `apply` request, so a character's
+shape can be saved, diffed, edited, and applied to another project:
+
+```sh
+vroid-cli demo '{"method": "dump"}' > template.json
+vroid-cli other @template.json
+```
+
+`apply` checks every value before changing any, and its result includes an
+`undo` request that restores the previous values. A label that repeats within a
+category, such as "Nose Size" in Face Sets, maps to an array of its values.
 
 Use one session name per agent or task. Session state lives in `.vroid/NAME/`
 at the Git worktree root (the current directory outside Git), or under
@@ -60,14 +79,14 @@ Read and accept them on the private desktop with Framewisp, then run `launch`
 again (if it still refuses, `stop` and `launch`):
 
 ```sh
-desktop=$(vroid-cli --session demo status | jq -r .desktop)
+desktop=$(vroid-cli demo '{"method": "status"}' | jq -r .desktop)
 framewisp "$desktop" screenshot /tmp/demo.png
 framewisp "$desktop" click X Y
 ```
 
 ## Recovery
 
-`vroid-cli --session NAME status` reports whether the app runs, whether it is
+`vroid-cli NAME '{"method": "status"}'` reports whether the app runs, whether it is
 ready, any pending request, and unsaved changes (`bridge.modified`). Logs are in
 the session directory: `runner.log`, `installer.log`, `player.log`,
 `desktop/app.log`, and `wine/drive_c/VRoidStudio/BepInEx/LogOutput.log`.
@@ -76,7 +95,7 @@ the session directory: `runner.log`, `installer.log`, `player.log`,
   commands until its result appears in `rpc/results/ID.json`. Restarting the
   session marks it as having an unknown outcome; inspect the project first.
 - **Unsaved changes:** `stop` refuses while there are unsaved changes or a
-  pending request. Save to a new path, or use `stop --force` to discard them.
+  pending request. Save to a new path, or send `{"method": "stop", "force": true}` to discard them.
 - **Another project:** save, `stop`, and `launch` before opening it.
 - **Incomplete installation:** it is not repeated. Read `installer.log`, then
   delete the session directory or use another session name.
