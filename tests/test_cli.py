@@ -183,7 +183,8 @@ def test_nonfinite_values_are_rejected_without_state(tmp_path: Path) -> None:
             "Face/B/x is the same parameter as Face/A/x; set it once",
         ),
         ('{"method": "status"', "Invalid JSON"),
-        ('{"method": "apply", "Face": ' + "[" * 100_000, "nested too deeply"),
+        # Python's or pydantic's recursion limit refuses it, depending on the host.
+        ('{"method": "apply", "Face": ' + "[" * 100_000, "invalid request:"),
         ("status", "REQUEST must be a JSON object, @PATH, or -"),
     ],
 )
@@ -195,6 +196,7 @@ def test_invalid_requests_are_rejected_without_state(
     assert result.returncode == 2
     assert result.stdout == ""
     assert reason in result.stderr
+    assert "Traceback" not in result.stderr
     assert "errors.pydantic.dev" not in result.stderr
     assert not (tmp_path / "state").exists()
 
