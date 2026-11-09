@@ -415,18 +415,21 @@ public sealed partial class Plugin
             var path = $"Accessories/{(worn[j].Item == ItemIds.Custom ? worn[j].Name : worn[j].Item)}";
             Changed.Add(path);
             work.Changed++;
+            var removed = false;
             try
             {
                 foreach (var step in RemoveAccessory(j)) yield return step;
+                removed = true;
             }
             finally
             {
-                // Undo cannot restore a custom accessory once it is gone, even if the
-                // removal then fails or times out.
+                // Undo cannot restore a custom accessory once it is gone. If the removal
+                // fails or times out, it is gone when no instance has its transferable;
+                // instances can share one, so a completed removal needs no check.
                 try
                 {
-                    if (worn[j].Item == ItemIds.Custom
-                        && Instances().All(instance => Reflect.Get(Reflect.Get(instance, "transferableInfo"), "Id") as string != worn[j].Id))
+                    if (worn[j].Item == ItemIds.Custom && (removed
+                        || Instances().All(instance => Reflect.Get(Reflect.Get(instance, "transferableInfo"), "Id") as string != worn[j].Id)))
                     {
                         Discarded.Add(path);
                         gone.Add(j);

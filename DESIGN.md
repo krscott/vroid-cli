@@ -321,9 +321,8 @@ items, each a `PresetOptionViewModel` whose `_model.resourceName` is a fixed
 asset path such as `pixiv/VRoid/Clothing/Tops/N00/159/....transferablegroup`.
 A built-in item, in the requirements and here, is one a category's selector
 offers, which `items` lists. An item's identifier is that path's
-second-to-last part (`159`, `Default`,
-`Preset_F`), unique within each category in 2.16.0; the bridge fails if one
-repeats. The path, and so the identifier, does not change between sessions
+second-to-last part (`159`, `Default`, `Preset_F`), unique within each
+category in 2.16.0; the bridge fails if one repeats. The path, and so the identifier, does not change between sessions
 and restarts (R-EDIT-9). VRoid has no item names, only thumbnails.
 
 A category reads as the identifier of its option whose `IsSelected` is true.
