@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Drive a real session through edit, save, render, restart, reopen, and a
 # template round trip, checking R-EDIT-1, R-EDIT-3, R-EDIT-5, R-EDIT-6,
-# R-EDIT-7, R-EDIT-8, R-VIEW-1, and R-VIEW-2.
+# R-EDIT-7, R-EDIT-8, R-EDIT-9, R-VIEW-1, and R-VIEW-2.
 # Needs graphics access.
 set -euo pipefail
 shopt -s failglob
@@ -12,10 +12,11 @@ usage() {
         '' \
         'Opens SOURCE in SESSION, dumps its template, edits one Body and two Face' \
         'parameters and four colours (orange hair, green eyes) in one request,' \
-        'saves a copy, renders each view, restarts, checks the saved values,' \
-        'and applies the original template. Editor screenshots before and after' \
-        'the edit land in the artifact directory. SESSION must be stopped. Set' \
-        'VROID_CLI to choose the vroid-cli binary.'
+        'then selects other Hair Front and Outfit Tops items and adds cat and' \
+        'rabbit ears, saves a copy, renders each view, restarts, checks the' \
+        'saved values, and applies the original template. Editor screenshots' \
+        'before and after the edit land in the artifact directory. SESSION' \
+        'must be stopped. Set VROID_CLI to choose the vroid-cli binary.'
 }
 
 fatal_usage() {
@@ -84,6 +85,16 @@ same() {
     jq -en --argjson a "$1" --argjson b "$2" \
         'if ($a | type) == "string" then ($a | ascii_upcase) == ($b | ascii_upcase) else (($a - $b) | fabs) < 0.0001 end' \
         >/dev/null
+}
+
+# Print a category's `items` result.
+items_of() {
+    jq -cn --arg section "$1" --arg category "$2" '{method: "items", section: $section, category: $category}' | vroid -
+}
+
+# Choose a built-in item other than the category's current one.
+pick_item() {
+    items_of "$1" "$2" | jq -e '.selected as $selected | [.items[] | select(. != $selected)][0]'
 }
 
 input_events() {
@@ -217,10 +228,19 @@ colours=(
     'Hair|Front|Main Color|#FF8C00|#FF7F00'
 )
 
+# Categories whose items the smoke test changes.
+items=('Hair|Front' 'Outfit|Tops')
+# Two accessories of one kind, which VRoid keeps in one group.
+ears='[{"item": "CatEar", "Color": "#3A2A20"}, {"item": "RabbitEar", "Color": "#F0F0F0"}]'
+
 launch
 inputs_before=$(input_events)
 jq -cn --arg path "$source" '{method: "open", path: $path}' | vroid - >/dev/null
 vroid '{"method": "dump"}' >"$out/original.json"
+for item in "${items[@]}"; do
+    IFS='|' read -r section category <<<"$item"
+    items_of "$section" "$category" | jq .items >"$out/items-${section}-${category}.json"
+done
 
 screenshot "$out/before.png"
 
@@ -253,11 +273,40 @@ for edit in "${edits[@]}"; do
 done
 screenshot "$out/after.png"
 
+# Items: one Hair and one Outfit item, and ears added to the accessories.
+declare -A expected_item
+request=$(vroid '{"method": "accessories"}' | jq -c --argjson ears "$ears" '{method: "apply", Accessories: (.worn + $ears)}')
+for item in "${items[@]}"; do
+    IFS='|' read -r section category <<<"$item"
+    expected_item[$item]=$(pick_item "$section" "$category")
+    request=$(with_value "$section" "$category" item "${expected_item[$item]}" <<<"$request")
+done
+before=$(rebuilt)
+changed=$(vroid "$request" | jq .changed)
+((changed >= ${#items[@]} + 2)) || fatal "apply changed $changed items and accessories"
+vroid '{"method": "status"}' | jq -e --argjson before "$before" --argjson count "$changed" \
+    '.bridge.rebuilt >= $before + $count and .bridge.updating == false' >/dev/null ||
+    fatal "apply returned before a completed rebuild per item"
+check_items() {
+    local item section category
+    for item in "${items[@]}"; do
+        IFS='|' read -r section category <<<"$item"
+        items_of "$section" "$category" | jq -e --argjson item "${expected_item[$item]}" '.selected == $item' >/dev/null ||
+            fatal "$section/$category does not wear ${expected_item[$item]} $1"
+    done
+    vroid '{"method": "accessories"}' | jq -e --argjson ears "$ears" '.worn as $worn | all($ears[]; . as $ear | [$worn[] | select(. == $ear)] | length == 1)' >/dev/null ||
+        fatal "the ears are not worn $1"
+}
+check_items 'after apply'
+
 # A value above its maximum, an unknown parameter, an unknown category, a number
 # for a colour, a shared colour set twice, and a colour that writes several
 # refuse the whole request, and each is reported.
 IFS='|' read -r section category label <<<"${edits[0]}"
 IFS='|' read -r other_section other_category other_label <<<"${edits[1]}"
+# Pipeline stages run at once, so each request they need runs first.
+dress=$(pick_item Outfit Dresses)
+top=$(pick_item Outfit Tops)
 max=$(jq -cn --arg section "$section" --arg category "$category" \
     '{method: "parameters", section: $section, category: $category}' |
     vroid - | jq --arg label "$label" '.[] | select(.label == $label) | .max')
@@ -268,13 +317,17 @@ refused=$(with_value "$section" "$category" "$label" "$(jq -n --argjson max "$ma
     with_value Face Irises 'R Eye' 0 |
     with_value Face Skin Color '"#123456"' |
     with_value Body 'Whole Body' Color '"#123456"' |
-    with_value Face Irises 'Both Eyes' '"#123456"')
+    with_value Face Irises 'Both Eyes' '"#123456"' |
+    with_value Hair Back item '"NoSuchItem"' |
+    with_value Outfit Dresses item "$dress" |
+    with_value Outfit Tops item "$top")
 if vroid "$refused" >/dev/null 2>"$out/bounds.err"; then
     fatal "apply above the maximum succeeded"
 fi
 for reason in 'is outside' 'No Such Parameter: unknown parameter' 'No Such Category: unknown category' \
     'Face/Irises/R Eye: is a colour' 'Face/Skin/Color and Body/Whole Body/Color set the same colour' \
-    'Face/Irises/Both Eyes: sets R Eye and L Eye together' 'Nothing changed'; do
+    'Face/Irises/Both Eyes: sets R Eye and L Eye together' 'Hair/Back: unknown item NoSuchItem' \
+    'VRoid cannot wear these together' 'Nothing changed'; do
     grep -qF "$reason" "$out/bounds.err" || fatal "refusal lacks '$reason': $(<"$out/bounds.err")"
 done
 actual=$(value_of Body 'Whole Body' Color)
@@ -284,6 +337,7 @@ for edit in "${edits[@]}"; do
     actual=$(value_of "$section" "$category" "$label")
     same "$actual" "${expected[$edit]}" || fatal "$label changed to $actual after a refused apply"
 done
+check_items 'after a refused apply'
 
 # Rendering keeps unsaved changes unsaved (R-VIEW-2).
 render front body 64 128 "$out/unsaved.png" >/dev/null
@@ -350,6 +404,13 @@ for edit in "${edits[@]}"; do
     actual=$(value_of "$section" "$category" "$label")
     same "$actual" "${expected[$edit]}" || fatal "$label reopened as $actual, saved ${expected[$edit]}"
 done
+check_items 'after reopening'
+# Item identifiers name the same items after a restart (R-EDIT-9).
+for item in "${items[@]}"; do
+    IFS='|' read -r section category <<<"$item"
+    items_of "$section" "$category" | jq -e --slurpfile before "$out/items-${section}-${category}.json" '.items == $before[0]' >/dev/null ||
+        fatal "$section/$category lists other items after a restart; compare $out/items-${section}-${category}.json"
+done
 # The edited project dumps, with each colour under the category it was set in,
 # and the hair colour is shared by every hair category.
 vroid '{"method": "dump"}' >"$out/edited.json"
@@ -364,7 +425,8 @@ front='Hair|Front|Main Color'
 actual=$(value_of Hair Back 'Main Color')
 same "$actual" "${expected[$front]}" || fatal "Hair/Back Main Color is $actual, not Front's"
 
-# The template dumped before the edits restores every value in a new app instance.
+# The template dumped before the edits restores every value, item, and
+# accessory in a new app instance.
 vroid "@$out/original.json" >/dev/null
 vroid '{"method": "dump"}' >"$out/restored.json"
 jq -e --slurpfile original "$out/original.json" '. == $original[0]' "$out/restored.json" >/dev/null ||

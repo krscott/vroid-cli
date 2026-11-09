@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from vroid_cli.rpc import PROTOCOL
 from vroid_cli.session import BRIDGE_LOADED, OUTDATED_INTEROP
 
 SOURCE = Path(__file__).resolve().parent.parent
@@ -61,7 +62,7 @@ def invoke(
 def write_status(rpc: Path, **fields: Any) -> dict[str, Any]:
     status = {
         "boot": "test-boot",
-        "protocol": 3,
+        "protocol": PROTOCOL,
         "heartbeat": time.time() * 1000,
         "main": True,
         "modified": False,
@@ -191,7 +192,11 @@ def test_colour_labels_may_repeat_across_categories(tmp_path: Path) -> None:
     undo = {"method": "apply", "Face": face, "Hair": {}, "Body": {}}
     peer, received = answer(
         rpc,
-        lambda _: {"ok": True, "result": {"changed": 2, "undo": undo}, "error": None},
+        lambda _: {
+            "ok": True,
+            "result": {"changed": 2, "undo": undo, "discarded": []},
+            "error": None,
+        },
     )
     result = invoke(tmp_path, "apply", Face=face)
     peer.join()
@@ -226,6 +231,15 @@ def test_bridge_from_an_older_protocol_is_refused(tmp_path: Path) -> None:
         ('{"method": "status"', "Invalid JSON"),
         # Python's or pydantic's recursion limit refuses it, depending on the host.
         ('{"method": "apply", "Face": ' + "[" * 100_000, "invalid request:"),
+        ('{"method": "apply", "Hair": {"Front": {"item": 48}}}', "Hair.Front.item"),
+        ('{"method": "apply", "Hair": {"Front": {"item": "../x"}}}', "Hair.Front.item"),
+        ('{"method": "apply", "Accessories": [{"Color": "#FFFFFF"}]}', "item"),
+        (
+            '{"method": "apply", "Accessories": [{"item": "CatEar", "Color": "red"}]}',
+            "Accessories.0.Color",
+        ),
+        ('{"method": "apply", "discard_custom": 1}', "discard_custom"),
+        ('{"method": "items", "section": "Shoes", "category": "x"}', "section"),
         ("status", "REQUEST must be a JSON object, @PATH, or -"),
     ],
 )
@@ -616,7 +630,7 @@ def test_request_roundtrip(tmp_path: Path, ok: bool) -> None:
         rpc,
         lambda _: {
             "ok": ok,
-            "result": {"changed": 1, "undo": undo} if ok else None,
+            "result": {"changed": 1, "undo": undo, "discarded": []} if ok else None,
             "error": None if ok else "engine refused",
         },
     )
@@ -630,7 +644,11 @@ def test_request_roundtrip(tmp_path: Path, ok: bool) -> None:
     assert (rpc / "results" / f"{request['id']}.json").exists()
     if ok:
         assert result.returncode == 0
-        assert json.loads(result.stdout) == {"changed": 1, "undo": undo}
+        assert json.loads(result.stdout) == {
+            "changed": 1,
+            "undo": undo | {"Outfit": {}},
+            "discarded": [],
+        }
         assert result.stderr == ""
     else:
         assert result.returncode == 1
@@ -653,9 +671,24 @@ COLOUR_DUMP = {
     "Hair": {"Front": {"Main Color": "#FF8C00", "Highlight Color": "#DB8A3B"}},
     "Body": {"Whole Body": {"Head Size": 0.125}},
 }
+ITEM_DUMP = {
+    "method": "apply",
+    "Face": {
+        "Lips": {"item": None},
+        "Eyebrows": {"item": "Preset_F", "Color": "#5C3A21"},
+    },
+    "Hair": {"Front": {"item": "048"}, "Overall Hair": {"item": "custom"}},
+    "Body": {"Whole Body": {"item": "Preset_F", "Head Size": 0.125}},
+    "Outfit": {"Tops": {"item": "159"}, "Dresses": {"item": None}},
+    "Accessories": [
+        {"item": "CatEar", "Color": "#825A46"},
+        {"item": "CatEar", "Color": "#FF0000"},
+        {"item": "custom"},
+    ],
+}
 
 
-@pytest.mark.parametrize("dump", [NUMERIC_DUMP, COLOUR_DUMP])
+@pytest.mark.parametrize("dump", [NUMERIC_DUMP, COLOUR_DUMP, ITEM_DUMP])
 def test_dump_output_is_valid_apply_input(tmp_path: Path, dump: dict[str, Any]) -> None:
     # R-EDIT-7
     rpc = bridge(tmp_path)
@@ -664,22 +697,76 @@ def test_dump_output_is_valid_apply_input(tmp_path: Path, dump: dict[str, Any]) 
         lambda request: {
             "ok": True,
             "result": (
-                dump if request["method"] == "dump" else {"changed": 0, "undo": dump}
+                dump
+                if request["method"] == "dump"
+                else {"changed": 0, "undo": dump, "discarded": []}
             ),
             "error": None,
         },
     )
     dumped = invoke(tmp_path, "dump")
     assert dumped.returncode == 0, dumped.stderr
-    assert json.loads(dumped.stdout) == {"Hair": {}} | dump
-    # Templates dumped before colours existed still apply unchanged.
+    sections: dict[str, Any] = {"Hair": {}, "Outfit": {}}
+    # Items, including null ones, and accessories pass through unchanged.
+    assert json.loads(dumped.stdout) == sections | dump
+    # Templates dumped before colours or items existed still apply unchanged.
     (tmp_path / "template.json").write_text(json.dumps(dump))
     applied = run_cli(tmp_path, "test", "@template.json")
     peer.join()
     assert applied.returncode == 0, applied.stderr
-    assert received[1] | {"id": "", "boot": "", "timeout_ms": 0} == {
-        "Hair": {}
-    } | dump | {"id": "", "boot": "", "timeout_ms": 0}
+    assert received[1] | {"id": "", "boot": "", "timeout_ms": 0} == sections | dump | {
+        "id": "",
+        "boot": "",
+        "timeout_ms": 0,
+    }
+
+
+def test_apply_sends_discard_custom_only_when_set(tmp_path: Path) -> None:
+    # R-EDIT-10: the opt-in reaches the bridge, and the result names what it discarded.
+    rpc = bridge(tmp_path)
+    undo = {"method": "apply", "Hair": {"Back": {"item": "146"}}}
+    peer, received = answer(
+        rpc,
+        lambda _: {
+            "ok": True,
+            "result": {"changed": 2, "undo": undo, "discarded": ["Hair/Overall Hair"]},
+            "error": None,
+        },
+    )
+    hair = {"Overall Hair": {"item": "215"}}
+    plain = invoke(tmp_path, "apply", Hair=hair)
+    forced = invoke(tmp_path, "apply", Hair=hair, discard_custom=True)
+    peer.join()
+    assert plain.returncode == forced.returncode == 0, plain.stderr + forced.stderr
+    assert "discard_custom" not in received[0]
+    assert received[1]["discard_custom"] is True
+    assert json.loads(forced.stdout)["discarded"] == ["Hair/Overall Hair"]
+    # The undo template never discards anything itself.
+    assert "discard_custom" not in json.loads(forced.stdout)["undo"]
+
+
+def test_items_and_accessories_are_listed(tmp_path: Path) -> None:
+    rpc = bridge(tmp_path)
+    items = {"selected": None, "removable": True, "set": False, "items": ["001", "159"]}
+    accessories = {
+        "worn": [{"item": "CatEar", "Color": "#825A46"}],
+        "available": [{"item": "CatEar", "name": "Cat Ears"}],
+    }
+    peer, received = answer(
+        rpc,
+        lambda request: {
+            "ok": True,
+            "result": items if request["method"] == "items" else accessories,
+            "error": None,
+        },
+    )
+    listed = invoke(tmp_path, "items", section="Outfit", category="Tops")
+    worn = invoke(tmp_path, "accessories")
+    peer.join()
+    assert listed.returncode == worn.returncode == 0, listed.stderr + worn.stderr
+    assert (received[0]["section"], received[0]["category"]) == ("Outfit", "Tops")
+    assert json.loads(listed.stdout) == items
+    assert json.loads(worn.stdout) == accessories
 
 
 def test_parameters_list_numbers_and_colours(tmp_path: Path) -> None:

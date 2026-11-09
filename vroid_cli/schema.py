@@ -10,16 +10,18 @@ from pydantic import (
     ConfigDict,
     Field,
     PositiveFloat,
+    SerializerFunctionWrapHandler,
     StringConstraints,
     TypeAdapter,
     ValidationError,
     ValidatorFunctionWrapHandler,
     WrapValidator,
     field_validator,
+    model_serializer,
     model_validator,
 )
 
-Section = Literal["Face", "Hair", "Body"]
+Section = Literal["Face", "Hair", "Body", "Outfit"]
 SECTIONS: tuple[Section, ...] = get_args(Section)
 
 # As VRoid's editor shows it, on the same sRGB scale; there is no alpha.
@@ -46,23 +48,72 @@ def one_error(value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
 
 
 Value = Annotated[float | list[float] | Color, WrapValidator(one_error)]
-Template = Annotated[
-    dict[str, dict[str, Value]],
-    Field(
-        description="category name -> label -> value: a number, or a colour "
-        'as "#RRGGBB". A numeric label that occurs more than once in a '
-        "category takes an array of its values in app order. Categories share "
-        "numeric parameters by label, so each numeric label may appear in only "
-        "one category. Some colours are shared too, such as skin; set each in "
-        "one place."
-    ),
-]
+# Marks an item that is not one of VRoid's built-in items.
+CUSTOM = "custom"
+ItemId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_]+$")]
+
+
+def no_default(schema: dict[str, Any]) -> None:
+    # An omitted item is kept, while an explicit null takes it off.
+    schema.pop("default", None)
 
 
 class Model(BaseModel):
     # The defaults accept NaN, coerce "0.5" to 0.5, and drop misspelled fields.
     model_config = ConfigDict(
         strict=True, extra="forbid", allow_inf_nan=False, frozen=True
+    )
+
+
+class CategoryTemplate(BaseModel):
+    """A category's item, numeric values, and colours, keyed by label."""
+
+    model_config = ConfigDict(
+        strict=True, extra="allow", allow_inf_nan=False, frozen=True
+    )
+    # Types the extra labels; pyright cannot see pydantic allows narrowing it.
+    __pydantic_extra__: dict[str, Value] = Field(init=False)  # pyright: ignore[reportIncompatibleVariableOverride]  # fmt: skip
+    item: ItemId | None = Field(
+        None,
+        description="the item to wear: a built-in item's identifier as `items` "
+        'lists it, or "custom" for the item that is not built in that the '
+        "category already wears; null takes off the item of a category that "
+        "`items` reports as removable. Omit it to keep the current item.",
+        json_schema_extra=no_default,
+    )
+
+    @model_serializer(mode="wrap")
+    def omit_unset_item(self, handler: SerializerFunctionWrapHandler) -> Any:
+        data = handler(self)
+        if "item" not in self.model_fields_set:
+            data.pop("item", None)
+        return data
+
+
+Template = Annotated[
+    dict[str, CategoryTemplate],
+    Field(
+        description="category name -> label -> value: a number, or a colour "
+        'as "#RRGGBB", and the optional "item". A numeric label that occurs '
+        "more than once in a category takes an array of its values in app "
+        "order. Categories share numeric parameters by label, so each numeric "
+        "label may appear in only one category. Some colours are shared too, "
+        "such as skin; set each in one place."
+    ),
+]
+
+
+class Accessory(BaseModel):
+    """One worn accessory: its item and its colours, keyed by label."""
+
+    model_config = ConfigDict(
+        strict=True, extra="allow", allow_inf_nan=False, frozen=True
+    )
+    # Types the extra labels; pyright cannot see pydantic allows narrowing it.
+    __pydantic_extra__: dict[str, Color] = Field(init=False)  # pyright: ignore[reportIncompatibleVariableOverride]  # fmt: skip
+    item: ItemId = Field(
+        description="a built-in accessory's identifier as `accessories` lists it, "
+        'or "custom" for a worn accessory that is not built in'
     )
 
 
@@ -124,7 +175,7 @@ class Open(Model):
 
 
 class Categories(Model):
-    """List a section's categories."""
+    """List a section's categories. Outfit categories hold only items."""
 
     method: Literal["categories"]
     section: Section
@@ -138,22 +189,62 @@ class Parameters(Model):
     category: str
 
 
+class Items(Model):
+    """List a category's built-in items and the item it wears."""
+
+    method: Literal["items"]
+    section: Section
+    category: str
+
+
+class Accessories(Model):
+    """List the worn accessories and the built-in ones that can be added."""
+
+    method: Literal["accessories"]
+
+
 class Dump(Model):
-    """Return every Face, Hair, and Body value and colour as an apply request."""
+    """Return every item, accessory, numeric value, and colour as an apply request."""
 
     method: Literal["dump"]
 
 
 class Apply(Model):
-    """Set numeric values and colours, keyed by category and label.
+    """Select items and accessories, and set numeric values and colours.
 
-    Every name, bound, and colour is checked before any value changes.
+    Every name, item, bound, and colour is checked before anything changes.
+    Items and accessories change first, then values and colours.
     """
 
     method: Literal["apply"]
     Face: Template = Field(default_factory=dict)
     Hair: Template = Field(default_factory=dict)
     Body: Template = Field(default_factory=dict)
+    Outfit: Template = Field(default_factory=dict)
+    Accessories: list[Accessory] | None = Field(
+        None,
+        description="every accessory to wear, in any order; apply adds and "
+        "removes accessories to match, so list the worn ones to keep them. Added "
+        "accessories take VRoid's default placement, and a removed one loses its "
+        "placement. Omit it to keep the current ones.",
+    )
+    discard_custom: bool = Field(
+        False,
+        description="allow replacing or removing items and accessories that are "
+        "not built in; the result's `discarded` names them, and `undo` cannot "
+        "restore them. Save a copy of the project first.",
+    )
+
+    @model_serializer(mode="wrap")
+    def omit_defaults(self, handler: SerializerFunctionWrapHandler) -> Any:
+        # Dumped and undo templates leave accessories alone unless they list
+        # them, and never discard anything.
+        data = handler(self)
+        if self.Accessories is None:
+            data.pop("Accessories", None)
+        if not self.discard_custom:
+            data.pop("discard_custom", None)
+        return data
 
     @model_validator(mode="after")
     def each_parameter_once(self) -> "Apply":
@@ -162,8 +253,10 @@ class Apply(Model):
         # "Color" repeat across unrelated colours; the bridge checks those.
         for section in SECTIONS:
             first: dict[str, str] = {}
-            for category, values in getattr(self, section).items():
-                for label, value in values.items():
+            categories: dict[str, CategoryTemplate] = getattr(self, section)
+            for category, values in categories.items():
+                extra: dict[str, Any] = values.model_extra or {}
+                for label, value in extra.items():
                     if isinstance(value, str):
                         continue
                     if (other := first.setdefault(label, category)) != category:
@@ -222,13 +315,17 @@ Request = Annotated[
     | Open
     | Categories
     | Parameters
+    | Items
+    | Accessories
     | Dump
     | Apply
     | Save
     | Render,
     Field(discriminator="method"),
 ]
-BridgeRequest = Open | Categories | Parameters | Dump | Apply | Save | Render
+BridgeRequest = (
+    Open | Categories | Parameters | Items | Accessories | Dump | Apply | Save | Render
+)
 REQUEST: TypeAdapter[Request] = TypeAdapter(Request)
 
 
@@ -263,13 +360,47 @@ class ColorParameter(Model):
     value: Color
 
 
+class ItemList(Model):
+    selected: str | None = Field(
+        description='the worn built-in item, "custom" for an item that is not '
+        "built in, or null"
+    )
+    removable: bool = Field(description="whether the item can be taken off")
+    set: bool = Field(
+        description="selecting one of these items selects items in other "
+        "categories, so `dump` lists those instead"
+    )
+    items: list[str] = Field(description="built-in item identifiers in app order")
+
+
+class AvailableAccessory(Model):
+    item: str
+    name: str
+
+
+class AccessoryList(Model):
+    worn: list[Accessory] = Field(description="in the order `dump` lists them")
+    available: list[AvailableAccessory] = Field(
+        description="built-in accessories, including ones VRoid's editor does not "
+        "offer, such as animal ears and tails"
+    )
+
+
 class Applied(Model):
     changed: int = Field(
-        description="number of values that changed. Each element of a repeated "
-        "label's array counts separately; values already equal to the request "
-        "don't count."
+        description="number of items, accessories, and values that changed. Each "
+        "element of a repeated label's array counts separately; values already "
+        "equal to the request don't count."
     )
-    undo: Apply = Field(description="restores the previous values")
+    undo: Apply = Field(
+        description="restores the previous items, accessories, and values, "
+        "except what `discarded` names. Undoing an item change in a section "
+        "that still wears an item that is not built in needs discard_custom."
+    )
+    discarded: list[str] = Field(
+        description="non-built-in items and accessories this request replaced or "
+        "removed, which `undo` cannot restore"
+    )
 
 
 class Saved(Model):
@@ -289,6 +420,8 @@ RESULTS: dict[str, TypeAdapter[Any]] = {
     "open": TypeAdapter(Opened),
     "categories": TypeAdapter(list[str]),
     "parameters": TypeAdapter(list[Parameter | ColorParameter]),
+    "items": TypeAdapter(ItemList),
+    "accessories": TypeAdapter(AccessoryList),
     "dump": TypeAdapter(Apply),
     "apply": TypeAdapter(Applied),
     "save": TypeAdapter(Saved),

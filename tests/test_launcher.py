@@ -199,6 +199,13 @@ def test_launcher_accepts_terms_before_vroid_starts(writable: Path) -> None:
         assert element in started
 
 
+def test_launcher_creates_the_custom_items_folder(writable: Path) -> None:
+    # VRoid's custom item watcher stops for good without it (R-EDIT-10).
+    session = writable / "session"
+    launch(session, store(writable, "1"))
+    assert (session / PREFERENCES).parent.parent.joinpath("custom_items").is_dir()
+
+
 def saved_preferences(session: Path, accepted: str) -> tuple[Path, bytes]:
     """Write preferences like VRoid's, with other keys and CRLF line endings."""
     preferences = session / PREFERENCES
