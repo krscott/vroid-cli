@@ -173,12 +173,17 @@ def test_nonfinite_values_are_rejected_without_state(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("request_text", "reason"),
     [
-        (APPLY % '"0.5"', "Body.Whole Body.Head Size.float: Input should be a valid"),
+        (APPLY % '"0.5"', "Body.Whole Body.Head Size: expected a finite number"),
         ('{"method": "launch", "timout": 5}', "timout: Extra inputs"),
         ('{"method": "stop", "force": 1}', "force: Input should be a valid boolean"),
         ('{"method": "Apply"}', "does not match any of the expected tags"),
         ('{"method": "apply", "Body": {}, "Body": {}}', "duplicate keys: Body"),
+        (
+            '{"method": "apply", "Face": {"A": {"x": 0}, "B": {"y": 0, "x": 1}}}',
+            "Face/B/x is the same parameter as Face/A/x; set it once",
+        ),
         ('{"method": "status"', "Invalid JSON"),
+        ('{"method": "apply", "Face": ' + "[" * 100_000, "nested too deeply"),
         ("status", "REQUEST must be a JSON object, @PATH, or -"),
     ],
 )

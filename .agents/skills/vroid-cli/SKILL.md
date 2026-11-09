@@ -49,8 +49,14 @@ field and result.
 - `apply` accepts finite values within each parameter's `min..max`. It checks
   every value before changing any; one bad value refuses the whole request.
   Its result's `undo` is an `apply` request that restores the previous values.
-- `dump` returns an `apply` request with every Face and Body value. Save it as
-  a template, edit or diff it with JSON tools, and apply it in any session.
+- Categories share parameters: "Eye Size X" in Face Sets and in Eyeliner is
+  one value. An `apply` request may name each label in only one category per
+  section.
+- `dump` returns an `apply` request with every Face and Body value, each listed
+  once under the first category that has it. Save it as a template, edit or
+  diff it with JSON tools, and apply it in any session.
+- Paths in requests, including saved ones, resolve against the current
+  directory, not the request file's.
 - `save` needs a new `.vroid` path in an existing directory. It never
   overwrites. Choose a new versioned filename.
 - Opening another project requires `save`, `stop`, and `launch` first.

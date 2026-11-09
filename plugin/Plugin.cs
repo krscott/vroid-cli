@@ -168,21 +168,10 @@ public sealed class Plugin : BasePlugin
     private static object Main => main ?? throw new InvalidOperationException("App is not ready");
     private static object Root => root ?? throw new InvalidOperationException("Open a project first");
 
-    private static T Single<T>(IEnumerable<T> items, Func<T, bool> match, string kind, string name)
-    {
-        var found = items.Where(match).ToArray();
-        return found.Length switch
-        {
-            1 => found[0],
-            0 => throw new ArgumentException($"Unknown {kind} {name}; list them first"),
-            _ => throw new ArgumentException($"{found.Length} {kind}s are named {name}; it cannot be selected by name"),
-        };
-    }
-
     private static readonly string[] Sections = { "Face", "Body" };
 
     // A label that occurs more than once in a category takes its values as an array, in app order.
-    private sealed record Wanted(string Label, float[] Values, bool Repeated);
+    private sealed record Wanted(string Label, double[] Values, bool Repeated);
     private sealed record CategoryEdit(string Name, Wanted[] Values);
     private sealed record Category(string Name, object[] Parameters);
 
@@ -206,8 +195,9 @@ public sealed class Plugin : BasePlugin
     }
 
     // Selects each named category, or every category in app order, and yields
-    // it while it is selected; null means wait a frame.
-    private static IEnumerable<Category?> Visit(string section, IEnumerable<string>? names)
+    // it while it is selected; null means wait a frame. A name that matches no
+    // single category adds a message to `errors` and is skipped.
+    private static IEnumerable<Category?> Visit(string section, IEnumerable<string>? names, List<string> errors)
     {
         object[]? categories = null;
         foreach (var step in Enter(section))
@@ -215,7 +205,14 @@ public sealed class Plugin : BasePlugin
             if (step == null) yield return null;
             else categories = step;
         }
-        var selected = names == null ? categories! : names.Select(name => Single(categories!, value => Name(value) == name, "category", name)).ToArray();
+        var selected = new List<object>();
+        foreach (var name in names ?? categories!.Select(Name).Distinct())
+        {
+            var found = categories!.Where(value => Name(value) == name).ToArray();
+            if (found.Length == 1 || names == null) selected.AddRange(found);
+            else if (found.Length == 0) errors.Add($"{section}/{name}: unknown category; list them first");
+            else errors.Add($"{section}/{name}: {found.Length} categories have this name; it cannot be selected by name");
+        }
         foreach (var category in selected)
         {
             Reflect.Call(Selector(section), "set_SelectedCategory", category);
@@ -230,8 +227,8 @@ public sealed class Plugin : BasePlugin
         request.Body.TryGetProperty(section, out var categories)
             ? categories.EnumerateObject().Select(category => new CategoryEdit(category.Name,
                 category.Value.EnumerateObject().Select(parameter => parameter.Value.ValueKind == JsonValueKind.Array
-                    ? new Wanted(parameter.Name, parameter.Value.EnumerateArray().Select(value => (float)value.GetDouble()).ToArray(), true)
-                    : new Wanted(parameter.Name, new[] { (float)parameter.Value.GetDouble() }, false)).ToArray())).ToArray()
+                    ? new Wanted(parameter.Name, parameter.Value.EnumerateArray().Select(value => value.GetDouble()).ToArray(), true)
+                    : new Wanted(parameter.Name, new[] { parameter.Value.GetDouble() }, false)).ToArray())).ToArray()
             : Array.Empty<CategoryEdit>();
 
     // Resolves each wanted value to its parameter and checks its bounds,
@@ -261,10 +258,10 @@ public sealed class Plugin : BasePlugin
                 var min = Convert.ToSingle(Reflect.Get(parameter, "MinValue"));
                 var max = Convert.ToSingle(Reflect.Get(parameter, "MaxValue"));
                 var where = wanted.Repeated ? $"{path}[{index}]" : path;
-                if (!float.IsFinite(target)) errors.Add($"{where}: value is not finite");
+                // Checked as a double: a value beyond float range would cast to infinity.
+                if (!double.IsFinite(target)) errors.Add($"{where}: value is not finite");
                 else if (target < min || target > max) errors.Add($"{where}: {target} is outside {min}..{max}");
-                else
-                    matched.Add((parameter, target, where));
+                else matched.Add((parameter, (float)target, where));
             }
         }
         return matched;
@@ -284,7 +281,7 @@ public sealed class Plugin : BasePlugin
         foreach (var section in Sections.Where(section => edits[section].Length > 0))
         {
             var previous = new Dictionary<string, object>();
-            foreach (var category in Visit(section, edits[section].Select(edit => edit.Name)))
+            foreach (var category in Visit(section, edits[section].Select(edit => edit.Name), errors))
             {
                 if (category == null)
                 {
@@ -301,7 +298,7 @@ public sealed class Plugin : BasePlugin
         var changed = 0;
         foreach (var section in Sections.Where(section => edits[section].Length > 0))
         {
-            foreach (var category in Visit(section, edits[section].Select(edit => edit.Name)))
+            foreach (var category in Visit(section, edits[section].Select(edit => edit.Name), errors))
             {
                 if (category == null)
                 {
@@ -309,7 +306,10 @@ public sealed class Plugin : BasePlugin
                     continue;
                 }
                 var edit = edits[section].Single(edit => edit.Name == category.Name);
-                foreach (var (parameter, target, path) in Match(section, category, edit, errors))
+                var matched = Match(section, category, edit, errors);
+                // The first pass found none, so the app changed underneath; stop changing it.
+                if (errors.Count > 0) throw new InvalidOperationException(string.Join("; ", errors));
+                foreach (var (parameter, target, path) in matched)
                 {
                     if (Read(parameter) == target) continue;
                     var before = rebuilt;
@@ -332,17 +332,22 @@ public sealed class Plugin : BasePlugin
         foreach (var section in Sections)
         {
             var categories = new Dictionary<string, object>();
-            foreach (var category in Visit(section, null))
+            var seen = new HashSet<string>();
+            // Categories share parameters by label; list each under the first category that has it.
+            var listed = new HashSet<string>();
+            foreach (var category in Visit(section, null, new List<string>()))
             {
                 if (category == null)
                 {
                     yield return true;
                     continue;
                 }
-                if (category.Parameters.Length == 0) continue;
-                if (categories.ContainsKey(category.Name))
+                // apply selects categories by name, so even an empty duplicate breaks the template.
+                if (!seen.Add(category.Name))
                     throw new InvalidOperationException($"Two {section} categories are named {category.Name}; a template cannot hold both");
-                categories[category.Name] = Values(category.Parameters);
+                var parameters = category.Parameters.Where(parameter => !listed.Contains(Label(parameter))).ToArray();
+                listed.UnionWith(parameters.Select(Label));
+                if (parameters.Length > 0) categories[category.Name] = Values(parameters);
             }
             dump[section] = categories;
         }
@@ -377,7 +382,8 @@ public sealed class Plugin : BasePlugin
             }
             case "parameters":
             {
-                foreach (var category in Visit(request.Text("section"), new[] { request.Text("category") }))
+                var errors = new List<string>();
+                foreach (var category in Visit(request.Text("section"), new[] { request.Text("category") }, errors))
                 {
                     if (category == null) yield return true;
                     else result = category.Parameters.Select(value => new
@@ -388,6 +394,7 @@ public sealed class Plugin : BasePlugin
                         max = Convert.ToSingle(Reflect.Get(value, "MaxValue")),
                     }).ToArray();
                 }
+                if (errors.Count > 0) throw new ArgumentException(string.Join("; ", errors));
                 break;
             }
             case "dump":

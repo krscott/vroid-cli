@@ -55,6 +55,9 @@ vroid-cli other @template.json
 `apply` checks every value before changing any, and its result includes an
 `undo` request that restores the previous values. A label that repeats within a
 category, such as "Nose Size" in Face Sets, maps to an array of its values.
+Categories share parameters ("Eye Size X" is in Face Sets, Eyes Sets, and
+Eyeliner), so `dump` lists each once, and a request may name each label in only
+one category per section.
 
 Use one session name per agent or task. Session state lives in `.vroid/NAME/`
 at the Git worktree root (the current directory outside Git), or under

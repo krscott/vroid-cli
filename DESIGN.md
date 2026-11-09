@@ -206,22 +206,27 @@ Successful `open` and `save` clear `modified`.
 A template is an `apply` request: `Face` and `Body` map category names to
 parameter labels to values. Labels repeat within some categories (Face Sets
 and Nose each have two "Nose Size" parameters), so a repeated label maps to an
-array of its values in app order. `dump` emits every category that has
-parameters, with float32 values in their shortest round-trip form, so applying
-the output reproduces it exactly (R-EDIT-7). It fails if two categories in a
-section share a name; none do in 2.16.0. Selecting a category by an ambiguous
-name also fails instead of guessing.
+array of its values in app order. Categories also share parameters: within a
+section, the same label in another category is the same value (Face Sets,
+Eyes Sets, and Eyeliner all hold "Eye Size X"). This was checked for every
+2.16.0 category by changing one category and reading the others. `dump`
+therefore lists each label under the first category in app order that has it,
+omits categories left empty, and writes float32 values in their shortest
+round-trip form, so applying the output reproduces it exactly (R-EDIT-7). The
+`Apply` model refuses a label in two categories of a section, since the later
+value would silently win. `dump` fails if two categories in a section share a
+name; none do in 2.16.0.
 
-`apply` runs in two passes. The first visits every named category and
-resolves every value to its parameters, checking the label's count and the
-live bounds, and collects every refusal. Any refusal fails the request before
-a value changes (R-EDIT-3). The second pass revisits the categories and sets
-each value that differs, waiting for its rebuild. It sets `modified` before
-the first change, so an interrupted edit still counts as unsaved. The result
-counts the changed values and holds an `undo` template of the previous values.
-If the second pass fails, the error lists the values already changed. In
-2.16.0 a full template applies in about 2 seconds, well within the request
-timeout.
+`apply` runs in two passes. The first resolves every category name and every
+value to its parameters, checking the label's count and the live bounds, and
+collects every refusal. Any refusal fails the request before a value changes
+(R-EDIT-3). The second pass revisits the categories and sets each value that
+differs, waiting for its rebuild. It stops if a category no longer resolves.
+It sets `modified` before the first change, so an interrupted edit still
+counts as unsaved. The result counts the changed values and holds an `undo`
+template of the previous values. If the second pass fails, the error lists
+the values already changed. Each rebuild takes a few frames, so even a
+template that changes every value finishes far within the request timeout.
 
 IL2CPP reflection must convert native objects to their most derived proxy type.
 `Reflect.Concrete` maps `System.*` class names to `Il2CppSystem.*` proxies and
@@ -237,11 +242,12 @@ stdin. Every method is a request, so saved requests work in any session.
 `strict=True`, `extra="forbid"`, and `allow_inf_nan=False`, discriminated on
 `method`. pydantic's defaults would accept `NaN`, coerce `"0.5"`, and drop
 misspelled fields (R-CLI-3). Its JSON parser keeps the last of repeated keys,
-so the CLI rejects repeated keys first. Model validators check finite values
-(R-EDIT-2), `.vroid` suffixes, an existing `open` source, and a new `save`
-destination in an existing directory (R-EDIT-4), all before touching session
-state. The bridge rechecks the destination before saving. Validation errors
-print one `FIELD: REASON` line each.
+so the CLI rejects repeated keys first. Validation refuses non-finite values
+(R-EDIT-2) and checks `.vroid` suffixes, an existing `open` source, and a new
+`save` destination in an existing directory (R-EDIT-4), all before touching
+session state. Paths resolve against the current directory. The bridge rechecks the destination before saving. Validation errors
+print one `FIELD: REASON` line each. Output is indented JSON, so saved
+templates diff line by line.
 
 Every result, including the bridge's, is validated against its result model
 before printing, so `--agent-skill` (or `--help`), which prints the skill and

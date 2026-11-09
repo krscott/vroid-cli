@@ -49,10 +49,10 @@ out=$(mktemp -d "$(jq -r .directory <<<"$state")/smoke.XXXXXX")
 edited=$out/edited.vroid
 printf 'gui-smoke: artifacts in %s\n' "$out" >&2
 
-# Build an apply request that sets one value.
-apply_one() {
-    jq -cn --arg section "$1" --arg category "$2" --arg label "$3" --argjson value "$4" \
-        '{method: "apply"} | .[$section][$category][$label] = $value'
+# Add one value to the apply request on stdin.
+with_value() {
+    jq -c --arg section "$1" --arg category "$2" --arg label "$3" --argjson value "$4" \
+        '.[$section][$category][$label] = $value'
 }
 
 # Print the current value of a parameter as JSON.
@@ -86,9 +86,11 @@ rebuilt() {
     vroid '{"method": "status"}' | jq .bridge.rebuilt
 }
 
+# Two edits share a category, so one request changes several of its values.
 edits=(
     'Body|Whole Body|Head Size'
     'Face|Face Sets|Eye Size X'
+    'Face|Face Sets|Eye Size Y'
 )
 
 vroid '{"method": "launch", "timeout": 1200}' >/dev/null
@@ -97,18 +99,22 @@ jq -cn --arg path "$source" '{method: "open", path: $path}' | vroid - >/dev/null
 vroid '{"method": "dump"}' >"$out/original.json"
 
 declare -A expected
+request='{"method": "apply"}'
 for edit in "${edits[@]}"; do
     IFS='|' read -r section category label <<<"$edit"
-    current=$(value_of "$section" "$category" "$label")
-    target=$(pick "$current")
-    before=$(rebuilt)
-    apply_one "$section" "$category" "$label" "$target" | vroid - >/dev/null
-    vroid '{"method": "status"}' | jq -e --argjson before "$before" \
-        '.bridge.rebuilt > $before and .bridge.updating == false' >/dev/null ||
-        fatal "apply $label returned before a completed rebuild"
+    expected[$edit]=$(pick "$(value_of "$section" "$category" "$label")")
+    request=$(with_value "$section" "$category" "$label" "${expected[$edit]}" <<<"$request")
+done
+before=$(rebuilt)
+vroid "$request" | jq -e --argjson count "${#edits[@]}" '.changed == $count' >/dev/null ||
+    fatal "apply did not change ${#edits[@]} values"
+vroid '{"method": "status"}' | jq -e --argjson before "$before" --argjson count "${#edits[@]}" \
+    '.bridge.rebuilt >= $before + $count and .bridge.updating == false' >/dev/null ||
+    fatal "apply returned before a completed rebuild per value"
+for edit in "${edits[@]}"; do
+    IFS='|' read -r section category label <<<"$edit"
     actual=$(value_of "$section" "$category" "$label")
-    same "$actual" "$target" || fatal "$label read back $actual after apply $target"
-    expected[$edit]=$target
+    same "$actual" "${expected[$edit]}" || fatal "$label read back $actual after apply ${expected[$edit]}"
 done
 
 # One value above its maximum refuses the whole request.
@@ -117,9 +123,8 @@ IFS='|' read -r other_section other_category other_label <<<"${edits[1]}"
 max=$(jq -cn --arg section "$section" --arg category "$category" \
     '{method: "parameters", section: $section, category: $category}' |
     vroid - | jq --arg label "$label" '.[] | select(.label == $label) | .max')
-refused=$(apply_one "$section" "$category" "$label" "$(jq -n --argjson max "$max" '$max + 1')" |
-    jq -c --arg s "$other_section" --arg c "$other_category" --arg l "$other_label" \
-        --argjson v "$(pick "${expected[${edits[1]}]}")" '.[$s][$c][$l] = $v')
+refused=$(with_value "$section" "$category" "$label" "$(jq -n --argjson max "$max" '$max + 1')" <<<'{"method": "apply"}' |
+    with_value "$other_section" "$other_category" "$other_label" "$(pick "${expected[${edits[1]}]}")")
 if vroid "$refused" >/dev/null 2>"$out/bounds.err"; then
     fatal "apply above the maximum succeeded"
 fi

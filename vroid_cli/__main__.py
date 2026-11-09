@@ -103,7 +103,8 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
-    print(adapter.dump_json(result).decode())
+    # Indented so saved templates diff line by line.
+    print(adapter.dump_json(result, indent=2).decode())
     return 0
 
 

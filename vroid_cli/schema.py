@@ -1,6 +1,7 @@
 """Request and result models; the JSON Schema printed by --agent-skill comes from here."""
 
 import json
+from collections import Counter
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -11,13 +12,35 @@ from pydantic import (
     PositiveFloat,
     TypeAdapter,
     ValidationError,
+    ValidatorFunctionWrapHandler,
+    WrapValidator,
     field_validator,
+    model_validator,
 )
 
 Section = Literal["Face", "Body"]
-# A label that occurs more than once in a category maps to its values in app order.
-Value = float | list[float]
-Template = dict[str, dict[str, Value]]
+
+
+def one_error(value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
+    # Without this, a bad value gets one error per union member.
+    try:
+        return handler(value)
+    except ValidationError:
+        raise ValueError(
+            "expected a finite number, or an array of them for a repeated label"
+        ) from None
+
+
+Value = Annotated[float | list[float], WrapValidator(one_error)]
+Template = Annotated[
+    dict[str, dict[str, Value]],
+    Field(
+        description="category name -> parameter label -> value. A label that "
+        "occurs more than once in a category takes an array of its values in "
+        "app order. Categories share parameters by label, so each label may "
+        "appear in only one category."
+    ),
+]
 
 
 class Model(BaseModel):
@@ -99,8 +122,23 @@ class Apply(Model):
     """
 
     method: Literal["apply"]
-    Face: Template = Field(default_factory=dict[str, dict[str, Value]])
-    Body: Template = Field(default_factory=dict[str, dict[str, Value]])
+    Face: Template = Field(default_factory=dict)
+    Body: Template = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def each_parameter_once(self) -> "Apply":
+        # The same label in two categories of a section is one parameter; the
+        # later value would silently win.
+        for section, template in [("Face", self.Face), ("Body", self.Body)]:
+            first: dict[str, str] = {}
+            for category, values in template.items():
+                for label in values:
+                    if (other := first.setdefault(label, category)) != category:
+                        raise ValueError(
+                            f"{section}/{category}/{label} is the same parameter "
+                            f"as {section}/{other}/{label}; set it once"
+                        )
+        return self
 
 
 class Save(Model):
@@ -182,16 +220,20 @@ def parse(text: str) -> Request:
     """Validate a request. Raises ValueError naming each bad field."""
 
     def unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-        keys = [key for key, _ in pairs]
-        if duplicates := sorted({key for key in keys if keys.count(key) > 1}):
+        value = dict(pairs)
+        if len(value) < len(pairs):
+            counts = Counter(key for key, _ in pairs)
+            duplicates = sorted(key for key, count in counts.items() if count > 1)
             raise ValueError(f"duplicate keys: {', '.join(duplicates)}")
-        return dict(pairs)
+        return value
 
     try:
         # pydantic keeps the last of duplicate keys; refuse them instead.
         json.loads(text, object_pairs_hook=unique)
     except json.JSONDecodeError:
         pass  # pydantic reports invalid JSON below.
+    except RecursionError:
+        raise ValueError("request is nested too deeply") from None
     try:
         return REQUEST.validate_json(text)
     except ValidationError as error:
