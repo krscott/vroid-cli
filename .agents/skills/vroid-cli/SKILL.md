@@ -95,7 +95,9 @@ and tails are accessories.
   either a set or those items. `dump` omits sets.
 - `"custom"` is an item that is not built in, such as a texture-edited outfit
   or a sample model's part. `apply` refuses to change any item in a section
-  that wears one, since VRoid may replace it and `undo` cannot restore it. To discard it anyway, `save` a copy of the
+  that wears one, since VRoid may replace it and `undo` cannot restore it.
+  In a template, `"custom"` only keeps the target's own such item; it cannot
+  copy one to another project, where `apply` refuses it. To discard it anyway, `save` a copy of the
   project first, then add `"discard_custom": true`; the result's `discarded`
   names what was lost.
 - `Accessories` in `apply` is every accessory to wear; `apply` adds and

@@ -294,7 +294,7 @@ label count, live bounds, and kind, and collects every refusal. Bounds
 compare the value as float32, as VRoid stores it, so a dumped bound such as
 0.7 stays in range. Any refusal fails the request before anything changes
 (R-EDIT-3, R-EDIT-10). A colour that is unavailable for a category's current
-item is not refused in a section whose items the request changes, since the
+item is not refused when the request changes that category's item, since the
 new item may offer it. The second pass changes items, then accessories,
 because a new item resets its category's values and colours, then
 revisits the categories and sets each value that differs, waiting for each

@@ -339,10 +339,10 @@ public sealed partial class Plugin : BasePlugin
 
     // Resolves each wanted value to its parameter or colour and checks its
     // bounds or kind, adding a message to `errors` for each value it cannot set
-    // (R-EDIT-3). `itemsChange` skips colours unavailable for the current item,
-    // since the request's new items may make them available; the pass after
-    // the items change checks them.
-    private static Target Match(string section, Category category, CategoryEdit edit, List<string> errors, bool itemsChange)
+    // (R-EDIT-3). `itemChanges` skips colours unavailable for the category's
+    // current item, since the item the request selects may offer them; the
+    // pass after the items change checks them.
+    private static Target Match(string section, Category category, CategoryEdit edit, List<string> errors, bool itemChanges)
     {
         var matched = new List<(object, float, string)>();
         var painted = new List<Paint>();
@@ -357,7 +357,11 @@ public sealed partial class Plugin : BasePlugin
                 continue;
             }
             var refused = category.Refused.TryGetValue(wanted.Label, out var reason) ? $"{path}: {reason}" : null;
-            if (itemsChange && reason == Unavailable) continue;
+            if (itemChanges && reason == Unavailable)
+            {
+                if (wanted.Color == null) errors.Add($"{path}: is a colour; give \"#RRGGBB\"");
+                continue;
+            }
             if (wanted.Color is { } color)
             {
                 if (swatches.Length == 1 && Colors.Normalize(color) is { } hex)
@@ -406,14 +410,15 @@ public sealed partial class Plugin : BasePlugin
             group => group.Count() == 1 ? (object?)Read(group.First()) : group.Select(Read).ToArray());
 
     // Visits each edited category with the values it resolved; null means wait a frame.
-    private static IEnumerable<Target?> Targets(Dictionary<string, CategoryEdit[]> edits, List<string> errors, Func<string, bool> itemsChange)
+    private static IEnumerable<Target?> Targets(Dictionary<string, CategoryEdit[]> edits, List<string> errors,
+        Func<string, string, bool> itemChanges)
     {
         foreach (var section in Sections.Where(section => edits[section].Any(edit => edit.Values.Length > 0)))
         {
             var valued = edits[section].Where(edit => edit.Values.Length > 0).ToArray();
             foreach (var category in Visit(section, valued.Select(edit => edit.Name), errors))
                 yield return category == null ? null
-                    : Match(section, category, valued.Single(edit => edit.Name == category.Name), errors, itemsChange(section));
+                    : Match(section, category, valued.Single(edit => edit.Name == category.Name), errors, itemChanges(section, category.Name));
         }
     }
 
@@ -427,7 +432,7 @@ public sealed partial class Plugin : BasePlugin
         foreach (var step in CheckItems(request, edits, discard, work, errors)) yield return step;
         var previous = Sections.ToDictionary(section => section, _ => new Dictionary<string, Dictionary<string, object?>>());
         var colors = new List<ColorField>();
-        foreach (var target in Targets(edits, errors, work.ItemsChange))
+        foreach (var target in Targets(edits, errors, work.ItemChanges))
         {
             if (target is not { } found)
             {
@@ -463,7 +468,7 @@ public sealed partial class Plugin : BasePlugin
         foreach (var step in ChangeItems(work, restore)) yield return step;
         foreach (var step in ChangeAccessories(work)) yield return step;
         var changed = work.Changed;
-        foreach (var target in Targets(edits, errors, _ => false))
+        foreach (var target in Targets(edits, errors, (_, _) => false))
         {
             // The first pass found none, unless new items made a colour unavailable or
             // the app changed underneath; stop changing it.

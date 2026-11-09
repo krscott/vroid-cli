@@ -236,6 +236,10 @@ public sealed partial class Plugin
 
         public bool ItemsChange(string section) =>
             Picks.Any(pick => pick.Slot.Section == section && pick.Item != Before[pick.Slot.Path]);
+
+        // Whether the request changes this category's own item.
+        public bool ItemChanges(string section, string category) =>
+            Picks.Any(pick => pick.Slot.Section == section && pick.Slot.Name == category && pick.Item != Before[pick.Slot.Path]);
     }
 
     // Resolves every requested item and accessory and adds a message to
