@@ -1,4 +1,5 @@
-// Exercises plugin/Bridge.cs, the app side of the file protocol, without Unity.
+// Exercises plugin/Bridge.cs, the app side of the file protocol, and the
+// camera placement in plugin/Framing.cs, without Unity.
 using System.Text.Json;
 using VroidBridge;
 
@@ -153,6 +154,119 @@ Test("a request whose id is not a CLI id writes nothing outside results", direct
     Check(rpc.Take() == null, "invalid request was returned");
     Check(!File.Exists(Path.Combine(directory, "escape.json")), "wrote outside results");
     Check(File.Exists(Path.Combine(directory, "request.invalid.json")), "invalid request not kept");
+});
+
+// Framing: a sample character's bounds, as VRoid reports them, facing +Z or turned.
+var low = new Vec(-0.48, 0.0, -0.38);
+var high = new Vec(0.48, 1.5, 0.33);
+var forwards = new[] { new Vec(0, 0, 1), new Vec(Math.Sin(0.5), 0, Math.Cos(0.5)) };
+var aspects = new[] { 0.5, 1.0, 2.0 };
+var views = Enum.GetValues<View>();
+
+// Position of `point` in the image plane of `shot`: right, up, and depth.
+(double Right, double Up, double Depth) Project(Shot shot, Vec point)
+{
+    var back = shot.Position - shot.Target;
+    var length = Math.Sqrt(back.X * back.X + back.Z * back.Z);
+    Check(Math.Abs(back.Y) < 1e-9, "camera does not look horizontally");
+    var (x, z) = (back.X / length, back.Z / length);
+    var offset = point - shot.Target;
+    var toCamera = shot.Position - point;
+    var depth = toCamera.X * x + toCamera.Z * z;
+    return (offset.X * z - offset.Z * x, offset.Y, depth);
+}
+
+IEnumerable<Vec> Corners(Vec min, Vec max) =>
+    from x in new[] { min.X, max.X }
+    from y in new[] { min.Y, max.Y }
+    from z in new[] { min.Z, max.Z }
+    select new Vec(x, y, z);
+
+// R-VIEW-1
+Test("every body view shows the whole model with a margin", _ =>
+{
+    foreach (var forward in forwards)
+        foreach (var aspect in aspects)
+            foreach (var view in views)
+            {
+                var shot = Framing.Body(low, high, forward, view, aspect);
+                foreach (var corner in Corners(low, high))
+                {
+                    var (right, up, depth) = Project(shot, corner);
+                    var where = $"{view} at aspect {aspect}: corner {corner}";
+                    Check(Math.Abs(right) <= shot.Size * aspect / Framing.Margin + 1e-9, $"{where} is outside the width");
+                    Check(Math.Abs(up) <= shot.Size / Framing.Margin + 1e-9, $"{where} is outside the height");
+                    Check(depth > shot.Near && depth < shot.Far, $"{where} is clipped");
+                }
+            }
+});
+
+// R-VIEW-1
+Test("body views share one scale and ground line", _ =>
+{
+    foreach (var forward in forwards)
+        foreach (var aspect in aspects)
+        {
+            var shots = views.Select(view => Framing.Body(low, high, forward, view, aspect)).ToArray();
+            Check(shots.All(shot => Math.Abs(shot.Size - shots[0].Size) < 1e-9), $"scale differs at aspect {aspect}");
+            Check(shots.All(shot => Math.Abs(shot.Target.Y - shots[0].Target.Y) < 1e-9), $"ground line differs at aspect {aspect}");
+        }
+});
+
+// R-VIEW-1
+Test("each view looks from its side of the model", _ =>
+{
+    // Facing +Z, the model's left is -X.
+    var forward = new Vec(0, 0, 1);
+    var expected = new Dictionary<View, (int X, int Z)>
+    {
+        [View.Front] = (0, 1),
+        [View.ThreeQuarter] = (-1, 1),
+        [View.Side] = (-1, 0),
+        [View.Back] = (0, -1),
+    };
+    foreach (var (view, (x, z)) in expected)
+    {
+        var direction = Framing.Direction(forward, view);
+        Check(Math.Sign(Math.Round(direction.X, 9)) == x && Math.Sign(Math.Round(direction.Z, 9)) == z,
+            $"{view} camera is at {direction}");
+    }
+});
+
+// R-VIEW-1
+Test("a head frame holds the neck and everything above it", _ =>
+{
+    var neck = new Vec(0, 1.19, -0.03);
+    var head = new Vec(0.01, 1.25, -0.02);
+    foreach (var aspect in aspects)
+        foreach (var view in views)
+        {
+            var shot = Framing.Head(low, high, neck, head, forwards[0], view, aspect);
+            Check(Math.Abs(shot.Target.X - head.X) < 1e-9 && Math.Abs(shot.Target.Z - head.Z) < 1e-9, "not centred on the head");
+            foreach (var point in new[] { neck, new Vec(head.X, high.Y, head.Z) })
+            {
+                var (_, up, depth) = Project(shot, point);
+                Check(Math.Abs(up) <= shot.Size / Framing.Margin + 1e-9, $"{view} at aspect {aspect} cuts off {point}");
+                Check(depth > shot.Near && depth < shot.Far, $"{view} at aspect {aspect} clips {point}");
+            }
+            // The frame is at least as wide as it is tall.
+            Check(shot.Size * aspect >= (high.Y - neck.Y) / 2 * Framing.Margin - 1e-9, $"{view} at aspect {aspect} is narrower than the head");
+        }
+});
+
+Test("unknown views and frames are refused", _ =>
+{
+    foreach (var name in new[] { "front", "three_quarter", "side", "back" }) Framing.ParseView(name);
+    foreach (var name in new[] { "body", "head" }) Framing.ParseFrame(name);
+    foreach (var parse in new Action[] { () => Framing.ParseView("left"), () => Framing.ParseFrame("face") })
+    {
+        try
+        {
+            parse();
+            throw new Exception("an unknown name was accepted");
+        }
+        catch (ArgumentException) { }
+    }
 });
 
 return failures == 0 ? 0 : 1;

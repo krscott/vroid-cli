@@ -16,6 +16,8 @@ public sealed class Plugin : BasePlugin
     private static object? main;
     private static object? root;
     private static bool updating;
+    // Holds ModelOrigin, the root transform of the model on screen.
+    private static object? updater;
     private static bool modified;
     private static long rebuilt;
     private static int frame = -1;
@@ -73,8 +75,9 @@ public sealed class Plugin : BasePlugin
     }
 
     // A completed rebuild is the only completion signal for opens and edits.
-    public static void ModelUpdating(bool value)
+    public static void ModelUpdating(object __instance, bool value)
     {
+        updater = __instance;
         if (!value && updating) rebuilt++;
         updating = value;
     }
@@ -369,6 +372,24 @@ public sealed class Plugin : BasePlugin
         result = dump;
     }
 
+    // Writes a new file and removes it again if the write fails. The CLI links
+    // it into place, so an existing file is never replaced.
+    private static void WriteNew(string path, byte[] bytes)
+    {
+        using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write);
+        try
+        {
+            stream.Write(bytes);
+            stream.Flush();
+        }
+        catch
+        {
+            stream.Dispose();
+            File.Delete(path);
+            throw;
+        }
+    }
+
     private static IEnumerable<bool> Execute(Request request)
     {
         while (updating) yield return true;
@@ -430,6 +451,18 @@ public sealed class Plugin : BasePlugin
                     throw new IOException("VRoid reported success without writing the project");
                 modified = false;
                 result = new { saved = path, bytes = new FileInfo(path).Length };
+                break;
+            }
+            case "render":
+            {
+                _ = Root;
+                var origin = Reflect.Get(updater, "ModelOrigin")
+                    ?? throw new InvalidOperationException("The model is not loaded; open a project first");
+                var png = CharacterRender.Png(origin, Framing.ParseView(request.Text("view")), Framing.ParseFrame(request.Text("frame")),
+                    request.Body.GetProperty("width").GetInt32(), request.Body.GetProperty("height").GetInt32());
+                var path = request.Text("path");
+                WriteNew(path, png);
+                result = new { rendered = path, bytes = png.Length };
                 break;
             }
             default:

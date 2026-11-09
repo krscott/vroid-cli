@@ -187,7 +187,8 @@ The bridge tracks these app objects:
 - Selectors: `BasePresetsSelectorViewModel.UpdateSelectedPresets` captures the
   Face and Body category selectors by concrete type.
 - Rebuilds: `VRoidCoreModelUpdater.set_IsUpdatingModel` counts each
-  true-to-false transition.
+  true-to-false transition and captures the updater, whose `ModelOrigin` is
+  the root transform of the model on screen.
 
 Operations:
 
@@ -199,6 +200,7 @@ Operations:
 | `dump` | `parameters` for every Face and Body category in app order | No rebuild running |
 | `apply` | `parameters` for each named category, then parameter `set_CombinedValue` or `set_Value` per changed value | One rebuild finished per changed value (R-EDIT-6) |
 | `save` | Edit root `_mainActionHandler.SaveSync(path, true)` | Call returned true and the file is nonempty |
+| `render` | A temporary Unity camera renders `ModelOrigin`, below | PNG written to a new file |
 
 `open` refuses once a project is open; changing projects needs a restart.
 Successful `open` and `save` clear `modified`.
@@ -230,11 +232,48 @@ fails, the error lists the values already changed. Each rebuild takes a few
 frames, so even a template that changes every value finishes far within the
 request timeout.
 
+`render` reads the model's enabled renderers under `ModelOrigin` on every
+request, so it follows rebuilds. VRoid's photo booth is a separate screen with
+its own pose, and its thumbnail code poses the model and hides meshes while it
+runs; both change app state, so the bridge renders with its own camera
+instead. In one frame, it creates a disabled orthographic `Camera` whose
+culling mask holds only the renderers' layers (all on Default in 2.16.0),
+renders into a 4x MSAA `RenderTexture` cleared to light grey, reads it into an
+RGB `Texture2D`, and encodes it with `ImageConversion.EncodeToPNG`. A `finally`
+block restores `RenderTexture.active` and destroys the three objects, so the
+editor's cameras, the project, and `modified` never change (R-VIEW-2). The
+scene's own directional lights, fixed in world space in front of the model,
+light every view, so back views show MToon's shade colours.
+
+`plugin/Framing.cs` places the camera without Unity, so `tests/protocol`
+checks it. The model's forward direction, turned by 0, -45, -90, or 180
+degrees, gives the front, three-quarter, side, and back views; the negative
+turns show the model's left side. A body frame fits the renderers' world
+bounds with a 5% margin: their height, and their horizontal radius rather
+than the width seen from the view, so every body view of a model shares its
+scale and ground line. A head frame is a square from the humanoid neck bone to
+the top of the bounds, centred on the head bone (`Animator.GetBoneTransform`),
+so ears, hair, and hats stay in view. The camera stands outside the bounds, so
+no part of the model is clipped.
+
+The bridge writes the PNG to the path it is given with `FileMode.CreateNew`
+and deletes the file if the write fails. The CLI gives it a hidden
+`.vroid-render-HEX.png` beside the destination, publishes it with `os.link`,
+which is atomic and fails if the destination exists, and removes the hidden
+file in a `finally`, so a destination is never replaced or partly written
+(R-VIEW-3). Only a crash of both processes leaves a hidden file. A bridge that
+predates `render` answers `Unknown method: render`; the CLI adds that the
+session needs a stop and launch to update it.
+
 IL2CPP reflection must convert native objects to their most derived proxy type.
 `Reflect.Concrete` maps `System.*` class names to `Il2CppSystem.*` proxies and
 closes generic proxies, such as `ImmutableArray<T>`, over the runtime type's
 arguments. `Reflect.Items` iterates by `Count`/`Length` and `get_Item`, else by
-enumerator.
+enumerator. `plugin/Render.cs` alone calls instance members of Unity engine
+objects through C# `dynamic`, using the loader's bundled `Microsoft.CSharp`,
+so its engine calls read like Unity code; static members, which `dynamic`
+cannot reach on types found at runtime, and every VRoid type go through
+`Reflect`.
 
 ## Command line
 
@@ -245,10 +284,11 @@ stdin. Every method is a request, so saved requests work in any session.
 `method`. pydantic's defaults would accept `NaN`, coerce `"0.5"`, and drop
 misspelled fields (R-CLI-3). Its JSON parser keeps the last of repeated keys,
 so the CLI rejects repeated keys first. Validation refuses non-finite values
-(R-EDIT-2) and checks `.vroid` suffixes, an existing `open` source, and a new
-`save` destination in an existing directory (R-EDIT-4), all before touching
-session state. Paths resolve against the current directory, and `open` and
-`save` report the resolved path rather than the bridge's Wine path. The bridge
+(R-EDIT-2) and checks `.vroid` and `.png` suffixes, an existing `open` source,
+and a new `save` or `render` destination in an existing directory (R-EDIT-4,
+R-VIEW-3), all before touching session state. Paths resolve against the current directory, and `open`,
+`save`, and `render` report the resolved path rather than the bridge's Wine
+path. The bridge
 rechecks the destination before saving. Validation errors print one
 `FIELD: REASON` line each. Output is indented JSON, so saved templates diff
 line by line.
@@ -268,9 +308,12 @@ errors (R-CLI-2).
 
 - `tests/test_cli.py`: the CLI against a stand-in bridge and Framewisp.
 - `tests/test_launcher.py`: the launcher against a stand-in Wine.
-- `tests/protocol`: the bridge's file protocol under the .NET SDK.
+- `tests/protocol`: the bridge's file protocol and camera placement under the
+  .NET SDK.
 
 `scripts/gui-smoke.sh`, run by `just gui-smoke`, drives a real session through
-open, dump, edit, refusal, save, restart, reopen, and reapplying the first
-dump, and checks the Framewisp input log. It needs graphics access and a
-session whose first-run dialogs are complete.
+open, dump, edit, refusal, save, rendering every view, restart, reopen, and
+reapplying the first dump, and checks the Framewisp input log. It decodes each
+render with the Python standard library to check its size and framing, and
+compares `dump` and an editor screenshot before and after rendering. It needs
+graphics access and a session whose first-run dialogs are complete.

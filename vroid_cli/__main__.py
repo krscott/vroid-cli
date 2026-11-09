@@ -10,6 +10,7 @@ JSON Schema.
 import json
 import os
 import sys
+import uuid
 from pathlib import Path
 from typing import Any, NoReturn, cast
 
@@ -57,6 +58,40 @@ def bridge_args(request: schema.BridgeRequest) -> dict[str, Any]:
     return args
 
 
+# Results that name the bridge's Wine path; the CLI reports the caller's path.
+PATH_RESULTS = {"open": "opened", "save": "saved", "render": "rendered"}
+
+
+def render(session: sessions.Session, request: schema.Render) -> Any:
+    """Have the bridge write a hidden file beside the destination, then link it.
+
+    The link is atomic and never replaces an existing file (R-VIEW-3). The
+    hidden file is removed whatever happens; one left by a crash is named
+    `.vroid-render-*.png`.
+    """
+    temporary = request.path.with_name(f".vroid-render-{uuid.uuid4().hex}.png")
+    args = bridge_args(request) | {"path": rpc.wine_path(temporary)}
+    try:
+        try:
+            result = sessions.request(session, method="render", args=args)
+        except rpc.BridgeError as error:
+            if error.error != "Unknown method: render":
+                raise
+            raise RuntimeError(
+                f"{error}. The running bridge predates render; save, stop, and "
+                "launch the session to update it"
+            ) from None
+        try:
+            os.link(temporary, request.path)
+        except FileExistsError:
+            raise RuntimeError(
+                f"refusing to overwrite {request.path}, created while rendering"
+            ) from None
+    finally:
+        temporary.unlink(missing_ok=True)
+    return result
+
+
 def run(session: sessions.Session, request: schema.Request) -> Any:
     match request:
         case schema.Launch():
@@ -65,17 +100,18 @@ def run(session: sessions.Session, request: schema.Request) -> Any:
             return sessions.summary(session)
         case schema.Stop():
             return sessions.stop(session, force=request.force)
-        case schema.Open() | schema.Save():
-            result: Any = sessions.request(
-                session, method=request.method, args=bridge_args(request)
+        case schema.Open() | schema.Save() | schema.Render():
+            result: Any = (
+                render(session, request)
+                if isinstance(request, schema.Render)
+                else sessions.request(
+                    session, method=request.method, args=bridge_args(request)
+                )
             )
-            # The bridge reports the Wine path; report the caller's path instead.
             if not isinstance(result, dict):
                 return result  # Result validation reports it.
             paths = cast(dict[str, Any], result)
-            paths["opened" if isinstance(request, schema.Open) else "saved"] = str(
-                request.path
-            )
+            paths[PATH_RESULTS[request.method]] = str(request.path)
             return paths
         case _:
             return sessions.request(

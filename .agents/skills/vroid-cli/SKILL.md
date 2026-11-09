@@ -27,6 +27,7 @@ vroid-cli alice '{"method": "apply", "Body": {"Whole Body": {"Head Size": 0.125}
 vroid-cli alice '{"method": "dump"}' > alice.json
 vroid-cli alice @alice.json
 vroid-cli alice '{"method": "save", "path": "./alice-v2.vroid"}'
+vroid-cli alice '{"method": "render", "path": "./alice-side.png", "view": "side"}'
 vroid-cli alice '{"method": "stop"}'
 ```
 
@@ -59,6 +60,12 @@ field and result.
   directory, not the request file's.
 - `save` needs a new `.vroid` path in an existing directory. It never
   overwrites. Choose a new versioned filename.
+- `render` writes a new `.png` of the open character, without changing it:
+  `view` is `front`, `three_quarter`, `side`, or `back` (the last two show its
+  left side). `frame: "head"` fits the neck up, so a front head view is a face
+  close-up; a side head view shows ear shape. Views are orthographic and share
+  one scale, so compare them with a reference turnaround instead of taking
+  screenshots of the app. `width` and `height` default to 1024.
 - Opening another project requires `save`, `stop`, and `launch` first.
 - `stop` refuses while there are unsaved changes or a pending request. Save
   or wait first; send `{"method": "stop", "force": true}` only when discarding
