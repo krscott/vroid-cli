@@ -224,10 +224,11 @@ it, so a dumped bound such as 0.7 stays in range. Any refusal fails the
 request before a value changes (R-EDIT-3). The second pass revisits the
 categories and sets each value that differs, waiting for its rebuild, and
 stops at the first new refusal. It sets `modified` before the first change, so
-an interrupted edit still counts as unsaved. The result counts the changed values and holds an `undo`
-template of the previous values. If the second pass fails, the error lists
-the values already changed. Each rebuild takes a few frames, so even a
-template that changes every value finishes far within the request timeout.
+an interrupted edit still counts as unsaved. The result counts the changed
+values and holds an `undo` template of the previous values. If the second pass
+fails, the error lists the values already changed. Each rebuild takes a few
+frames, so even a template that changes every value finishes far within the
+request timeout.
 
 IL2CPP reflection must convert native objects to their most derived proxy type.
 `Reflect.Concrete` maps `System.*` class names to `Il2CppSystem.*` proxies and
