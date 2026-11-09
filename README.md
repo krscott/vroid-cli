@@ -64,6 +64,21 @@ Use one session name per agent or task. Session state lives in `.vroid/NAME/`
 at the Git worktree root (the current directory outside Git), or under
 `VROID_STATE_DIR`. The state directory ignores itself in Git.
 
+### Views
+
+`render` writes a PNG of the open character on a plain background, without
+changing the project or the editor's view. It shows the front, three-quarter,
+side, or back of the whole character, or of its head with `"frame": "head"`.
+Views are orthographic, and body views at one size share their scale, like a
+turnaround sheet:
+
+```sh
+vroid-cli demo '{"method": "render", "path": "./side.png", "view": "side"}'
+vroid-cli demo '{"method": "render", "path": "./face.png", "view": "front", "frame": "head"}'
+```
+
+Like `save`, it never overwrites a file.
+
 ### Agents
 
 The shared skill in [`.agents/skills/vroid-cli`](.agents/skills/vroid-cli/SKILL.md)
