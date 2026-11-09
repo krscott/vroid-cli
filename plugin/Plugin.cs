@@ -372,19 +372,18 @@ public sealed class Plugin : BasePlugin
         result = dump;
     }
 
-    // Writes a new file and removes it again if the write fails. The CLI links
-    // it into place, so an existing file is never replaced.
+    // Writes a new file and removes it again if writing or closing it fails.
+    // The CLI links it into place, so an existing file is never replaced.
     private static void WriteNew(string path, byte[] bytes)
     {
-        using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write);
+        // Outside the try: a file that already exists is not ours to delete.
+        var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write);
         try
         {
-            stream.Write(bytes);
-            stream.Flush();
+            using (stream) stream.Write(bytes);
         }
         catch
         {
-            stream.Dispose();
             File.Delete(path);
             throw;
         }

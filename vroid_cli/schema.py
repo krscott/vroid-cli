@@ -173,7 +173,7 @@ class Render(Model):
     """Render the open character to a new PNG in an existing directory.
 
     The image is orthographic on a plain background. Body views of one
-    character share their scale and ground line.
+    character at one size share their scale and ground line.
     """
 
     method: Literal["render"]
@@ -183,8 +183,8 @@ class Render(Model):
     )
     frame: Literal["body", "head"] = Field(
         "body",
-        description="body fits the whole character; head fits the neck up, "
-        "so a front head view is a face close-up",
+        description="body fits the whole character; head fits everything "
+        "above the neck, so a front head view is a face close-up",
     )
     width: ImageSize = 1024
     height: ImageSize = 1024

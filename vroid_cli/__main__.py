@@ -58,8 +58,11 @@ def bridge_args(request: schema.BridgeRequest) -> dict[str, Any]:
     return args
 
 
-# Results that name the bridge's Wine path; the CLI reports the caller's path.
-PATH_RESULTS = {"open": "opened", "save": "saved", "render": "rendered"}
+def with_path(result: Any, key: str, path: Path) -> Any:
+    """Report the caller's path instead of the bridge's Wine path."""
+    if not isinstance(result, dict):
+        return result  # Result validation reports it.
+    return cast(dict[str, Any], result) | {key: str(path)}
 
 
 def render(session: sessions.Session, request: schema.Render) -> Any:
@@ -87,9 +90,14 @@ def render(session: sessions.Session, request: schema.Render) -> Any:
             raise RuntimeError(
                 f"refusing to overwrite {request.path}, created while rendering"
             ) from None
+        except OSError as error:
+            raise RuntimeError(
+                f"cannot create {request.path}: {error.strerror}. Render into a "
+                "writable directory on a filesystem that supports hard links"
+            ) from None
     finally:
         temporary.unlink(missing_ok=True)
-    return result
+    return with_path(result, "rendered", request.path)
 
 
 def run(session: sessions.Session, request: schema.Request) -> Any:
@@ -100,19 +108,14 @@ def run(session: sessions.Session, request: schema.Request) -> Any:
             return sessions.summary(session)
         case schema.Stop():
             return sessions.stop(session, force=request.force)
-        case schema.Open() | schema.Save() | schema.Render():
-            result: Any = (
-                render(session, request)
-                if isinstance(request, schema.Render)
-                else sessions.request(
-                    session, method=request.method, args=bridge_args(request)
-                )
+        case schema.Open() | schema.Save():
+            result = sessions.request(
+                session, method=request.method, args=bridge_args(request)
             )
-            if not isinstance(result, dict):
-                return result  # Result validation reports it.
-            paths = cast(dict[str, Any], result)
-            paths[PATH_RESULTS[request.method]] = str(request.path)
-            return paths
+            key = "opened" if isinstance(request, schema.Open) else "saved"
+            return with_path(result, key, request.path)
+        case schema.Render():
+            return render(session, request)
         case _:
             return sessions.request(
                 session, method=request.method, args=bridge_args(request)

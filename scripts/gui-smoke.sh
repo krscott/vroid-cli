@@ -13,8 +13,8 @@ usage() {
         'Opens SOURCE in SESSION, dumps its template, edits one Body and two Face' \
         'parameters in one request, saves a copy, renders each view, restarts,' \
         'checks the saved values, and applies the original template. SESSION' \
-        'must be stopped and' \
-        'past its first-run dialogs. Set VROID_CLI to choose the vroid-cli binary.'
+        'must be stopped and past its first-run dialogs. Set VROID_CLI to choose' \
+        'the vroid-cli binary.'
 }
 
 fatal_usage() {
@@ -107,8 +107,8 @@ render() {
 
 # Check a rendered PNG: PATH FRAME WIDTH HEIGHT. Its size must match, it must
 # show the character, and the edges that frame the character must be
-# background: every edge for a body, the top for a head, whose frame cuts
-# through the neck.
+# background: every edge for a body, all but the bottom for a head, whose
+# frame cuts through the neck.
 check_image() {
     python3 - "$@" <<'PY' || fatal "$1 is not a framed render; see above"
 import struct
@@ -151,7 +151,7 @@ for y in range(h):
     previous = line
 background = rows[0][0]
 edges = {"top": rows[0], "bottom": rows[-1], "left": [r[0] for r in rows], "right": [r[-1] for r in rows]}
-for name in ["top"] if frame == "head" else edges:
+for name in ["top", "left", "right"] if frame == "head" else edges:
     if any(pixel != background for pixel in edges[name]):
         sys.exit(f"{path}: the character touches the {name} edge")
 shown = sum(pixel != background for row in rows for pixel in row)
@@ -213,6 +213,10 @@ for edit in "${edits[@]}"; do
     actual=$(value_of "$section" "$category" "$label")
     same "$actual" "${expected[$edit]}" || fatal "$label changed to $actual after a refused apply"
 done
+
+# Rendering keeps unsaved changes unsaved (R-VIEW-2).
+render front body 64 128 "$out/unsaved.png" >/dev/null
+[[ $(modified) == true ]] || fatal "rendering cleared the unsaved state"
 
 save=$(jq -cn --arg path "$edited" '{method: "save", path: $path}')
 vroid "$save" >/dev/null

@@ -235,35 +235,38 @@ request timeout.
 `render` reads the model's enabled renderers under `ModelOrigin` on every
 request, so it follows rebuilds. VRoid's photo booth is a separate screen with
 its own pose, and its thumbnail code poses the model and hides meshes while it
-runs; both change app state, so the bridge renders with its own camera
-instead. In one frame, it creates a disabled orthographic `Camera` whose
-culling mask holds only the renderers' layers (all on Default in 2.16.0),
-renders into a 4x MSAA `RenderTexture` cleared to light grey, reads it into an
-RGB `Texture2D`, and encodes it with `ImageConversion.EncodeToPNG`. A `finally`
-block restores `RenderTexture.active` and destroys the three objects, so the
-editor's cameras, the project, and `modified` never change (R-VIEW-2). The
-scene's own directional lights, fixed in world space in front of the model,
-light every view, so back views show MToon's shade colours.
+runs; both change app state, so the bridge renders with its own camera instead.
+In one frame, it creates a disabled orthographic `Camera` whose culling mask
+holds only the renderers' layers (all Default in 2.16.0, which nothing else in
+view uses), renders into a 4x MSAA `RenderTexture` cleared to light grey, reads
+it into an RGB `Texture2D`, and encodes it with `ImageConversion.EncodeToPNG`.
+A `finally` block restores `RenderTexture.active` and destroys the three
+objects, so the editor's cameras, the project, and `modified` never change
+(R-VIEW-2). The scene's own directional lights, fixed in world space in front
+of the model, light every view, so back views show MToon's shade colours.
 
 `plugin/Framing.cs` places the camera without Unity, so `tests/protocol`
 checks it. The model's forward direction, turned by 0, -45, -90, or 180
 degrees, gives the front, three-quarter, side, and back views; the negative
 turns show the model's left side. A body frame fits the renderers' world
 bounds with a 5% margin: their height, and their horizontal radius rather
-than the width seen from the view, so every body view of a model shares its
-scale and ground line. A head frame is a square from the humanoid neck bone to
-the top of the bounds, centred on the head bone (`Animator.GetBoneTransform`),
-so ears, hair, and hats stay in view. The camera stands outside the bounds, so
-no part of the model is clipped.
+than the width seen from the view, so every body view of a model at one image
+size shares its scale and ground line. A head frame holds every renderer whose
+bounds are centred above the humanoid neck bone, such as the head, ears, hair,
+and hats: it spans from the neck to their top, centred on the head bone
+(`Animator.GetBoneTransform`), and its width is their horizontal reach from
+the head bone in any direction, so head views share their scale too. The
+camera stands outside the bounds, so no part of the model is clipped.
 
-The bridge writes the PNG to the path it is given with `FileMode.CreateNew`
-and deletes the file if the write fails. The CLI gives it a hidden
+The bridge writes the PNG to the path it is given with `FileMode.CreateNew` and
+deletes the file if the write fails. The CLI gives it a hidden
 `.vroid-render-HEX.png` beside the destination, publishes it with `os.link`,
 which is atomic and fails if the destination exists, and removes the hidden
 file in a `finally`, so a destination is never replaced or partly written
-(R-VIEW-3). Only a crash of both processes leaves a hidden file. A bridge that
-predates `render` answers `Unknown method: render`; the CLI adds that the
-session needs a stop and launch to update it.
+(R-VIEW-3). A CLI that stops waiting before the bridge answers, because it was
+killed, interrupted, or timed out, can leave one. A bridge that predates
+`render` answers `Unknown method: render`; the CLI adds that the session needs
+a stop and launch to update it.
 
 IL2CPP reflection must convert native objects to their most derived proxy type.
 `Reflect.Concrete` maps `System.*` class names to `Il2CppSystem.*` proxies and
@@ -286,12 +289,11 @@ misspelled fields (R-CLI-3). Its JSON parser keeps the last of repeated keys,
 so the CLI rejects repeated keys first. Validation refuses non-finite values
 (R-EDIT-2) and checks `.vroid` and `.png` suffixes, an existing `open` source,
 and a new `save` or `render` destination in an existing directory (R-EDIT-4,
-R-VIEW-3), all before touching session state. Paths resolve against the current directory, and `open`,
-`save`, and `render` report the resolved path rather than the bridge's Wine
-path. The bridge
-rechecks the destination before saving. Validation errors print one
-`FIELD: REASON` line each. Output is indented JSON, so saved templates diff
-line by line.
+R-VIEW-3), all before touching session state. Paths resolve against the current
+directory, and `open`, `save`, and `render` report the resolved path rather
+than the bridge's Wine path. The bridge rechecks the destination before saving.
+Validation errors print one `FIELD: REASON` line each. Output is indented JSON,
+so saved templates diff line by line.
 
 Every result, including the bridge's, is validated against its result model
 before printing, so `--agent-skill` (or `--help`), which prints the skill and

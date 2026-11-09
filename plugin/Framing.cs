@@ -9,6 +9,16 @@ public readonly record struct Vec(double X, double Y, double Z)
     public static Vec operator *(Vec a, double k) => new(a.X * k, a.Y * k, a.Z * k);
 }
 
+/// World bounds of one mesh.
+public readonly record struct Box(Vec Min, Vec Max)
+{
+    public Vec Center => (Min + Max) * 0.5;
+
+    public static Box Union(IEnumerable<Box> boxes) => boxes.Aggregate((a, b) => new Box(
+        new Vec(Math.Min(a.Min.X, b.Min.X), Math.Min(a.Min.Y, b.Min.Y), Math.Min(a.Min.Z, b.Min.Z)),
+        new Vec(Math.Max(a.Max.X, b.Max.X), Math.Max(a.Max.Y, b.Max.Y), Math.Max(a.Max.Z, b.Max.Z))));
+}
+
 public enum View { Front, ThreeQuarter, Side, Back }
 
 public enum Frame { Body, Head }
@@ -59,30 +69,41 @@ public static class Framing
     }
 
     /// Frames the whole model. Width comes from the bounds' horizontal radius
-    /// rather than the width seen from this view, so every view of one model
-    /// shares its scale and ground line.
-    public static Shot Body(Vec min, Vec max, Vec forward, View view, double aspect)
+    /// rather than the width seen from this view, so every body view of one
+    /// model at one image size shares its scale and ground line.
+    public static Shot Body(IReadOnlyList<Box> parts, Vec forward, View view, double aspect)
     {
-        var center = (min + max) * 0.5;
-        var half = (max - min) * 0.5;
+        var all = Box.Union(parts);
+        var center = (all.Min + all.Max) * 0.5;
+        var half = (all.Max - all.Min) * 0.5;
         var radius = Math.Sqrt(half.X * half.X + half.Z * half.Z);
-        return Place(center, Math.Max(half.Y, radius / aspect) * Margin, min, max, forward, view);
+        return Place(center, Math.Max(half.Y, radius / aspect) * Margin, all, forward, view);
     }
 
-    /// Frames a square from the neck to the top of the model, centred on the
-    /// head, so ears, hair, and hats above the head stay in view.
-    public static Shot Head(Vec min, Vec max, Vec neck, Vec head, Vec forward, View view, double aspect)
+    /// Frames the parts centred above the neck, such as the head, ears, hair,
+    /// and hats, from the neck up, centred on the head. Width comes from their
+    /// horizontal reach from the head in any direction, so every head view of
+    /// one model at one image size shares its scale.
+    public static Shot Head(IReadOnlyList<Box> parts, Vec neck, Vec head, Vec forward, View view, double aspect)
     {
-        if (max.Y <= neck.Y) throw new InvalidOperationException("The character's neck is above its top");
-        var half = (max.Y - neck.Y) / 2;
-        var target = new Vec(head.X, neck.Y + half, head.Z);
-        return Place(target, Math.Max(half, half / aspect) * Margin, min, max, forward, view);
+        var above = parts.Where(part => part.Center.Y > neck.Y).ToArray();
+        if (above.Length == 0) throw new InvalidOperationException("The character has no meshes above its neck");
+        var top = Box.Union(above).Max.Y;
+        var halfHeight = (top - neck.Y) / 2;
+        var reach = above.Max(part =>
+        {
+            var x = Math.Max(Math.Abs(part.Min.X - head.X), Math.Abs(part.Max.X - head.X));
+            var z = Math.Max(Math.Abs(part.Min.Z - head.Z), Math.Abs(part.Max.Z - head.Z));
+            return Math.Sqrt(x * x + z * z);
+        });
+        var target = new Vec(head.X, neck.Y + halfHeight, head.Z);
+        return Place(target, Math.Max(halfHeight, reach / aspect) * Margin, Box.Union(parts), forward, view);
     }
 
     // Puts the camera outside the bounds so nothing of the model is clipped.
-    private static Shot Place(Vec target, double size, Vec min, Vec max, Vec forward, View view)
+    private static Shot Place(Vec target, double size, Box all, Vec forward, View view)
     {
-        var extent = max - min;
+        var extent = all.Max - all.Min;
         var reach = Math.Sqrt(extent.X * extent.X + extent.Y * extent.Y + extent.Z * extent.Z) + 1;
         return new Shot(target + Direction(forward, view) * reach, target, size, 0.01, 2 * reach);
     }

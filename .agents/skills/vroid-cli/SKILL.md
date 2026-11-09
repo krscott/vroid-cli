@@ -61,11 +61,12 @@ field and result.
 - `save` needs a new `.vroid` path in an existing directory. It never
   overwrites. Choose a new versioned filename.
 - `render` writes a new `.png` of the open character, without changing it:
-  `view` is `front`, `three_quarter`, `side`, or `back` (the last two show its
-  left side). `frame: "head"` fits the neck up, so a front head view is a face
-  close-up; a side head view shows ear shape. Views are orthographic and share
-  one scale, so compare them with a reference turnaround instead of taking
-  screenshots of the app. `width` and `height` default to 1024.
+  `view` is `front`, `three_quarter`, `side`, or `back`; `three_quarter` and
+  `side` show its left side. `frame: "head"` fits everything above the neck,
+  so a front head view is a face close-up and a side head view shows ear
+  shape. Views are orthographic, and body views at one `width` and `height`
+  share their scale, so compare them with a reference turnaround instead of
+  taking screenshots of the app. `width` and `height` default to 1024.
 - Opening another project requires `save`, `stop`, and `launch` first.
 - `stop` refuses while there are unsaved changes or a pending request. Save
   or wait first; send `{"method": "stop", "force": true}` only when discarding

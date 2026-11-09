@@ -68,7 +68,8 @@ at the Git worktree root (the current directory outside Git), or under
 `render` writes a PNG of the open character on a plain background, without
 changing the project or the editor's view. It shows the front, three-quarter,
 side, or back of the whole character, or of its head with `"frame": "head"`.
-Views are orthographic and share one scale, like a turnaround sheet:
+Views are orthographic, and body views at one size share their scale, like a
+turnaround sheet:
 
 ```sh
 vroid-cli demo '{"method": "render", "path": "./side.png", "view": "side"}'

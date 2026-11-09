@@ -156,9 +156,15 @@ Test("a request whose id is not a CLI id writes nothing outside results", direct
     Check(File.Exists(Path.Combine(directory, "request.invalid.json")), "invalid request not kept");
 });
 
-// Framing: a sample character's bounds, as VRoid reports them, facing +Z or turned.
-var low = new Vec(-0.48, 0.0, -0.38);
-var high = new Vec(0.48, 1.5, 0.33);
+// Framing: a sample character's meshes, as VRoid reports their bounds: the
+// body with its arms, the head, and long ears that reach past the head's
+// height. The model faces +Z or is turned.
+var body = new Box(new Vec(-0.48, 0.0, -0.38), new Vec(0.48, 1.30, 0.33));
+var skull = new Box(new Vec(-0.12, 1.19, -0.15), new Vec(0.12, 1.50, 0.12));
+var ears = new Box(new Vec(-0.30, 1.28, -0.05), new Vec(0.30, 1.36, 0.02));
+var parts = new[] { body, skull, ears };
+var neck = new Vec(0, 1.19, -0.03);
+var head = new Vec(0.01, 1.25, -0.02);
 var forwards = new[] { new Vec(0, 0, 1), new Vec(Math.Sin(0.5), 0, Math.Cos(0.5)) };
 var aspects = new[] { 0.5, 1.0, 2.0 };
 var views = Enum.GetValues<View>();
@@ -176,11 +182,24 @@ var views = Enum.GetValues<View>();
     return (offset.X * z - offset.Z * x, offset.Y, depth);
 }
 
-IEnumerable<Vec> Corners(Vec min, Vec max) =>
-    from x in new[] { min.X, max.X }
-    from y in new[] { min.Y, max.Y }
-    from z in new[] { min.Z, max.Z }
+IEnumerable<Vec> Corners(Box box) =>
+    from x in new[] { box.Min.X, box.Max.X }
+    from y in new[] { box.Min.Y, box.Max.Y }
+    from z in new[] { box.Min.Z, box.Max.Z }
     select new Vec(x, y, z);
+
+// Checks that every corner of `boxes` is inside the frame with its margin and unclipped.
+void Shows(Shot shot, double aspect, IEnumerable<Box> boxes, string what)
+{
+    foreach (var corner in boxes.SelectMany(Corners))
+    {
+        var (right, up, depth) = Project(shot, corner);
+        var where = $"{what} at aspect {aspect}: corner {corner}";
+        Check(Math.Abs(right) <= shot.Size * aspect / Framing.Margin + 1e-9, $"{where} is outside the width");
+        Check(Math.Abs(up) <= shot.Size / Framing.Margin + 1e-9, $"{where} is outside the height");
+        Check(depth > shot.Near && depth < shot.Far, $"{where} is clipped");
+    }
+}
 
 // R-VIEW-1
 Test("every body view shows the whole model with a margin", _ =>
@@ -188,28 +207,20 @@ Test("every body view shows the whole model with a margin", _ =>
     foreach (var forward in forwards)
         foreach (var aspect in aspects)
             foreach (var view in views)
-            {
-                var shot = Framing.Body(low, high, forward, view, aspect);
-                foreach (var corner in Corners(low, high))
-                {
-                    var (right, up, depth) = Project(shot, corner);
-                    var where = $"{view} at aspect {aspect}: corner {corner}";
-                    Check(Math.Abs(right) <= shot.Size * aspect / Framing.Margin + 1e-9, $"{where} is outside the width");
-                    Check(Math.Abs(up) <= shot.Size / Framing.Margin + 1e-9, $"{where} is outside the height");
-                    Check(depth > shot.Near && depth < shot.Far, $"{where} is clipped");
-                }
-            }
+                Shows(Framing.Body(parts, forward, view, aspect), aspect, parts, $"{view} body");
 });
 
 // R-VIEW-1
-Test("body views share one scale and ground line", _ =>
+Test("views of one model at one size share their scale", _ =>
 {
     foreach (var forward in forwards)
         foreach (var aspect in aspects)
         {
-            var shots = views.Select(view => Framing.Body(low, high, forward, view, aspect)).ToArray();
-            Check(shots.All(shot => Math.Abs(shot.Size - shots[0].Size) < 1e-9), $"scale differs at aspect {aspect}");
-            Check(shots.All(shot => Math.Abs(shot.Target.Y - shots[0].Target.Y) < 1e-9), $"ground line differs at aspect {aspect}");
+            var bodies = views.Select(view => Framing.Body(parts, forward, view, aspect)).ToArray();
+            Check(bodies.All(shot => Math.Abs(shot.Size - bodies[0].Size) < 1e-9), $"body scale differs at aspect {aspect}");
+            Check(bodies.All(shot => Math.Abs(shot.Target.Y - bodies[0].Target.Y) < 1e-9), $"ground line differs at aspect {aspect}");
+            var heads = views.Select(view => Framing.Head(parts, neck, head, forward, view, aspect)).ToArray();
+            Check(heads.All(shot => Math.Abs(shot.Size - heads[0].Size) < 1e-9), $"head scale differs at aspect {aspect}");
         }
 });
 
@@ -234,24 +245,19 @@ Test("each view looks from its side of the model", _ =>
 });
 
 // R-VIEW-1
-Test("a head frame holds the neck and everything above it", _ =>
+Test("a head view shows every mesh above the neck, not the arms", _ =>
 {
-    var neck = new Vec(0, 1.19, -0.03);
-    var head = new Vec(0.01, 1.25, -0.02);
-    foreach (var aspect in aspects)
-        foreach (var view in views)
-        {
-            var shot = Framing.Head(low, high, neck, head, forwards[0], view, aspect);
-            Check(Math.Abs(shot.Target.X - head.X) < 1e-9 && Math.Abs(shot.Target.Z - head.Z) < 1e-9, "not centred on the head");
-            foreach (var point in new[] { neck, new Vec(head.X, high.Y, head.Z) })
+    foreach (var forward in forwards)
+        foreach (var aspect in aspects)
+            foreach (var view in views)
             {
-                var (_, up, depth) = Project(shot, point);
-                Check(Math.Abs(up) <= shot.Size / Framing.Margin + 1e-9, $"{view} at aspect {aspect} cuts off {point}");
-                Check(depth > shot.Near && depth < shot.Far, $"{view} at aspect {aspect} clips {point}");
+                var shot = Framing.Head(parts, neck, head, forward, view, aspect);
+                Check(Math.Abs(shot.Target.X - head.X) < 1e-9 && Math.Abs(shot.Target.Z - head.Z) < 1e-9, "not centred on the head");
+                Shows(shot, aspect, new[] { skull, ears }, $"{view} head");
+                Check(Math.Abs(shot.Target.Y - (neck.Y + skull.Max.Y) / 2) < 1e-9, $"{view} head is not centred from the neck up");
+                // The arms reach further from the head than anything above the neck.
+                Check(shot.Size * aspect < body.Max.X - head.X, $"{view} head at aspect {aspect} is as wide as the arms");
             }
-            // The frame is at least as wide as it is tall.
-            Check(shot.Size * aspect >= (high.Y - neck.Y) / 2 * Framing.Margin - 1e-9, $"{view} at aspect {aspect} is narrower than the head");
-        }
 });
 
 Test("unknown views and frames are refused", _ =>
