@@ -80,15 +80,17 @@ public static class Framing
         return Place(center, Math.Max(half.Y, radius / aspect) * Margin, all, forward, view);
     }
 
-    /// Frames the parts centred above the neck, such as the head, ears, hair,
-    /// and hats, from the neck up, centred on the head. Width comes from their
-    /// horizontal reach from the head in any direction, so every head view of
-    /// one model at one image size shares its scale.
+    /// Frames the model from the neck to its top, centred on the head. Width
+    /// comes from the horizontal reach from the head, in any direction, of the
+    /// parts centred above the neck, such as the head, ears, hair, and hats, so
+    /// every head view of one model at one image size shares its scale. A part
+    /// centred lower, such as the body with its arms or long hair, does not
+    /// widen the frame.
     public static Shot Head(IReadOnlyList<Box> parts, Vec neck, Vec head, Vec forward, View view, double aspect)
     {
         var above = parts.Where(part => part.Center.Y > neck.Y).ToArray();
         if (above.Length == 0) throw new InvalidOperationException("The character has no meshes above its neck");
-        var top = Box.Union(above).Max.Y;
+        var top = Box.Union(parts).Max.Y;
         var halfHeight = (top - neck.Y) / 2;
         var reach = above.Max(part =>
         {

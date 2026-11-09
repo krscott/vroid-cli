@@ -245,17 +245,18 @@ objects, so the editor's cameras, the project, and `modified` never change
 (R-VIEW-2). The scene's own directional lights, fixed in world space in front
 of the model, light every view, so back views show MToon's shade colours.
 
-`plugin/Framing.cs` places the camera without Unity, so `tests/protocol`
-checks it. The model's forward direction, turned by 0, -45, -90, or 180
-degrees, gives the front, three-quarter, side, and back views; the negative
-turns show the model's left side. A body frame fits the renderers' world
-bounds with a 5% margin: their height, and their horizontal radius rather
-than the width seen from the view, so every body view of a model at one image
-size shares its scale and ground line. A head frame holds every renderer whose
-bounds are centred above the humanoid neck bone, such as the head, ears, hair,
-and hats: it spans from the neck to their top, centred on the head bone
-(`Animator.GetBoneTransform`), and its width is their horizontal reach from
-the head bone in any direction, so head views share their scale too. The
+`plugin/Framing.cs` places the camera without Unity, so `tests/protocol` checks
+it. The model's forward direction, turned by 0, -45, -90, or 180 degrees, gives
+the front, three-quarter, side, and back views; the negative turns show the
+model's left side. A body frame fits the renderers' world bounds with a 5%
+margin: their height, and their horizontal radius rather than the width seen
+from the view, so every body view of a model at one image size shares its scale
+and ground line. A head frame spans from the humanoid neck bone to the top of
+the bounds, centred on the head bone (`Animator.GetBoneTransform`). Its width
+is the horizontal reach from the head bone, in any direction, of every renderer
+whose bounds are centred above the neck, such as the head, ears, hair, and
+hats, so head views share their scale too. The body, whose bounds include the
+arms, does not widen it, and neither does long hair centred below the neck. The
 camera stands outside the bounds, so no part of the model is clipped.
 
 The bridge writes the PNG to the path it is given with `FileMode.CreateNew` and

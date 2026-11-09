@@ -672,3 +672,22 @@ def test_only_render_suggests_updating_the_bridge(tmp_path: Path) -> None:
     assert result.returncode == 1
     assert "Unknown method: dump" in result.stderr
     assert "predates" not in result.stderr
+
+
+def test_render_reports_a_missing_bridge_image(tmp_path: Path) -> None:
+    rpc = bridge(tmp_path)
+    peer, _ = answer(
+        rpc,
+        lambda r: {
+            "ok": True,
+            "result": {"rendered": r["path"], "bytes": 1},
+            "error": None,
+        },
+    )
+    result = invoke(tmp_path, "render", path="front.png", view="front")
+    peer.join()
+    assert result.returncode == 1
+    assert "cannot link .vroid-render-" in result.stderr
+    assert "No such file or directory" in result.stderr
+    assert "hard links" not in result.stderr
+    assert render_files(tmp_path) == []

@@ -162,7 +162,9 @@ Test("a request whose id is not a CLI id writes nothing outside results", direct
 var body = new Box(new Vec(-0.48, 0.0, -0.38), new Vec(0.48, 1.30, 0.33));
 var skull = new Box(new Vec(-0.12, 1.19, -0.15), new Vec(0.12, 1.50, 0.12));
 var ears = new Box(new Vec(-0.30, 1.28, -0.05), new Vec(0.30, 1.36, 0.02));
-var parts = new[] { body, skull, ears };
+// Long hair from above the skull to the waist, centred below the neck.
+var hair = new Box(new Vec(-0.17, 0.80, -0.20), new Vec(0.17, 1.53, 0.10));
+var parts = new[] { body, skull, ears, hair };
 var neck = new Vec(0, 1.19, -0.03);
 var head = new Vec(0.01, 1.25, -0.02);
 var forwards = new[] { new Vec(0, 0, 1), new Vec(Math.Sin(0.5), 0, Math.Cos(0.5)) };
@@ -245,7 +247,7 @@ Test("each view looks from its side of the model", _ =>
 });
 
 // R-VIEW-1
-Test("a head view shows every mesh above the neck, not the arms", _ =>
+Test("a head view shows every mesh above the neck and the top, not the arms", _ =>
 {
     foreach (var forward in forwards)
         foreach (var aspect in aspects)
@@ -254,7 +256,9 @@ Test("a head view shows every mesh above the neck, not the arms", _ =>
                 var shot = Framing.Head(parts, neck, head, forward, view, aspect);
                 Check(Math.Abs(shot.Target.X - head.X) < 1e-9 && Math.Abs(shot.Target.Z - head.Z) < 1e-9, "not centred on the head");
                 Shows(shot, aspect, new[] { skull, ears }, $"{view} head");
-                Check(Math.Abs(shot.Target.Y - (neck.Y + skull.Max.Y) / 2) < 1e-9, $"{view} head is not centred from the neck up");
+                Check(Math.Abs(shot.Target.Y - (neck.Y + hair.Max.Y) / 2) < 1e-9, $"{view} head is not centred from the neck to the top");
+                var (_, crown, _) = Project(shot, new Vec(head.X, hair.Max.Y, head.Z));
+                Check(crown <= shot.Size / Framing.Margin + 1e-9, $"{view} head at aspect {aspect} cuts off the top of the hair");
                 // The arms reach further from the head than anything above the neck.
                 Check(shot.Size * aspect < body.Max.X - head.X, $"{view} head at aspect {aspect} is as wide as the arms");
             }

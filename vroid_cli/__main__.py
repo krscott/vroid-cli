@@ -7,6 +7,7 @@ command prints its reason on stderr and exits nonzero (2 for usage errors).
 JSON Schema.
 """
 
+import errno
 import json
 import os
 import sys
@@ -65,6 +66,10 @@ def with_path(result: Any, key: str, path: Path) -> Any:
     return cast(dict[str, Any], result) | {key: str(path)}
 
 
+# os.link errors that mean the filesystem has no hard links.
+NO_HARD_LINKS = {errno.EPERM, errno.EOPNOTSUPP, errno.ENOTSUP, errno.EXDEV}
+
+
 def render(session: sessions.Session, request: schema.Render) -> Any:
     """Have the bridge write a hidden file beside the destination, then link it.
 
@@ -91,9 +96,14 @@ def render(session: sessions.Session, request: schema.Render) -> Any:
                 f"refusing to overwrite {request.path}, created while rendering"
             ) from None
         except OSError as error:
+            hint = (
+                ". Render into a directory on a filesystem that supports hard links"
+                if error.errno in NO_HARD_LINKS
+                else ""
+            )
             raise RuntimeError(
-                f"cannot create {request.path}: {error.strerror}. Render into a "
-                "writable directory on a filesystem that supports hard links"
+                f"cannot link {temporary.name} to {request.path}: "
+                f"{error.strerror}{hint}"
             ) from None
     finally:
         temporary.unlink(missing_ok=True)
