@@ -1,6 +1,6 @@
 // Exercises plugin/Bridge.cs, the app side of the file protocol, the colour
-// rules in plugin/Colors.cs, and the camera placement in plugin/Framing.cs,
-// without Unity.
+// rules in plugin/Colors.cs, the camera placement in plugin/Framing.cs, and
+// item identifiers and accessory matching in plugin/ItemIds.cs, without Unity.
 using System.Text.Json;
 using VroidBridge;
 
@@ -371,6 +371,34 @@ Test("a request may set each shared colour in only one place", _ =>
     Check(Colors.Conflicts(new[] { skin, right, left, brows }).Count == 0, "disjoint colours conflict");
     var shared = Colors.Conflicts(new[] { skin, body });
     Check(shared.Single() == "Face/Skin/Color and Body/Whole Body/Color set the same colour; set it in one place", shared.Single());
+});
+
+// R-EDIT-9
+Test("item identifiers come from VRoid's resource names", _ =>
+{
+    Check(ItemIds.Preset("pixiv/VRoid/Clothing/Tops/N00/159/TransferableGroupType.N00.Level1.Tops.transferablegroup") == "159", "Tops 159");
+    Check(ItemIds.Preset("pixiv/VRoid/Hair/N00/Preset_F/TransferableGroupType.N00.Level1.HairFront.transferablegroup") == "Preset_F", "Preset_F");
+    Check(ItemIds.Preset("user/VRoid/Clothing/abc/TransferableGroupType.N00.Level1.Tops.transferablegroup") == null, "a user item is built in");
+    Check(ItemIds.Preset(null) == null, "no resource is an item");
+    Check(ItemIds.Attachment("pixiv/VRoid/Attachment/CatEar/N00/Base_N00_000_00_Accessory_CatEar/TransferableGroupType.N00.Level1.AnimalEar.transferablegroup") == "CatEar", "CatEar");
+    Check(ItemIds.Attachment("pixiv/VRoid/Clothing/Tops/N00/159/x.transferablegroup") == null, "a top is an accessory");
+    Check(ItemIds.Attachment("user/VRoid/AdditionalAccessoryTemplate/e004.transferable") == null, "a user accessory is built in");
+    Check(ItemIds.IsSet("TransferableGroupType.N00.Level0.HairSet") && ItemIds.IsSet("TransferableGroupType.N00.Level1.EyeSet"), "sets");
+    Check(!ItemIds.IsSet("TransferableGroupType.N00.Level1.Tops"), "Tops is a set");
+    // Selectors list conflicts as transferable types, categories as group types.
+    Check(ItemIds.Kind("TransferableType.N00.Onepiece") == ItemIds.Kind("TransferableGroupType.N00.Level1.Onepiece"), "kinds differ");
+});
+
+Test("accessories keep matching items in order and add or remove the rest", _ =>
+{
+    var plan = AccessoryPlan.Of(new[] { "GlassesHi", "CatEar", "custom", "CatEar" }, new[] { "CatEar", "FoxTail", "custom" });
+    Check(plan.Kept.SequenceEqual(new[] { (1, 0), (2, 2) }), string.Join(",", plan.Kept));
+    Check(plan.Removed.SequenceEqual(new[] { 0, 3 }), string.Join(",", plan.Removed));
+    Check(plan.Added.SequenceEqual(new[] { 1 }), string.Join(",", plan.Added));
+    var same = AccessoryPlan.Of(new[] { "CatEar", "CatEar" }, new[] { "CatEar", "CatEar" });
+    Check(same.Removed.Count == 0 && same.Added.Count == 0 && same.Kept.SequenceEqual(new[] { (0, 0), (1, 1) }), "an unchanged list changes");
+    // Dumps list built-in accessories by item, then the others, keeping app order within an item.
+    Check(AccessoryPlan.DumpOrder(new[] { "custom", "FoxTail", "CatEar", "CatEar" }).SequenceEqual(new[] { 2, 3, 1, 0 }), "dump order");
 });
 
 return failures == 0 ? 0 : 1;

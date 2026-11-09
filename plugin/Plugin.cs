@@ -9,7 +9,7 @@ using HarmonyLib;
 namespace VroidBridge;
 
 [BepInPlugin("vroid-cli.bridge", "vroid-cli bridge", "0.1.0")]
-public sealed class Plugin : BasePlugin
+public sealed partial class Plugin : BasePlugin
 {
     private static readonly ManualLogSource Diagnostics = BepInEx.Logging.Logger.CreateLogSource("VroidBridge");
     private static RpcDirectory rpc = null!;
@@ -178,18 +178,24 @@ public sealed class Plugin : BasePlugin
     private static object Main => main ?? throw new InvalidOperationException("App is not ready");
     private static object Root => root ?? throw new InvalidOperationException("Open a project first");
 
-    // In app order: the editor tabs run Face, Hairstyle, Body.
-    private static readonly string[] Sections = { "Face", "Hair", "Body" };
+    // In app order: the editor tabs run Face, Hairstyle, Body, Outfit.
+    private static readonly string[] Sections = { "Face", "Hair", "Body", "Outfit" };
+
+    // The editor behind a section; VRoid calls the Outfit editor the clothing editor.
+    private static string Editor(string section) => (section == "Outfit" ? "Clothing" : section) + "Editor";
 
     // A label that occurs more than once in a category takes its values as an
     // array, in app order. A colour is "#RRGGBB" and has no numeric values.
     private sealed record Wanted(string Label, double[] Values, bool Repeated, string? Color);
-    private sealed record CategoryEdit(string Name, Wanted[] Values);
+    // `Item` is the wanted item's identifier, "custom", or null to take it off;
+    // `HasItem` is false when the request leaves the item alone.
+    private sealed record CategoryEdit(string Name, Wanted[] Values, bool HasItem, string? Item);
     // A colour field: `Owner.Member` holds a UnityEngine.Color, and a write
     // changes the model values named by `Keys`.
     private sealed record Swatch(string Label, object Owner, string Member, HashSet<string> Keys);
     // `Refused` maps colour labels the panel shows but apply cannot set to the reason.
-    private sealed record Category(string Name, object[] Parameters, Swatch[] Swatches, Dictionary<string, string> Refused);
+    private sealed record Category(string Name, int Index, object Node, object[] Parameters, Swatch[] Swatches,
+        Dictionary<string, string> Refused);
     private sealed record Paint(Swatch Swatch, string Hex, ColorField Field);
     private sealed record Target(string Section, Category Category,
         List<(object Parameter, float Value, string Path)> Matched, List<Paint> Painted);
@@ -201,14 +207,14 @@ public sealed class Plugin : BasePlugin
         ?? throw new InvalidOperationException($"Parameter {Label(parameter)} has no value"));
 
     private static object Selector(string section) => Selectors.Values.FirstOrDefault(
-        value => value.GetType().FullName!.Contains("." + section + "Editor.")) ?? throw new InvalidOperationException("No selector");
+        value => value.GetType().FullName!.Contains("." + Editor(section) + ".")) ?? throw new InvalidOperationException("No selector");
 
     // Switches to a section's editor and returns its categories once its selector is captured.
     private static IEnumerable<object[]?> Enter(string section)
     {
-        if (!Sections.Contains(section)) throw new ArgumentException("Only Face, Hair, and Body are supported");
-        Reflect.Call(Root, "set_EditMode", Enum.Parse(Reflect.Type("VRoid.Studio.EditRootScreen.EditMode"), section + "Editor"));
-        while (!Selectors.Values.Any(value => value.GetType().FullName!.Contains("." + section + "Editor.")))
+        if (!Sections.Contains(section)) throw new ArgumentException("Only Face, Hair, Body, and Outfit are supported");
+        Reflect.Call(Root, "set_EditMode", Enum.Parse(Reflect.Type("VRoid.Studio.EditRootScreen.EditMode"), Editor(section)));
+        while (!Selectors.Values.Any(value => value.GetType().FullName!.Contains("." + Editor(section) + ".")))
             yield return null;
         yield return Reflect.Items(Reflect.Get(Reflect.Get(Selector(section), "Categories"), "Children")).ToArray();
     }
@@ -225,6 +231,7 @@ public sealed class Plugin : BasePlugin
             else categories = step;
         }
         var selected = names == null ? categories!.ToList() : new List<object>();
+        var index = categories!.Select((value, position) => (value, position)).ToDictionary(pair => pair.value, pair => pair.position);
         foreach (var name in names ?? Array.Empty<string>())
         {
             var found = categories!.Where(value => Name(value) == name).ToArray();
@@ -239,7 +246,8 @@ public sealed class Plugin : BasePlugin
             while (updating) yield return null;
             var node = Reflect.Get(category, "ParameterCategoryViewModel") ?? category;
             var (swatches, refused) = Swatches(section, Name(category));
-            yield return new Category(Name(category), Reflect.Items(Reflect.Get(node, "Parameters")).ToArray(), swatches, refused);
+            yield return new Category(Name(category), index[category], category, Reflect.Items(Reflect.Get(node, "Parameters")).ToArray(),
+                swatches, refused);
         }
     }
 
@@ -287,12 +295,14 @@ public sealed class Plugin : BasePlugin
             // A field such as "Both Eyes" writes several colours and reads only one of
             // them, so neither skipping an equal value nor its undo would be exact.
             var parts = shown.Where(other => other.Swatch.Keys.IsProperSubsetOf(swatch.Keys)).Select(other => other.Swatch.Label).ToArray();
-            if (!available) refused[swatch.Label] = "unavailable for the selected item";
+            if (!available) refused[swatch.Label] = Unavailable;
             else if (parts.Length > 0) refused[swatch.Label] = $"sets {string.Join(" and ", parts)} together; set those instead";
             else swatches.Add(swatch);
         }
         return (swatches.ToArray(), refused);
     }
+
+    private const string Unavailable = "unavailable for the selected item";
 
     private static object ColorOf(Swatch swatch) => Reflect.Get(swatch.Owner, swatch.Member)
         ?? throw new InvalidOperationException($"Colour {swatch.Label} has no value");
@@ -317,19 +327,22 @@ public sealed class Plugin : BasePlugin
     private static CategoryEdit[] Edits(Request request, string section) =>
         request.Body.TryGetProperty(section, out var categories)
             ? categories.EnumerateObject().Select(category => new CategoryEdit(category.Name,
-                category.Value.EnumerateObject().Select(parameter => parameter.Value.ValueKind switch
+                category.Value.EnumerateObject().Where(parameter => parameter.Name != "item").Select(parameter => parameter.Value.ValueKind switch
                 {
                     JsonValueKind.Array => new Wanted(parameter.Name,
                         parameter.Value.EnumerateArray().Select(value => value.GetDouble()).ToArray(), true, null),
                     JsonValueKind.String => new Wanted(parameter.Name, Array.Empty<double>(), false, parameter.Value.GetString()),
                     _ => new Wanted(parameter.Name, new[] { parameter.Value.GetDouble() }, false, null),
-                }).ToArray())).ToArray()
+                }).ToArray(),
+                category.Value.TryGetProperty("item", out var item), item.ValueKind == JsonValueKind.String ? item.GetString() : null)).ToArray()
             : Array.Empty<CategoryEdit>();
 
     // Resolves each wanted value to its parameter or colour and checks its
     // bounds or kind, adding a message to `errors` for each value it cannot set
-    // (R-EDIT-3).
-    private static Target Match(string section, Category category, CategoryEdit edit, List<string> errors)
+    // (R-EDIT-3). `itemsChange` skips colours unavailable for the current item,
+    // since the request's new items may make them available; the pass after
+    // the items change checks them.
+    private static Target Match(string section, Category category, CategoryEdit edit, List<string> errors, bool itemsChange)
     {
         var matched = new List<(object, float, string)>();
         var painted = new List<Paint>();
@@ -344,6 +357,7 @@ public sealed class Plugin : BasePlugin
                 continue;
             }
             var refused = category.Refused.TryGetValue(wanted.Label, out var reason) ? $"{path}: {reason}" : null;
+            if (itemsChange && reason == Unavailable) continue;
             if (wanted.Color is { } color)
             {
                 if (swatches.Length == 1 && Colors.Normalize(color) is { } hex)
@@ -387,27 +401,33 @@ public sealed class Plugin : BasePlugin
     }
 
     // Values grouped by label in app order; repeated labels become arrays.
-    private static Dictionary<string, object> Values(IEnumerable<object> parameters) =>
+    private static Dictionary<string, object?> Values(IEnumerable<object> parameters) =>
         parameters.GroupBy(Label).ToDictionary(group => group.Key,
-            group => group.Count() == 1 ? (object)Read(group.First()) : group.Select(Read).ToArray());
+            group => group.Count() == 1 ? (object?)Read(group.First()) : group.Select(Read).ToArray());
 
     // Visits each edited category with the values it resolved; null means wait a frame.
-    private static IEnumerable<Target?> Targets(Dictionary<string, CategoryEdit[]> edits, List<string> errors)
+    private static IEnumerable<Target?> Targets(Dictionary<string, CategoryEdit[]> edits, List<string> errors, Func<string, bool> itemsChange)
     {
-        foreach (var section in Sections.Where(section => edits[section].Length > 0))
-            foreach (var category in Visit(section, edits[section].Select(edit => edit.Name), errors))
+        foreach (var section in Sections.Where(section => edits[section].Any(edit => edit.Values.Length > 0)))
+        {
+            var valued = edits[section].Where(edit => edit.Values.Length > 0).ToArray();
+            foreach (var category in Visit(section, valued.Select(edit => edit.Name), errors))
                 yield return category == null ? null
-                    : Match(section, category, edits[section].Single(edit => edit.Name == category.Name), errors);
+                    : Match(section, category, valued.Single(edit => edit.Name == category.Name), errors, itemsChange(section));
+        }
     }
 
     private static IEnumerable<bool> Apply(Request request)
     {
         var edits = Sections.ToDictionary(section => section, section => Edits(request, section));
-        // Check every value before changing any.
+        var discard = request.Body.TryGetProperty("discard_custom", out var flag) && flag.ValueKind == JsonValueKind.True;
+        // Check every item, accessory, and value before changing any.
         var errors = new List<string>();
-        var previous = Sections.ToDictionary(section => section, _ => new Dictionary<string, object>());
+        var work = new Outfitting();
+        foreach (var step in CheckItems(request, edits, discard, work, errors)) yield return step;
+        var previous = Sections.ToDictionary(section => section, _ => new Dictionary<string, Dictionary<string, object?>>());
         var colors = new List<ColorField>();
-        foreach (var target in Targets(edits, errors))
+        foreach (var target in Targets(edits, errors, work.ItemsChange))
         {
             if (target is not { } found)
             {
@@ -422,13 +442,27 @@ public sealed class Plugin : BasePlugin
         }
         errors.AddRange(Colors.Conflicts(colors));
         if (errors.Count > 0) throw new ArgumentException(string.Join("; ", errors) + ". Nothing changed");
+        foreach (var (slot, item) in work.Picks)
+            if (!slot.IsSet && work.Before[slot.Path] is var before && before != item && before != ItemIds.Custom)
+                Entry(previous, slot.Section, slot.Name)["item"] = before;
         var restore = new Dictionary<string, object> { ["method"] = "apply" };
         foreach (var section in Sections) restore[section] = previous[section];
-        undo = restore;
-        var changed = 0;
-        foreach (var target in Targets(edits, errors))
+        if (work.Worn is { } worn)
         {
-            // The first pass found none, so the app changed underneath; stop changing it.
+            // Accessories that are not built in and that this request removes cannot be restored.
+            var removed = work.Plan!.Removed.Where(j => worn[j].Item == ItemIds.Custom).ToHashSet();
+            var kept = Enumerable.Range(0, worn.Length).Where(j => !removed.Contains(j)).ToList();
+            restore["Accessories"] = AccessoryPlan.DumpOrder(kept.Select(j => worn[j].Item).ToList())
+                .Select(position => AccessoryEntry(worn[kept[position]], kept[position])).ToArray();
+        }
+        undo = restore;
+        foreach (var step in ChangeItems(work, previous)) yield return step;
+        foreach (var step in ChangeAccessories(work)) yield return step;
+        var changed = work.Changed;
+        foreach (var target in Targets(edits, errors, _ => false))
+        {
+            // The first pass found none, unless new items made a colour unavailable or
+            // the app changed underneath; stop changing it.
             if (errors.Count > 0) throw new InvalidOperationException(string.Join("; ", errors));
             if (target is not { } found)
             {
@@ -462,23 +496,23 @@ public sealed class Plugin : BasePlugin
             }
         }
         if (errors.Count > 0) throw new InvalidOperationException(string.Join("; ", errors));
-        result = new { changed, undo };
+        result = new { changed, undo, discarded = work.Discarded };
     }
 
-    private static bool Same(object a, object b) => a is float[] x && b is float[] y ? x.SequenceEqual(y) : a.Equals(b);
+    private static bool Same(object? a, object? b) => a is float[] x && b is float[] y ? x.SequenceEqual(y) : Equals(a, b);
 
     private static IEnumerable<bool> Dump()
     {
-        var sections = new Dictionary<string, List<(string Name, Dictionary<string, object> Values)>>();
+        var sections = new Dictionary<string, List<(string Name, Dictionary<string, object?> Values)>>();
         // Every available colour in app order, with the category values that would list it.
-        var colors = new List<(ColorField Field, Dictionary<string, object> Values, string Label)>();
+        var colors = new List<(ColorField Field, Dictionary<string, object?> Values, string Label)>();
         foreach (var section in Sections)
         {
             var categories = sections[section] = new();
             var seen = new HashSet<string>();
             // Categories share parameters by label; list each under the first category
             // that has it, and fail if a later copy disagrees.
-            var listed = new Dictionary<string, (string Category, object Value)>();
+            var listed = new Dictionary<string, (string Category, object? Value)>();
             foreach (var category in Visit(section, null, new List<string>()))
             {
                 if (category == null)
@@ -489,7 +523,11 @@ public sealed class Plugin : BasePlugin
                 // apply selects categories by name, so even an empty duplicate breaks the template.
                 if (!seen.Add(category.Name))
                     throw new InvalidOperationException($"Two {section} categories are named {category.Name}; a template cannot hold both");
-                var values = new Dictionary<string, object>();
+                var values = new Dictionary<string, object?>();
+                // Sets only select other categories' items, which are listed instead.
+                if (SlotOf(section, category.Node, category.Index) is { IsSet: false } slot) values["item"] = State(slot);
+                if (category.Parameters.Select(Label).Concat(category.Swatches.Select(swatch => swatch.Label)).Contains("item"))
+                    throw new InvalidOperationException($"{section}/{category.Name} has a value labelled item; a template cannot hold it and the item");
                 foreach (var (label, value) in Values(category.Parameters))
                 {
                     if (!listed.TryGetValue(label, out var first))
@@ -521,6 +559,10 @@ public sealed class Plugin : BasePlugin
         foreach (var (section, categories) in sections)
             dump[section] = categories.Where(category => category.Values.Count > 0)
                 .ToDictionary(category => category.Name, category => (object)category.Values);
+        foreach (var step in EnterAccessories()) yield return step;
+        var worn = WornAccessories();
+        dump["Accessories"] = AccessoryPlan.DumpOrder(worn.Select(accessory => accessory.Item).ToList())
+            .Select(index => AccessoryEntry(worn[index], index)).ToArray();
         result = dump;
     }
 
@@ -586,6 +628,34 @@ public sealed class Plugin : BasePlugin
                     })).ToArray();
                 }
                 if (errors.Count > 0) throw new ArgumentException(string.Join("; ", errors));
+                break;
+            }
+            case "items":
+            {
+                Slot[]? slots = null;
+                foreach (var step in Slots(request.Text("section")))
+                {
+                    if (step == null) yield return true;
+                    else slots = step;
+                }
+                var name = request.Text("category");
+                var found = slots!.Where(slot => slot.Name == name).ToArray();
+                if (found.Length != 1)
+                    throw new ArgumentException(found.Length == 0 ? $"{request.Text("section")}/{name}: no category of this name wears items; list them with categories"
+                        : $"{request.Text("section")}/{name}: {found.Length} categories have this name");
+                var slot = found[0];
+                result = new { selected = State(slot), removable = slot.Removable, set = slot.IsSet, items = slot.Items.Select(item => item.Id).ToArray() };
+                break;
+            }
+            case "accessories":
+            {
+                foreach (var step in EnterAccessories()) yield return step;
+                var worn = WornAccessories();
+                result = new
+                {
+                    worn = worn.Select(AccessoryEntry).ToArray(),
+                    available = AvailableAccessories().Select(accessory => new { item = accessory.Item, name = accessory.Name }).ToArray(),
+                };
                 break;
             }
             case "dump":

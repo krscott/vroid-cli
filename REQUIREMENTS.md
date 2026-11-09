@@ -155,8 +155,9 @@ investigate or ask; never invent a rationale.
 ## Editing (EDIT)
 
 - **R-EDIT-1** [manual: run `just gui-smoke SESSION SOURCE.vroid` with an
-  editable project; it saves at least one value of each kind `apply` can set]
-  Every value `apply` can set reads back unchanged after a save, a full restart
+  editable project; it saves at least one value of each kind `apply` can set,
+  including an item in a Hair and an Outfit category and an accessory] Every
+  value `apply` can set reads back unchanged after a save, a full restart
   and a reopen.
 
   Rationale: Saved projects are the deliverable of an editing session.
@@ -170,16 +171,19 @@ investigate or ask; never invent a rationale.
 
 - **R-EDIT-3** [manual: `just gui-smoke` applies one valid value, one above its
   maximum, an unknown parameter, an unknown category, a number for a colour,
-  and one shared colour in two categories, then checks the error and that the
-  values are unchanged] `apply` refuses a request in which any value is outside
-  its parameter's bounds or of the wrong kind, names a category or parameter
-  that is unknown or ambiguous, gives the wrong number of values for a label,
-  or sets one shared colour more than once, and changes nothing.
+  one shared colour in two categories, an unknown item, and a dress with a top,
+  then checks the error and that the values are unchanged] `apply` refuses a
+  request in which any value is outside its parameter's bounds or of the wrong
+  kind, names a category, parameter or item that is unknown or ambiguous, gives
+  the wrong number of values for a label, sets one shared colour more than
+  once, or selects items that VRoid cannot wear together, and changes nothing.
 
   Rationale: VRoid's own controls never produce out-of-range values, so the
   app's behaviour for them is unknown. A partly applied template leaves a
   character that matches neither the old nor the new version. A shared colour
-  set twice in one request would take whichever value came last.
+  set twice in one request would take whichever value came last. VRoid
+  silently takes off an item that conflicts with a newly selected one, such as
+  a top when a dress is selected, so the template would not read back.
 
 - **R-EDIT-4** [test] `save` refuses an existing destination and leaves it
   unchanged.
@@ -201,7 +205,8 @@ investigate or ask; never invent a rationale.
   half-rebuilt model.
 
 - **R-EDIT-7** [manual: `just gui-smoke` applies a template dumped before its
-  edits after a restart and compares a new dump with it] Applying `dump`
+  edits after a restart and compares a new dump with it, including items and
+  accessories] Applying `dump`
   output reproduces every dumped value exactly, in any app instance.
 
   Rationale: Agents save, diff, and reapply templates to reuse characters. A
@@ -215,6 +220,28 @@ investigate or ask; never invent a rationale.
   Rationale: Agents match colours against reference sheets and VRoid's own
   editor. A colour-space, rounding, or alpha mismatch would shift every colour
   without an error.
+
+- **R-EDIT-9** [manual: `just gui-smoke` compares `items` output and a `dump`
+  from before and after a restart] An item identifier names the same built-in
+  VRoid item in every session and after every restart of the pinned VRoid
+  version.
+
+  Rationale: Agents keep templates and notes that refer to items by identifier
+  and apply them in other sessions. An identifier that changed meaning would
+  dress the character in the wrong item without an error.
+
+- **R-EDIT-10** [manual: open a project that wears a non-built-in item, apply a
+  built-in item to that category without the flag and check it's refused and
+  `dump` is unchanged, then apply it with the flag and check the result names
+  the replaced item] `apply` replaces or removes an item that is not one of
+  VRoid's built-in items only when the request explicitly allows it, and its
+  result then names each such item that its undo template cannot restore.
+  Otherwise it refuses the request and changes nothing.
+
+  Rationale: Such items, like texture-edited outfits or parts of sample models,
+  have no identifier, so the undo template cannot put them back. An agent that
+  means to discard one says so, and saves a copy of the project first if it may
+  want the item back.
 
 ## Views (VIEW)
 

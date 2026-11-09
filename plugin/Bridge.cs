@@ -13,7 +13,7 @@ public sealed record Request(string Id, string Boot, string Method, int TimeoutM
 public sealed class RpcDirectory
 {
     /// Change together with PROTOCOL in vroid_cli/rpc.py.
-    public const int Protocol = 3;
+    public const int Protocol = 4;
 
     private readonly string root;
     private readonly Func<object> status;

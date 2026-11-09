@@ -68,6 +68,11 @@ else
     fi
 fi
 
+# VRoid's watcher for saved custom items stops for good if their folder is
+# missing when VRoid starts, as in a new prefix, and VRoid then never marks
+# worn items that are not built in, which apply relies on (R-EDIT-10).
+mkdir -p "${profiles[0]}/LocalLow/pixiv/VRoid Studio/custom_items"
+
 # BepInEx's root: its own files are links into the store; config, cache, and
 # logs are the session's. BepInEx rewrites its config, so it gets a copy.
 root=$VROID_SESSION_DIR/bepinex

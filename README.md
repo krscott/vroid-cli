@@ -51,17 +51,19 @@ JSON Schema of every request and result.
 
 ### Templates
 
-`dump` prints every Face, Hair, and Body value and colour as an `apply`
-request, so a character's shape and colours can be saved, diffed, edited, and
-applied to another project:
+`dump` prints every built-in item and accessory, and every Face, Hair, and
+Body value and colour, as an `apply` request, so a character's look can be
+saved, diffed, edited, and applied to another project:
 
 ```sh
 vroid-cli demo '{"method": "dump"}' > template.json
 vroid-cli other @template.json
 ```
 
-`apply` checks every value before changing any, and its result includes an
-`undo` request that restores the previous values. A label that repeats within a
+`apply` checks every item and value before changing any, and its result
+includes an `undo` request that restores the previous ones. A category's
+`"item"` names one of VRoid's built-in items, listed by `items`; accessories,
+listed by `accessories`, include animal ears and tails. A label that repeats within a
 category, such as "Nose Size" in Face Sets, maps to an array of its values.
 Categories share parameters ("Eye Size X" is in Face Sets, Eyes Sets, and
 Eyeliner), so `dump` lists each once, and a request may name each label in only

@@ -46,6 +46,11 @@ internal static class Reflect
         return type.GetConstructor(new[] { typeof(IntPtr) })?.Invoke(new object[] { native.Pointer }) ?? value;
     }
 
+    // Views a native object as `type`, for objects `Concrete` cannot name, such
+    // as instances of nested types.
+    internal static object As(object value, string type) =>
+        Type(type).GetConstructor(new[] { typeof(IntPtr) })!.Invoke(new object[] { ((Il2CppObjectBase)value).Pointer });
+
     internal static object? Get(object? value, string name)
     {
         if (value == null) return null;
@@ -87,13 +92,20 @@ internal static class Reflect
         if (value == null) yield break;
         value = Concrete(value);
         var count = Get(value, "Count") ?? Get(value, "Length");
-        if (count != null)
+        // Collection interfaces such as IReadOnlyCollection have a count but no indexer.
+        var indexed = value.GetType().GetMethods(Instance).Any(method => method.Name == "get_Item" && method.GetParameters().Length == 1);
+        if (count != null && indexed)
         {
             for (var i = 0; i < Convert.ToInt32(count); i++)
                 yield return Call(value, "get_Item", i)!;
             yield break;
         }
+        if (value.GetType().GetMethods(Instance).All(method => method.Name != "GetEnumerator"))
+            value = As(value, "Il2CppSystem.Collections.IEnumerable");
         var enumerator = Call(value, "GetEnumerator")!;
+        // Generic enumerator proxies inherit MoveNext from the non-generic interface.
+        if (Concrete(enumerator).GetType().GetMethods(Instance).All(method => method.Name != "MoveNext"))
+            enumerator = As(enumerator, "Il2CppSystem.Collections.IEnumerator");
         while (Call(enumerator, "MoveNext") is true)
             yield return Get(enumerator, "Current")!;
     }

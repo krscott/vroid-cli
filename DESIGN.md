@@ -125,10 +125,14 @@ app it waits for the runner to finish. A stopped desktop is already stopped.
    file, in UTF-8 with a byte order mark like VRoid's, when it is missing. It
    never edits an existing file: one without both acceptances stops the launch
    with instructions to delete it.
-3. It points `bepinex/core` and `bepinex/plugins` at the store and copies
+3. It creates VRoid's `custom_items` folder next to `preferences`. VRoid's
+   watcher for saved custom items stops for good if the folder is missing at
+   start, as in a new prefix, and VRoid then never marks a worn item that is
+   not built in, which `apply` relies on (R-EDIT-10).
+4. It points `bepinex/core` and `bepinex/plugins` at the store and copies
    `plugin/BepInEx.cfg` from the store to `bepinex/config`, replacing all
    three each launch; BepInEx rewrites its config, so the copy is writable.
-4. It starts the store's VRoid with Doorstop's `--doorstop-*` arguments aimed
+5. It starts the store's VRoid with Doorstop's `--doorstop-*` arguments aimed
    at `bepinex/`, `--unhollowed-path` at the prebuilt interop assemblies,
    `-logFile` in the session, and the RPC directory in `VROID_BRIDGE_DIR`.
 
@@ -244,7 +248,8 @@ The bridge tracks these app objects:
 - Edit root: `VRoid.Studio.EditRootScreen.ViewModel.OnScreenActivate`
   captures it; `BackToModelSelect` clears it.
 - Selectors: `BasePresetsSelectorViewModel.UpdateSelectedPresets` captures the
-  Face, Hair, and Body category selectors by concrete type.
+  Face, Hair, Body, and Outfit category selectors by concrete type. VRoid
+  calls the Outfit editor `ClothingEditor`.
 - Rebuilds: `VRoidCoreModelUpdater.set_IsUpdatingModel` counts each
   true-to-false transition and captures the updater, whose `ModelOrigin` is
   the root transform of the model on screen.
@@ -254,18 +259,23 @@ Operations:
 | Method | Internal call | Completion |
 | --- | --- | --- |
 | `open` | `MainViewModel.ImportFileAndMoveToEditRoot(path, false, false)` | Edit root captured and one rebuild finished |
-| `categories` | Edit root `set_EditMode(FaceEditor, HairEditor, or BodyEditor)`, selector `Categories.Children[].Name` | Selector captured |
+| `categories` | Edit root `set_EditMode(FaceEditor, HairEditor, BodyEditor, or ClothingEditor)`, selector `Categories.Children[].Name` | Selector captured |
 | `parameters` | Selector `set_SelectedCategory`, then the category's `Parameters[]` `Label`, `CombinedValue` or `Value`, `MinValue`, `MaxValue`, and its colours, below | No rebuild running |
-| `dump` | `parameters` for every Face, Hair, and Body category in app order | No rebuild running |
-| `apply` | `parameters` for each named category, then parameter `set_CombinedValue` or `set_Value`, or a colour's setter, per changed value | One rebuild finished per changed value (R-EDIT-6) |
+| `items` | The category's item state and presets, below | Selector captured |
+| `accessories` | Edit root `set_EditMode(AccessoryEditor)`, its `Instances` and templates, below | Editor active |
+| `dump` | `parameters` and the item for every Face, Hair, Body, and Outfit category in app order, then `accessories` | No rebuild running |
+| `apply` | Items, then accessories, below; then `parameters` for each named category, and parameter `set_CombinedValue` or `set_Value`, or a colour's setter, per changed value | One rebuild finished per changed item, accessory, and value (R-EDIT-6) |
 | `save` | Edit root `_mainActionHandler.SaveSync(path, true)` | Call returned true and the file is nonempty |
 | `render` | A temporary Unity camera renders `ModelOrigin`, below | PNG written to a new file |
 
 `open` refuses once a project is open; changing projects needs a restart.
 Successful `open` and `save` clear `modified`.
 
-A template is an `apply` request: `Face`, `Hair`, and `Body` map category
-names to labels to values. A value is a number, or a colour as `#RRGGBB`. Labels repeat within some categories (Face Sets
+A template is an `apply` request: `Face`, `Hair`, `Body`, and `Outfit` map
+category names to labels to values, and `Accessories` lists accessories,
+below. A value is a number, or a colour as `#RRGGBB`. A category's reserved
+label `item` holds its item, below; `dump` fails if a category has a value
+labelled `item` (none does in 2.16.0). Labels repeat within some categories (Face Sets
 and Nose each have two "Nose Size" parameters), so a repeated label maps to an
 array of its values in app order. Categories also share parameters: within a
 section, the same label in another category is the same value (Face Sets,
@@ -278,23 +288,106 @@ in a section share a name (none do in 2.16.0). The `Apply` model refuses a
 label in two categories of a section, since the later value would silently
 win.
 
-`apply` runs in two passes. The first resolves every category name and every
-value to its parameters or colour, checking the label's count, the live
-bounds, and the value's kind, and collects every refusal. Bounds compare the
-value as float32, as VRoid stores it, so a dumped bound such as 0.7 stays in
-range. Any refusal fails the request before a value changes (R-EDIT-3). The
-second pass revisits the categories and sets each value that differs, waiting
-for its rebuild, and stops at the first new refusal. It sets `modified` before
-the first change, so an interrupted edit still counts as unsaved. The result
-counts the changed values and holds an `undo` template of the previous values.
-If the second pass fails, the error lists the values already changed and
-includes the `undo` request. Each rebuild takes a few frames, so even a
-template that changes every value finishes far within the request timeout.
+`apply` runs in two passes. The first resolves every item, accessory,
+category name, and value, checking each item as below and each value's
+label count, live bounds, and kind, and collects every refusal. Bounds
+compare the value as float32, as VRoid stores it, so a dumped bound such as
+0.7 stays in range. Any refusal fails the request before anything changes
+(R-EDIT-3, R-EDIT-10). A colour that is unavailable for a category's current
+item is not refused in a section whose items the request changes, since the
+new item may offer it. The second pass changes items, then accessories,
+because a new item resets its category's values and colours, then
+revisits the categories and sets each value that differs, waiting for each
+rebuild. It stops at the first new refusal, such as a colour the new item
+does not offer. It sets `modified` before the first change, so an interrupted
+edit still counts as unsaved. The result counts the changes, holds an `undo`
+template of the previous items, accessories, and values, and lists in
+`discarded` what `undo` cannot restore. If the second pass fails, the error
+lists what already changed and includes the `undo` request. Each rebuild
+takes a few frames; reapplying a dump that made 23 changes, most of them
+items and accessories, took 7 seconds, far within the request timeout.
+
+### Items and accessories
+
+Face, Hair, Body, and Outfit categories that wear items are
+`PresetCategoryViewModel`s, or `ParametricPresetCategoryViewModel`s whose
+`PresetCategoryViewModel` holds them. Their `_presets[]` are the built-in
+items, each a `PresetOptionViewModel` whose `_model.resourceName` is a fixed
+asset path such as `pixiv/VRoid/Clothing/Tops/N00/159/....transferablegroup`.
+An item's identifier is that path's second-to-last part (`159`, `Default`,
+`Preset_F`), unique within each category in 2.16.0; the bridge fails if one
+repeats. The path, and so the identifier, does not change between sessions
+and restarts (R-EDIT-9). VRoid has no item names, only thumbnails.
+
+A category reads as the identifier of its option whose `IsSelected` is true.
+Otherwise its `TemporaryCustomItem.WearingCustomItemSavableTransferableGroup`
+tells whether it wears an item that is not built in, such as a
+texture-edited outfit or a sample model's part, which reads as `custom`; some
+of these show no selected option at all. Otherwise it reads as null.
+Selecting sets the option's `IsSelected`, which runs VRoid's own selection
+command; `ClearTransferableGroup` takes the item off a category whose
+`IsRemovable` is true. Each takes one rebuild, after which the selector
+updates `IsSelected` after a debounce, so the bridge waits for the rebuild,
+then for the category to read the new item.
+
+VRoid takes off conflicting items itself: the selector's
+`ConflictingTransferableTypes` lists their kinds, such as
+`TransferableType.N00.Onepiece` for Tops, matched by the last part of each
+category's `TransferableGroupType`. Some pairs list the conflict on one side
+only. `apply` refuses two conflicting items in one request (R-EDIT-3), and
+waits after a selection until the conflicting categories read null.
+
+Sets (Face Sets, Eyes Sets, Hairstyle Sets, Whole Sets; group types ending in
+`Set`) select items in other categories, list those as conflicts, and read as
+selected only while those items match. `dump` therefore omits their items,
+since the other categories describe them, and editing one item of a dump
+still applies. `apply` accepts a set, selecting it before the other items in
+app order, refuses it with an item it would select, and fails after the
+changes if a set no longer reads as selected.
+
+`apply` accepts the item a category already wears, including `custom` and a
+null that a category cannot take off, and changes nothing for it. `custom`
+elsewhere is refused. Without `discard_custom`, it refuses any change that
+replaces a worn item that is not built in: one in the named category, one
+VRoid would take off as a conflict, or any in the editor of a named set
+(R-EDIT-10). With it, the change goes ahead, and `discarded` names each such
+item, found by comparing every category before and after. `undo` restores
+every other category that changed, including those VRoid changed itself, such
+as a dress taken off for a top.
+
+Accessories live in the Accessory editor (`AccessoryEditor`), whose
+`Instances` are the worn accessories in app order. An instance's
+`transferableInfo.GroupResourceName` is `pixiv/VRoid/Attachment/ID/...` for a
+built-in accessory, whose identifier is `ID`, such as `CatEar`; any other is
+`custom`. Each instance has its own colours in its `CategoryColorSelection`,
+read and written like Face colours but never shared. The editor's
+`Templates` list offers only the glasses, but the asset catalog
+(`_mainModel.assetStorage.AssetCatalog.TransferableGroupEntries`) also holds
+animal ears, tails, and hats, which VRoid's sample models wear. Selecting a
+template not in the list crashes VRoid, so `accessories` and `apply` first
+append a `TransferableGroupTemplateItemViewModel` for each missing attachment
+to `Templates`; the editor's own list then shows them too. Setting
+`SelectedTemplate` to a template adds one instance at the end of `Instances`,
+so `apply` clears it first; `AddSelectedTemplate` would add a second.
+Selecting an index and calling `RemoveSelectedInstance` removes one. Each
+takes one rebuild.
+
+`Accessories` in a template is every accessory to wear. `apply` keeps the
+first unmatched worn accessory with each wanted item in order, removes the
+other worn ones from the end, then adds the rest and sets their colours. It
+refuses an unknown item, `custom` with no other worn accessory that is not
+built in, more than the editor's `MaxInstanceCount`, and removing one that
+is not built in without `discard_custom`. `dump` lists accessories by item,
+built-in before `custom`, keeping app order within an item, so dumps compare
+across instances. Placement and shape sliders are not read or set; added
+accessories take VRoid's default placement. `plugin/ItemIds.cs`, which
+`tests/protocol` also builds, holds the identifier and matching rules.
 
 ### Colours
 
 A colour is a field in a category's editor panel. Outfits have none: their
-colours live in the texture editor, which saves custom items.
+colours live in the texture editor, which saves custom items. Accessories'
+colours are above.
 
 - Face, Hair, and Body categories: the selector's `CategoryColorSelection`
   holds `_colorSelections[]`, each with `IsAvailable` and
@@ -414,13 +507,14 @@ errors (R-CLI-2).
 - `tests/test_cli.py`: the CLI against a stand-in bridge and Framewisp.
 - `tests/test_launcher.py`: the launcher against a stand-in Wine and a
   read-only stand-in store.
-- `tests/protocol`: the bridge's file protocol, colour rules, and camera
-  placement under the .NET SDK.
+- `tests/protocol`: the bridge's file protocol, colour rules, camera
+  placement, item identifiers, and accessory matching under the .NET SDK.
 
 `scripts/gui-smoke.sh`, run by `just gui-smoke`, drives a real session through
-open, dump, numeric and colour edits, refusal, save, rendering every view,
-restart, reopen with a read-back of every edited number and colour (R-EDIT-1),
-and reapplying the first dump, and checks the Framewisp input log and that
+open, dump, numeric and colour edits, item and accessory edits, refusal,
+save, rendering every view, restart, reopen with a read-back of every edited
+number, colour, item, and accessory (R-EDIT-1) and of each category's item
+identifiers (R-EDIT-9), and reapplying the first dump, and checks the Framewisp input log and that
 BepInEx's log names the ready bridge's boot. It saves editor screenshots
 before and after the edits. It decodes each render with the Python standard
 library to check its size and framing, and compares `dump` and an editor

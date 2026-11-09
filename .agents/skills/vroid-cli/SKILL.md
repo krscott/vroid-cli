@@ -26,6 +26,10 @@ vroid-cli alice '{"method": "categories", "section": "Body"}'
 vroid-cli alice '{"method": "parameters", "section": "Body", "category": "Whole Body"}'
 vroid-cli alice '{"method": "apply", "Body": {"Whole Body": {"Head Size": 0.125}}}'
 vroid-cli alice '{"method": "apply", "Hair": {"Front": {"Main Color": "#FF8C00"}}}'
+vroid-cli alice '{"method": "items", "section": "Outfit", "category": "Tops"}'
+vroid-cli alice '{"method": "apply", "Outfit": {"Tops": {"item": "159"}}}'
+vroid-cli alice '{"method": "accessories"}'
+vroid-cli alice '{"method": "apply", "Accessories": [{"item": "CatEar", "Color": "#3A2A20"}]}'
 vroid-cli alice '{"method": "dump"}' > alice.json
 vroid-cli alice @alice.json
 vroid-cli alice '{"method": "save", "path": "./alice-v2.vroid"}'
@@ -40,16 +44,19 @@ field and result.
 
 vroid-cli opens existing `.vroid` projects, reads and sets the numeric sliders
 in the Face and Body editors and the colour fields in the Face, Hairstyle, and
-Body editors, renders the character to PNG from the front, three-quarter,
-side, or back, and saves projects. It can't yet change outfit colours,
-textures, hairstyles, outfits, accessories, or presets, create characters, or
+Body editors, selects VRoid's built-in items (hairstyle parts, face parts and
+presets, body presets, outfit items), adds, removes, and recolours built-in
+accessories (glasses, cat and rabbit ears, cat, fox, and rabbit tails, hats),
+renders the character to PNG from the front, three-quarter, side, or back, and
+saves projects. It can't yet place or reshape accessories, change outfit
+colours or textures, import or create custom items, create characters, or
 export VRM. To see the character, use `render`, not screenshots of the editor
 window. Edits go through `vroid-cli`, never Framewisp input. When a request
 needs anything vroid-cli can't do, do the parts it can and tell the user which
 parts you couldn't.
 
-Face "Ear" parameters shape human ears at the sides of the head, not animal
-ears, which vroid-cli can't add yet.
+Face "Ear" parameters shape human ears at the sides of the head. Animal ears
+and tails are accessories.
 
 ## Rules
 
@@ -77,17 +84,38 @@ ears, which vroid-cli can't add yet.
 - A colour that is unavailable for the project's selected item, such as Face
   Lips "Color" when the selected lips have no colour, is refused. Remove it
   from a template made in another project.
-- `categories`, `parameters`, `dump`, and `apply` change which section VRoid's
-  editor shows, and all but `categories` change its category, even when they
-  change no value. For comparable editor screenshots, run the same `parameters`
-  request before each one.
+- Items have identifiers, not names: `items` lists a category's built-in
+  items and the one it wears, as `"item"` in a template category. Choose by
+  selecting and rendering. Selecting an item resets that category's values and
+  colours, so `apply` changes items first, then values. `"item": null` takes
+  off the item where `items` reports `removable`.
+- VRoid takes off conflicting items itself, such as the dress when a top is
+  selected; a request naming both is refused. Sets (Face Sets, Eyes Sets,
+  Hairstyle Sets, Whole Sets) select the items of other categories, so name
+  either a set or those items. `dump` omits sets.
+- `"custom"` is an item that is not built in, such as a texture-edited outfit
+  or a sample model's part. `apply` refuses to replace or remove one, since
+  `undo` cannot restore it. To discard it anyway, `save` a copy of the
+  project first, then add `"discard_custom": true`; the result's `discarded`
+  names what was lost.
+- `Accessories` in `apply` is every accessory to wear; `apply` adds and
+  removes to match, and an omitted key leaves them alone. Each entry has an
+  `item` from `accessories` and its colours. Added ones take VRoid's default
+  placement. A pair of ears is one accessory.
+- `categories`, `parameters`, `items`, `accessories`, `dump`, and `apply`
+  change which section VRoid's editor shows, and `parameters`, `dump`, and
+  `apply` change its category, even when they change no value. `accessories`
+  and accessory edits also add the hidden accessories to the editor's list.
+  For comparable editor screenshots, run the same `parameters` request before
+  each one.
 - Categories share parameters: "Eye Size X" in Face Sets and in Eyeliner is
   one value. An `apply` request may name each label in only one category per
   section.
-- `dump` returns an `apply` request with every Face, Hair, and Body value and
-  colour, each listed once under the first category that has it (skin under
-  Face Eyelids, hair under Hair Front). Save it as a template, edit or diff it
-  with JSON tools, and apply it in any session.
+- `dump` returns an `apply` request with every item, accessory, and Face,
+  Hair, and Body value and colour, each value listed once under the first
+  category that has it (skin under Face Eyelids, hair under Hair Front). Save
+  it as a template, edit or diff it with JSON tools, and apply it in any
+  session.
 - Paths in requests, including saved ones, resolve against the current
   directory, not the request file's.
 - `save` needs a new `.vroid` path in an existing directory. It never
