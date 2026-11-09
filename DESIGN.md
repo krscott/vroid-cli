@@ -247,7 +247,8 @@ misspelled fields (R-CLI-3). Its JSON parser keeps the last of repeated keys,
 so the CLI rejects repeated keys first. Validation refuses non-finite values
 (R-EDIT-2) and checks `.vroid` suffixes, an existing `open` source, and a new
 `save` destination in an existing directory (R-EDIT-4), all before touching
-session state. Paths resolve against the current directory. The bridge
+session state. Paths resolve against the current directory, and `open` and
+`save` report the resolved path rather than the bridge's Wine path. The bridge
 rechecks the destination before saving. Validation errors print one
 `FIELD: REASON` line each. Output is indented JSON, so saved templates diff
 line by line.

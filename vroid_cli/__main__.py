@@ -11,7 +11,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
 
 from pydantic import ValidationError
 
@@ -65,6 +65,18 @@ def run(session: sessions.Session, request: schema.Request) -> Any:
             return sessions.summary(session)
         case schema.Stop():
             return sessions.stop(session, force=request.force)
+        case schema.Open() | schema.Save():
+            result: Any = sessions.request(
+                session, method=request.method, args=bridge_args(request)
+            )
+            # The bridge reports the Wine path; report the caller's path instead.
+            if not isinstance(result, dict):
+                return result  # Result validation reports it.
+            paths = cast(dict[str, Any], result)
+            paths["opened" if isinstance(request, schema.Open) else "saved"] = str(
+                request.path
+            )
+            return paths
         case _:
             return sessions.request(
                 session, method=request.method, args=bridge_args(request)

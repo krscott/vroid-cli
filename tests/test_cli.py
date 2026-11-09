@@ -543,6 +543,7 @@ def test_paths_are_sent_as_wine_paths(tmp_path: Path) -> None:
     peer.join()
     assert result.returncode == 0, result.stderr
     assert received[0]["path"] == f"Z:{tmp_path / 'source.vroid'}"
+    assert json.loads(result.stdout) == {"opened": str(tmp_path / "source.vroid")}
 
 
 def test_status_of_a_new_session_is_one_json_value(tmp_path: Path) -> None:
