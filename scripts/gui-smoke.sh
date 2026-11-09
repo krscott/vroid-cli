@@ -9,9 +9,9 @@ usage() {
     printf '%s\n' \
         "Usage: $0 SESSION SOURCE.vroid" \
         '' \
-        'Opens SOURCE in SESSION, dumps its template, edits one Body and one Face' \
-        'parameter, saves a copy, restarts, checks the saved values, and applies' \
-        'the original template. SESSION must be stopped and past its first-run' \
+        'Opens SOURCE in SESSION, dumps its template, edits one Body and two Face' \
+        'parameters in one request, saves a copy, restarts, checks the saved' \
+        'values, and applies the original template. SESSION must be stopped and past its first-run' \
         'dialogs. Set VROID_CLI to choose the vroid-cli binary.'
 }
 

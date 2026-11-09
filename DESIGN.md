@@ -208,11 +208,11 @@ parameter labels to values. Labels repeat within some categories (Face Sets
 and Nose each have two "Nose Size" parameters), so a repeated label maps to an
 array of its values in app order. Categories also share parameters: within a
 section, the same label in another category is the same value (Face Sets,
-Eyes Sets, and Eyeliner all hold "Eye Size X"). This was checked for every
-2.16.0 category by changing one category and reading the others. `dump`
-therefore lists each label under the first category in app order that has it,
-omits categories left empty, and writes float32 values in their shortest
-round-trip form, so applying the output reproduces it exactly (R-EDIT-7). The
+Eyes Sets, and Eyeliner all hold "Eye Size X"); recheck this with any VRoid
+pin change. `dump` therefore lists each label under the first category in app
+order that has it, fails if a later copy differs, omits categories left
+empty, and writes float32 values in their shortest round-trip form, so
+applying the output reproduces it exactly (R-EDIT-7). The
 `Apply` model refuses a label in two categories of a section, since the later
 value would silently win. `dump` fails if two categories in a section share a
 name; none do in 2.16.0.
@@ -221,7 +221,9 @@ name; none do in 2.16.0.
 value to its parameters, checking the label's count and the live bounds, and
 collects every refusal. Any refusal fails the request before a value changes
 (R-EDIT-3). The second pass revisits the categories and sets each value that
-differs, waiting for its rebuild. It stops if a category no longer resolves.
+differs, waiting for its rebuild. Bounds compare the value as float32, as
+VRoid stores it, so a dumped bound such as 0.7 stays in range. The second pass
+stops if a category no longer resolves.
 It sets `modified` before the first change, so an interrupted edit still
 counts as unsaved. The result counts the changed values and holds an `undo`
 template of the previous values. If the second pass fails, the error lists
@@ -245,9 +247,10 @@ misspelled fields (R-CLI-3). Its JSON parser keeps the last of repeated keys,
 so the CLI rejects repeated keys first. Validation refuses non-finite values
 (R-EDIT-2) and checks `.vroid` suffixes, an existing `open` source, and a new
 `save` destination in an existing directory (R-EDIT-4), all before touching
-session state. Paths resolve against the current directory. The bridge rechecks the destination before saving. Validation errors
-print one `FIELD: REASON` line each. Output is indented JSON, so saved
-templates diff line by line.
+session state. Paths resolve against the current directory. The bridge
+rechecks the destination before saving. Validation errors print one
+`FIELD: REASON` line each. Output is indented JSON, so saved templates diff
+line by line.
 
 Every result, including the bridge's, is validated against its result model
 before printing, so `--agent-skill` (or `--help`), which prints the skill and
@@ -268,5 +271,5 @@ errors (R-CLI-2).
 
 `scripts/gui-smoke.sh`, run by `just gui-smoke`, drives a real session through
 open, dump, edit, refusal, save, restart, reopen, and reapplying the first
-dump, and checks the Framewisp input log. It needs graphics access and a session whose first-run dialogs are
-complete.
+dump, and checks the Framewisp input log. It needs graphics access and a
+session whose first-run dialogs are complete.

@@ -8,8 +8,8 @@ mouse or keyboard input, OCR, MCP server, or account login.
 
 This first version opens existing `.vroid` projects, reads and changes Face and
 Body numeric parameters, dumps and applies them as JSON templates, and saves
-projects. Character creation, presets,
-colors, hair and texture tools, and VRM export are not supported yet.
+projects. Character creation, presets, colors, hair and texture tools, and VRM
+export are not supported yet.
 
 ## Requirements
 
@@ -89,8 +89,8 @@ framewisp "$desktop" click X Y
 
 ## Recovery
 
-`vroid-cli NAME '{"method": "status"}'` reports whether the app runs, whether it is
-ready, any pending request, and unsaved changes (`bridge.modified`). Logs are in
+`vroid-cli NAME '{"method": "status"}'` reports whether the app runs, whether
+it is ready, any pending request, and unsaved changes (`bridge.modified`). Logs are in
 the session directory: `runner.log`, `installer.log`, `player.log`,
 `desktop/app.log`, and `wine/drive_c/VRoidStudio/BepInEx/LogOutput.log`.
 
@@ -98,7 +98,8 @@ the session directory: `runner.log`, `installer.log`, `player.log`,
   commands until its result appears in `rpc/results/ID.json`. Restarting the
   session marks it as having an unknown outcome; inspect the project first.
 - **Unsaved changes:** `stop` refuses while there are unsaved changes or a
-  pending request. Save to a new path, or send `{"method": "stop", "force": true}` to discard them.
+  pending request. Save to a new path, or send
+  `{"method": "stop", "force": true}` to discard them.
 - **Another project:** save, `stop`, and `launch` before opening it.
 - **Incomplete installation:** it is not repeated. Read `installer.log`, then
   delete the session directory or use another session name.

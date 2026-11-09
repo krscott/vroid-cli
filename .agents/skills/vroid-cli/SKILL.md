@@ -38,8 +38,8 @@ field and result.
 - Give each agent its own session name and use it on every command. A second
   command on a busy session fails at once; wait and run it again.
 - A successful command prints one JSON value on stdout. A failed command exits
-  nonzero with the reason on stderr; exit 2 means the request was invalid and
-  nothing ran.
+  nonzero with the reason on stderr; exit 2 is a usage error, such as an
+  invalid request or session name, and nothing ran.
 - Requests are strict: misspelled fields, strings for numbers, and repeated
   keys are refused.
 - Use category and parameter names exactly as `categories` and `parameters`

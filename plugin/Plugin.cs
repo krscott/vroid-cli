@@ -197,7 +197,7 @@ public sealed class Plugin : BasePlugin
     // Selects each named category, or every category in app order, and yields
     // it while it is selected; null means wait a frame. A name that matches no
     // single category adds a message to `errors` and is skipped.
-    private static IEnumerable<Category?> Visit(string section, IEnumerable<string>? names, List<string> errors)
+    private static IEnumerable<Category?> Visit(string section, IEnumerable<string>? names, List<string>? errors = null)
     {
         object[]? categories = null;
         foreach (var step in Enter(section))
@@ -205,13 +205,13 @@ public sealed class Plugin : BasePlugin
             if (step == null) yield return null;
             else categories = step;
         }
-        var selected = new List<object>();
-        foreach (var name in names ?? categories!.Select(Name).Distinct())
+        var selected = names == null ? categories!.ToList() : new List<object>();
+        foreach (var name in names ?? Array.Empty<string>())
         {
             var found = categories!.Where(value => Name(value) == name).ToArray();
-            if (found.Length == 1 || names == null) selected.AddRange(found);
-            else if (found.Length == 0) errors.Add($"{section}/{name}: unknown category; list them first");
-            else errors.Add($"{section}/{name}: {found.Length} categories have this name; it cannot be selected by name");
+            if (found.Length == 1) selected.Add(found[0]);
+            else if (found.Length == 0) errors!.Add($"{section}/{name}: unknown category; list them first");
+            else errors!.Add($"{section}/{name}: {found.Length} categories have this name; it cannot be selected by name");
         }
         foreach (var category in selected)
         {
@@ -258,10 +258,12 @@ public sealed class Plugin : BasePlugin
                 var min = Convert.ToSingle(Reflect.Get(parameter, "MinValue"));
                 var max = Convert.ToSingle(Reflect.Get(parameter, "MaxValue"));
                 var where = wanted.Repeated ? $"{path}[{index}]" : path;
-                // Checked as a double: a value beyond float range would cast to infinity.
+                // Compared as the float VRoid stores, so a dumped bound such as 0.7 stays
+                // in range; a value beyond float range becomes infinite, so out of range.
+                var single = (float)target;
                 if (!double.IsFinite(target)) errors.Add($"{where}: value is not finite");
-                else if (target < min || target > max) errors.Add($"{where}: {target} is outside {min}..{max}");
-                else matched.Add((parameter, (float)target, where));
+                else if (single < min || single > max) errors.Add($"{where}: {target} is outside {min}..{max}");
+                else matched.Add((parameter, single, where));
             }
         }
         return matched;
@@ -272,59 +274,61 @@ public sealed class Plugin : BasePlugin
         parameters.GroupBy(Label).ToDictionary(group => group.Key,
             group => group.Count() == 1 ? (object)Read(group.First()) : group.Select(Read).ToArray());
 
+    // Visits each edited category with the values it resolved; null means wait a frame.
+    private static IEnumerable<(string Section, Category Category, List<(object Parameter, float Target, string Path)> Matched)?> Targets(
+        Dictionary<string, CategoryEdit[]> edits, List<string> errors)
+    {
+        foreach (var section in Sections.Where(section => edits[section].Length > 0))
+            foreach (var category in Visit(section, edits[section].Select(edit => edit.Name), errors))
+                yield return category == null ? null
+                    : (section, category, Match(section, category, edits[section].Single(edit => edit.Name == category.Name), errors));
+    }
+
     private static IEnumerable<bool> Apply(Request request)
     {
         var edits = Sections.ToDictionary(section => section, section => Edits(request, section));
         // Check every value before changing any.
         var errors = new List<string>();
-        var undo = new Dictionary<string, object> { ["method"] = "apply" };
-        foreach (var section in Sections.Where(section => edits[section].Length > 0))
+        var previous = Sections.ToDictionary(section => section, _ => new Dictionary<string, object>());
+        foreach (var target in Targets(edits, errors))
         {
-            var previous = new Dictionary<string, object>();
-            foreach (var category in Visit(section, edits[section].Select(edit => edit.Name), errors))
+            if (target is not { } found)
             {
-                if (category == null)
-                {
-                    yield return true;
-                    continue;
-                }
-                var edit = edits[section].Single(edit => edit.Name == category.Name);
-                var matched = Match(section, category, edit, errors).Select(item => item.Parameter).ToHashSet();
-                previous[category.Name] = Values(category.Parameters.Where(matched.Contains));
+                yield return true;
+                continue;
             }
-            undo[section] = previous;
+            var parameters = found.Matched.Select(item => item.Parameter).ToHashSet();
+            previous[found.Section][found.Category.Name] = Values(found.Category.Parameters.Where(parameters.Contains));
         }
         if (errors.Count > 0) throw new ArgumentException(string.Join("; ", errors) + ". Nothing changed");
         var changed = 0;
-        foreach (var section in Sections.Where(section => edits[section].Length > 0))
+        foreach (var target in Targets(edits, errors))
         {
-            foreach (var category in Visit(section, edits[section].Select(edit => edit.Name), errors))
+            // The first pass found none, so the app changed underneath; stop changing it.
+            if (errors.Count > 0) throw new InvalidOperationException(string.Join("; ", errors));
+            if (target is not { } found)
             {
-                if (category == null)
-                {
-                    yield return true;
-                    continue;
-                }
-                var edit = edits[section].Single(edit => edit.Name == category.Name);
-                var matched = Match(section, category, edit, errors);
-                // The first pass found none, so the app changed underneath; stop changing it.
-                if (errors.Count > 0) throw new InvalidOperationException(string.Join("; ", errors));
-                foreach (var (parameter, target, path) in matched)
-                {
-                    if (Read(parameter) == target) continue;
-                    var before = rebuilt;
-                    // Set first so an interrupted edit still counts as unsaved.
-                    modified = true;
-                    Reflect.Call(parameter, "set_" + Member(parameter), target);
-                    Changed.Add(path);
-                    changed++;
-                    while (rebuilt == before || updating) yield return true;
-                }
+                yield return true;
+                continue;
+            }
+            foreach (var (parameter, value, path) in found.Matched)
+            {
+                if (Read(parameter) == value) continue;
+                var before = rebuilt;
+                // Set first so an interrupted edit still counts as unsaved.
+                modified = true;
+                Reflect.Call(parameter, "set_" + Member(parameter), value);
+                Changed.Add(path);
+                changed++;
+                while (rebuilt == before || updating) yield return true;
             }
         }
         if (errors.Count > 0) throw new InvalidOperationException(string.Join("; ", errors));
+        var undo = new Dictionary<string, object> { ["method"] = "apply", ["Face"] = previous["Face"], ["Body"] = previous["Body"] };
         result = new { changed, undo };
     }
+
+    private static bool Same(object a, object b) => a is float[] x && b is float[] y ? x.SequenceEqual(y) : a.Equals(b);
 
     private static IEnumerable<bool> Dump()
     {
@@ -333,9 +337,10 @@ public sealed class Plugin : BasePlugin
         {
             var categories = new Dictionary<string, object>();
             var seen = new HashSet<string>();
-            // Categories share parameters by label; list each under the first category that has it.
-            var listed = new HashSet<string>();
-            foreach (var category in Visit(section, null, new List<string>()))
+            // Categories share parameters by label; list each under the first category
+            // that has it, and fail if a later copy disagrees.
+            var listed = new Dictionary<string, object>();
+            foreach (var category in Visit(section, null))
             {
                 if (category == null)
                 {
@@ -345,9 +350,14 @@ public sealed class Plugin : BasePlugin
                 // apply selects categories by name, so even an empty duplicate breaks the template.
                 if (!seen.Add(category.Name))
                     throw new InvalidOperationException($"Two {section} categories are named {category.Name}; a template cannot hold both");
-                var parameters = category.Parameters.Where(parameter => !listed.Contains(Label(parameter))).ToArray();
-                listed.UnionWith(parameters.Select(Label));
-                if (parameters.Length > 0) categories[category.Name] = Values(parameters);
+                var values = new Dictionary<string, object>();
+                foreach (var (label, value) in Values(category.Parameters))
+                {
+                    if (!listed.TryGetValue(label, out var first)) listed[label] = values[label] = value;
+                    else if (!Same(first, value))
+                        throw new InvalidOperationException($"{section}/{category.Name}/{label} differs from an earlier category's; categories no longer share it");
+                }
+                if (values.Count > 0) categories[category.Name] = values;
             }
             dump[section] = categories;
         }

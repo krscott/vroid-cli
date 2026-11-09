@@ -150,7 +150,8 @@ investigate or ask; never invent a rationale.
 - **R-EDIT-3** [manual: `just gui-smoke` applies one valid value and one above
   its maximum, then checks the error and that both values are unchanged]
   `apply` refuses a request in which any value is outside its parameter's
-  bounds or names no single parameter, and changes nothing.
+  bounds, names an unknown category or parameter, or gives the wrong number of
+  values for a label, and changes nothing.
 
   Rationale: VRoid's own controls never produce out-of-range values, so the
   app's behaviour for them is unknown. A partly applied template leaves a
