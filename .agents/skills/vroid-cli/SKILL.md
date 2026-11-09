@@ -1,6 +1,6 @@
 ---
 name: vroid-cli
-description: Open, inspect, edit Face/Body numeric parameters of, and save VRoid Studio .vroid projects through vroid-cli on a private background desktop.
+description: Use to run VRoid Studio in a background desktop.
 ---
 
 # VRoid characters with vroid-cli
