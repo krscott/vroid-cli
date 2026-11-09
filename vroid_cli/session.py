@@ -353,9 +353,6 @@ def stop(session: Session, *, force: bool) -> dict[str, Any]:
         deadline = time.monotonic() + 60
         while (session.desktop / "session.json").exists():
             if time.monotonic() >= deadline:
-                # A mismatch can keep the bridge from loading; waiting won't help.
-                if outdated := logged_mismatch(session):
-                    raise RuntimeError(outdated)
                 raise RuntimeError(abandoned(session))
             time.sleep(0.2)
         return {"session": session.name, "stopped": True}
