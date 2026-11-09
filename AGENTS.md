@@ -13,12 +13,12 @@ Read `REQUIREMENTS.md` and `DESIGN.md` before changing behaviour.
 
 - Never commit VRoid installers or files, generated interop assemblies, Wine
   prefixes, or session state (`.vroid/`).
-- Every internal VRoid name the bridge uses is validated only against the
-  pinned VRoid 2.16.0. Changing the VRoid, BepInEx, or Unity library pins
-  needs a new live check with `just gui-smoke`.
+- Every internal VRoid name the bridge uses, and every VRoid preference key
+  the launcher writes, is validated only against the pinned VRoid 2.16.0.
+  Changing the VRoid, BepInEx, or Unity library pins needs a new live check
+  with `just gui-smoke`.
 - `just test` and `nix flake check` need no graphics. `just gui-smoke` needs
-  graphics, Unix sockets, and a session past VRoid's first-run dialogs; run it
-  outside agent sandboxes.
+  graphics and Unix sockets; run it outside agent sandboxes.
 - The Scope section of `.agents/skills/vroid-cli/SKILL.md` is the one list of
   what vroid-cli can and can't do. Update it with each feature; don't
   repeat the list elsewhere.

@@ -14,8 +14,8 @@ usage() {
         'parameters and four colours (orange hair, green eyes) in one request,' \
         'saves a copy, renders each view, restarts, checks the saved values,' \
         'and applies the original template. Editor screenshots before and after' \
-        'the edit land in the artifact directory. SESSION must be stopped and' \
-        'past its first-run dialogs. Set VROID_CLI to choose the vroid-cli binary.'
+        'the edit land in the artifact directory. SESSION must be stopped. Set' \
+        'VROID_CLI to choose the vroid-cli binary.'
 }
 
 fatal_usage() {

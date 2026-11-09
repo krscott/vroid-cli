@@ -16,7 +16,7 @@ test:
     python -m pytest -q
     dotnet run --project tests/protocol
 
-# Exercise a real session; needs graphics and completed first-run dialogs.
+# Exercise a real session; needs graphics.
 gui-smoke session source:
     scripts/gui-smoke.sh "$@"
 

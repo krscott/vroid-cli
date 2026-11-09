@@ -237,7 +237,6 @@ class SessionStatus(Model):
     directory: str
     desktop: str
     app_running: bool
-    terms_accepted: bool
     ready: bool
     pending_request: bool
     bridge: dict[str, Any] | None = Field(description="the bridge's last status")

@@ -74,13 +74,13 @@ Otherwise the desktop failed before VRoid started, `app.log` may be from an
 earlier run, and the error shows the end of `runner.log`.
 
 It then waits for a bridge heartbeat that is fresh, was written after the
-launch began, and has found the main view model (R-SES-2). The bridge finds the
-main view model on VRoid's welcome screen, before the user accepts the terms.
-VRoid records acceptance as `<AllAgreementsAreAccepted>Yes` in
-`wine/drive_c/users/*/AppData/LocalLow/pixiv/VRoid Studio/preferences/editoroption.xml`.
-`launch` and every request command fail with instructions while that is missing,
-and `status` reports it as `terms_accepted` (R-SES-8). An older heartbeat
-can look fresh for a few seconds after the previous app exits. The wait fails
+launch began, and has found the main view model (R-SES-2). The bridge also
+finds it on VRoid's welcome screen, so an app that an earlier version started
+and left at the first-run dialogs looks ready. When VRoid's preferences file
+(below) does not exist, `launch` fails with instructions to stop and launch,
+which accepts the terms (R-SES-8); `status` and request commands do not check.
+An older heartbeat can look fresh for a few seconds after the previous app
+exits. The wait fails
 early if the runner exits. On timeout the app keeps starting; running `launch`
 again resumes the wait. A bridge reporting another protocol version fails with
 instructions to stop and relaunch; bridges from other builds with the same
@@ -106,7 +106,19 @@ app it waits for the runner to finish. A stopped desktop is already stopped.
    --remove-destination`, and only then writes the marker (R-SES-6). Store
    files are read-only, and earlier copies kept their modes. Upgrades happen
    only here, so only while the app is stopped.
-3. It starts VRoid with `winhttp` overridden to load BepInEx's Doorstop, the
+3. It accepts VRoid's first-run dialogs (R-SES-8). VRoid keeps its preferences
+   in `drive_c/users/USER/AppData/LocalLow/pixiv/VRoid Studio/preferences/editoroption.xml`
+   (`USER` is the prefix's only profile with an `AppData` directory) and
+   writes the file only after a person accepts the terms. Without it,
+   VRoid shows a welcome screen, then the terms and privacy policy, then a
+   tutorial dialog. With `AllAgreementsAreAccepted` and
+   `UpdatedPrivacyPolicyAreAccepted` set to `Yes` and `tutorialIsRead` set to
+   `true`, it skips all three, fills in its other defaults, and rewrites the
+   file as it does after a manual acceptance. The launcher writes that minimal
+   file, in UTF-8 with a byte order mark like VRoid's, when it is missing. It
+   never edits an existing file: one without both acceptances stops the launch
+   with instructions to delete it.
+4. It starts VRoid with `winhttp` overridden to load BepInEx's Doorstop, the
    RPC directory in `VROID_BRIDGE_DIR`, and the `.NET` settings below.
 
 On first start BepInEx generates interop assemblies from the installed game.
@@ -134,7 +146,7 @@ temporary file renamed over its target, so readers never see partial files.
 - `results/ID.json`: `{"ok", "result", "error"}`, written by the bridge before
   it removes the request. Results are never deleted (R-RPC-6).
 
-A request command takes the lock, requires accepted terms, requires a fresh
+A request command takes the lock, requires a fresh
 heartbeat with the same protocol (R-RPC-4), refuses if `request.json` exists
 (R-RPC-3), tags the request with the heartbeat's `boot`, and waits until the
 bridge removes the request, then reads the result. Waiting for the removal
@@ -363,4 +375,4 @@ restart, reopen with a read-back of every edited number and colour (R-EDIT-1),
 and reapplying the first dump, and checks the Framewisp input log. It saves editor screenshots before and after the edits. It decodes each
 render with the Python standard library to check its size and framing, and
 compares `dump` and an editor screenshot before and after rendering. It needs
-graphics access and a session whose first-run dialogs are complete.
+graphics access.

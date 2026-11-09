@@ -9,6 +9,18 @@ from pathlib import Path
 import pytest
 
 LAUNCHER = Path(__file__).resolve().parent.parent / "scripts/vroid-studio.sh"
+PREFERENCES = (
+    "wine/drive_c/users/user/AppData/LocalLow/pixiv/VRoid Studio"
+    "/preferences/editoroption.xml"
+)
+# Copies the preferences VRoid would read as it starts to SESSION/started.xml.
+WINE = f"""\
+import os, shutil, sys
+from pathlib import Path
+if sys.argv[1].endswith("VRoidStudio.exe"):
+    session = Path(os.environ["WINEPREFIX"]).parent
+    shutil.copyfile(session / {PREFERENCES!r}, session / "started.xml")
+"""
 
 
 @pytest.fixture
@@ -24,7 +36,7 @@ def launch(
     binary = tmp_path / "bin"
     binary.mkdir(exist_ok=True)
     wine = binary / "wine"
-    wine.write_text(f"#!{sys.executable}\n")
+    wine.write_text(f"#!{sys.executable}\n{WINE}")
     wine.chmod(0o755)
     return subprocess.run(
         ["bash", str(LAUNCHER)],
@@ -39,6 +51,17 @@ def launch(
         text=True,
         timeout=20,
     )
+
+
+def install(session: Path) -> Path:
+    """Create a completed installation; return its app directory."""
+    app = session / "wine/drive_c/VRoidStudio"
+    app.mkdir(parents=True)
+    (app / "VRoidStudio.exe").touch()
+    (session / "wine/drive_c/users/user/AppData").mkdir(parents=True)
+    (session / "wine/drive_c/users/Public").mkdir()
+    (session / "installed").touch()
+    return app
 
 
 def store_bundle(path: Path, version: str) -> Path:
@@ -58,10 +81,7 @@ def store_bundle(path: Path, version: str) -> Path:
 def test_bridge_upgrade_replaces_store_copies(writable: Path, legacy: bool) -> None:
     # R-SES-6
     session = writable / "session"
-    app = session / "wine/drive_c/VRoidStudio"
-    app.mkdir(parents=True)
-    (app / "VRoidStudio.exe").touch()
-    (session / "installed").touch()
+    app = install(session)
     first = store_bundle(writable / "first", "1")
     second = store_bundle(writable / "second", "2")
     if legacy:
@@ -86,10 +106,7 @@ def test_bridge_upgrade_replaces_store_copies(writable: Path, legacy: bool) -> N
 def test_failed_copy_is_retried_on_the_next_launch(writable: Path) -> None:
     # R-SES-6
     session = writable / "session"
-    app = session / "wine/drive_c/VRoidStudio"
-    app.mkdir(parents=True)
-    (app / "VRoidStudio.exe").touch()
-    (session / "installed").touch()
+    app = install(session)
     (app / ".vroid-bridge-bundle").write_text("previous\n")
     bundle = store_bundle(writable / "bundle", "1")
     (bundle / "winhttp.dll").chmod(0)
@@ -112,3 +129,61 @@ def test_incomplete_installation_is_not_repeated(writable: Path) -> None:
     assert result.returncode == 1
     assert "Incomplete installation" in result.stderr
     assert list((session / "wine").iterdir()) == []
+
+
+def test_launcher_accepts_terms_before_vroid_starts(writable: Path) -> None:
+    # R-SES-8
+    session = writable / "session"
+    install(session)
+    result = launch(writable, session, store_bundle(writable / "bundle", "1"))
+    assert result.returncode == 0, result.stderr
+    started = (session / "started.xml").read_bytes()
+    # VRoid's own encoding: UTF-8 with a byte order mark.
+    assert started.startswith(b'\xef\xbb\xbf<?xml version="1.0" encoding="utf-8"?>')
+    for element in [
+        b"<AllAgreementsAreAccepted>Yes</AllAgreementsAreAccepted>",
+        b"<UpdatedPrivacyPolicyAreAccepted>Yes</UpdatedPrivacyPolicyAreAccepted>",
+        b"<tutorialIsRead>true</tutorialIsRead>",
+    ]:
+        assert element in started
+
+
+def saved_preferences(session: Path, accepted: str) -> tuple[Path, bytes]:
+    """Write preferences like VRoid's, with other keys and CRLF line endings."""
+    preferences = session / PREFERENCES
+    preferences.parent.mkdir(parents=True)
+    content = (
+        '\ufeff<?xml version="1.0" encoding="utf-8"?>\r\n<EditorOption>\r\n'
+        "  <Preference>\r\n    <LanguageMode>Ja</LanguageMode>\r\n"
+        f"    <AllAgreementsAreAccepted>{accepted}</AllAgreementsAreAccepted>\r\n"
+        "    <UpdatedPrivacyPolicyAreAccepted>Yes</UpdatedPrivacyPolicyAreAccepted>\r\n"
+        "    <tutorialIsRead>false</tutorialIsRead>\r\n"
+        "  </Preference>\r\n</EditorOption>\r\n"
+    ).encode()
+    preferences.write_bytes(content)
+    return preferences, content
+
+
+def test_launcher_leaves_accepted_preferences_unchanged(writable: Path) -> None:
+    # R-SES-8
+    session = writable / "session"
+    install(session)
+    preferences, content = saved_preferences(session, "Yes")
+    modified = preferences.stat().st_mtime_ns
+    result = launch(writable, session, store_bundle(writable / "bundle", "1"))
+    assert result.returncode == 0, result.stderr
+    assert (session / "started.xml").read_bytes() == content
+    assert preferences.stat().st_mtime_ns == modified
+
+
+def test_launcher_refuses_preferences_without_accepted_terms(writable: Path) -> None:
+    # R-SES-8
+    session = writable / "session"
+    install(session)
+    preferences, content = saved_preferences(session, "No")
+    result = launch(writable, session, store_bundle(writable / "bundle", "1"))
+    assert result.returncode == 1
+    assert f"{preferences} do not record its accepted terms" in result.stderr
+    assert "Delete that file" in result.stderr
+    assert preferences.read_bytes() == content
+    assert not (session / "started.xml").exists()

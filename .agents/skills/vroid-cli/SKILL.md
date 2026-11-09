@@ -44,8 +44,9 @@ Body editors, renders the character to PNG from the front, three-quarter,
 side, or back, and saves projects. It can't yet change outfit colours,
 textures, hairstyles, outfits, accessories, or presets, create characters, or
 export VRM. To see the character, use `render`, not screenshots of the editor
-window. When a request needs anything vroid-cli can't do, do the parts it can
-and tell the user which parts you couldn't.
+window. Edits go through `vroid-cli`, never Framewisp input. When a request
+needs anything vroid-cli can't do, do the parts it can and tell the user which
+parts you couldn't.
 
 Face "Ear" parameters shape human ears at the sides of the head, not animal
 ears, which vroid-cli can't add yet.
@@ -113,22 +114,6 @@ minutes, or run it in the background, and pass `"timeout": 1200`; the default
 is 600 seconds. If it times out, the app keeps starting: run `launch` again to
 keep waiting. Commands need local graphics and Unix sockets, so a sandboxed
 harness may need its usual escalation.
-
-## First run
-
-A new session shows VRoid's welcome and terms dialogs once. Until the user has
-accepted them, `launch` and edit commands fail with instructions, and
-`status` reports `terms_accepted: false`. vroid-cli never accepts them. Ask the
-user to read and accept them, or to authorize you to, on the private desktop
-named in the error:
-
-```sh
-framewisp /abs/path/.vroid/alice/desktop screenshot /tmp/alice.png
-framewisp /abs/path/.vroid/alice/desktop click X Y
-```
-
-Then run `launch` again; if it still refuses, `stop` and `launch`. Framewisp is
-for setup, observation, and recording only; edits go through `vroid-cli`.
 
 ## Recovery
 
