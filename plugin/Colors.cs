@@ -15,15 +15,12 @@ public static class Colors
         return text.ToUpperInvariant();
     }
 
-    /// Whether two normalized or lowercase colours differ.
-    public static bool Differs(string a, string b) => !string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
-
     /// The red, green, and blue channels to write to a field that reads
-    /// `current` so that it reads `wanted`, or null if it already does. The
-    /// channels are exactly k/255 on the editor's sRGB scale, with no linear
-    /// conversion. Skipping an equal colour keeps a stored value that is off
-    /// the 1/255 grid exactly as it is.
-    public static float[]? Write(string current, string wanted) => Differs(current, wanted)
+    /// `current` so that it reads `wanted`, both normalized, or null if it
+    /// already does. The channels are exactly k/255 on the editor's sRGB
+    /// scale, with no linear conversion. Skipping an equal colour keeps a
+    /// stored value that is off the 1/255 grid exactly as it is.
+    public static float[]? Write(string current, string wanted) => current != wanted
         ? new[] { 1, 3, 5 }.Select(index => Convert.ToByte(wanted.Substring(index, 2), 16) / 255f).ToArray()
         : null;
 
@@ -38,7 +35,7 @@ public static class Colors
         {
             var first = listed.FirstOrDefault(other => other.Keys.SetEquals(field.Keys));
             if (first == null) listed.Add(field);
-            else if (Differs(first.Hex, field.Hex))
+            else if (first.Hex != field.Hex)
                 throw new InvalidOperationException(
                     $"{field.Path} is {field.Hex} but {first.Path} is {first.Hex}; they are not one shared colour");
         }

@@ -249,7 +249,8 @@ public sealed class Plugin : BasePlugin
         var colors = Reflect.Get(Selector(section), "CategoryColorSelection");
         foreach (var selection in Reflect.Items(Reflect.Get(colors, "_colorSelections")))
         {
-            var available = Reflect.Get(selection, "IsAvailable") is true;
+            if (Reflect.Get(selection, "IsAvailable") is not bool available)
+                throw new InvalidOperationException(Unknown("colour availability"));
             foreach (var sub in Reflect.Items(Reflect.Get(selection, "_subColorSelections")))
             {
                 var label = (string?)Reflect.Get(sub, "TranslatedDisplayName") ?? "";
@@ -453,7 +454,7 @@ public sealed class Plugin : BasePlugin
                 while (rebuilt == before || updating) yield return true;
                 // Catches clamping or a colour-space conversion inside VRoid (R-EDIT-8).
                 var actual = ReadHex(swatch, field.Path);
-                if (Colors.Differs(actual, hex))
+                if (actual != hex)
                     throw new InvalidOperationException($"{field.Path} reads {actual} after setting {hex}");
             }
         }

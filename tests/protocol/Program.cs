@@ -195,7 +195,6 @@ Test("a colour off the 1/255 grid dumps and reapplies without a write", _ =>
     var stored = Field("Face/Eyebrows/Color", "#808080", "Eyebrow:Overlay");
     var dumped = Colors.Listed(new[] { stored }).Single();
     Check(Colors.Write(stored.Hex, dumped.Hex) == null, "reapplying the dump writes the colour");
-    Check(Colors.Write(stored.Hex, dumped.Hex.ToLowerInvariant()) == null, "case changes the colour");
     Check(Colors.Write(stored.Hex, "#808081") is { } changed && changed[2] == 129 / 255f, "a changed colour is not written");
 });
 

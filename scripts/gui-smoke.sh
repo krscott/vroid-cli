@@ -109,12 +109,14 @@ edits=(
     'Face|Face Sets|Eye Size Y'
 )
 # Colours, each with a target and an alternative if it already has the target.
-# Hair needs the shared hair colour and Base Hair's own.
+# Hair needs the shared hair colour and Base Hair's own. Distinct targets show
+# the fields are independent. The last read back, Hair/Front, is the panel
+# after.png shows; its Main Color field reads the hex set here (R-EDIT-8).
 colours=(
+    'Face|Irises|R Eye|#2E8B57|#228B22'
+    'Face|Irises|L Eye|#3CB371|#32CD32'
+    'Hair|Base Hair|Main Color|#FFA500|#FF9900'
     'Hair|Front|Main Color|#FF8C00|#FF7F00'
-    'Hair|Base Hair|Main Color|#FF8C00|#FF7F00'
-    'Face|Irises|R Eye|#2E8B57|#3CB371'
-    'Face|Irises|L Eye|#2E8B57|#3CB371'
 )
 command -v framewisp >/dev/null || fatal 'Missing required command: framewisp'
 
@@ -203,7 +205,7 @@ for edit in "${edits[@]}"; do
     actual=$(value_of "$section" "$category" "$label")
     same "$actual" "${expected[$edit]}" || fatal "$label reopened as $actual, saved ${expected[$edit]}"
 done
-# The edited project dumps, with each colour where the first dump listed it,
+# The edited project dumps, with each colour under the category it was set in,
 # and the hair colour is shared by every hair category.
 vroid '{"method": "dump"}' >"$out/edited.json"
 for colour in "${colours[@]}"; do
