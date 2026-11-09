@@ -20,7 +20,6 @@ SESSION_NAME = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}")
 DISPLAY = ("2560", "1440")
 # Mesa render devices; automatic NVIDIA selection stalled the compositor.
 PREFERRED_GPU_VENDORS = {"0x1002", "0x8086"}
-TERMS_ACCEPTED = "<AllAgreementsAreAccepted>Yes</AllAgreementsAreAccepted>"
 # Logged by BepInEx be.788 when UpdateInteropAssemblies is off and its hash differs.
 OUTDATED_INTEROP = "Interop assemblies are possibly out of date"
 # Logged by the bridge in plugin/Plugin.cs when it loads.
@@ -215,22 +214,10 @@ def graphics_environment(
 
 
 def terms_accepted(session: Session) -> bool:
-    """Whether the user accepted VRoid's first-run terms in this session (R-SES-8)."""
+    """Whether VRoid has preferences, which it writes only after acceptance (R-SES-8)."""
     users = session.directory / "wine/drive_c/users"
     return any(
-        TERMS_ACCEPTED in path.read_text(encoding="utf-8-sig", errors="replace")
-        for path in users.glob(
-            "*/AppData/LocalLow/pixiv/VRoid Studio/preferences/editoroption.xml"
-        )
-    )
-
-
-def terms_pending(session: Session) -> str:
-    return (
-        "VRoid is waiting for its first-run welcome and terms dialogs. vroid-cli "
-        "never accepts them for you. Have the user read and accept them on the "
-        f"private desktop: framewisp {session.desktop} screenshot PNG, then "
-        f"framewisp {session.desktop} click X Y. Then run launch again"
+        users.glob("*/AppData/LocalLow/pixiv/VRoid Studio/preferences/editoroption.xml")
     )
 
 
@@ -245,17 +232,12 @@ def summary(session: Session) -> dict[str, Any]:
     exists = session.directory.is_dir()
     desktop = desktop_state(session) if exists else Desktop.STOPPED
     bridge = rpc.read_status(session.rpc)
-    accepted = terms_accepted(session)
     return {
         "session": session.name,
         "directory": str(session.directory),
         "desktop": str(session.desktop),
         "app_running": desktop is Desktop.RUNNING,
-        "terms_accepted": accepted,
-        "ready": desktop is Desktop.RUNNING
-        and accepted
-        and bridge is not None
-        and bridge.ready(),
+        "ready": desktop is Desktop.RUNNING and bridge is not None and bridge.ready(),
         "pending_request": (session.rpc / "request.json").exists(),
         "bridge": bridge.raw if bridge else None,
     }
@@ -306,8 +288,13 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
                     raise RuntimeError(incompatible())
                 if outdated := outdated_interop(session, boot=status.boot):
                     raise RuntimeError(outdated)
+                # The launcher accepts the terms before VRoid starts, so
+                # only an app an older build started can be waiting.
                 if not terms_accepted(session):
-                    raise RuntimeError(terms_pending(session))
+                    raise RuntimeError(
+                        "This session was started by an older vroid-cli and is "
+                        "waiting at VRoid's first-run dialogs; run stop, then launch"
+                    )
                 return summary(session)
             if failure := bepinex_failed(session):
                 raise RuntimeError(failure)
@@ -366,8 +353,6 @@ def stop(session: Session, *, force: bool) -> dict[str, Any]:
 
 def request(session: Session, *, method: str, args: dict[str, Any]) -> Any:
     with controller(session):
-        if not terms_accepted(session):
-            raise RuntimeError(terms_pending(session))
         status = rpc.read_status(session.rpc)
         if status is None or not status.fresh():
             raise RuntimeError(

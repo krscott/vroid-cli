@@ -87,13 +87,13 @@ waits behind an error dialog nobody can close, so `launch` fails as soon as
 that file appears.
 
 It then waits for a bridge heartbeat that is fresh, was written after the
-launch began, and has found the main view model (R-SES-2). The bridge finds the
-main view model on VRoid's welcome screen, before the user accepts the terms.
-VRoid records acceptance as `<AllAgreementsAreAccepted>Yes` in
-`wine/drive_c/users/*/AppData/LocalLow/pixiv/VRoid Studio/preferences/editoroption.xml`.
-`launch` and every request command fail with instructions while that is missing,
-and `status` reports it as `terms_accepted` (R-SES-8). An older heartbeat
-can look fresh for a few seconds after the previous app exits. The wait fails
+launch began, and has found the main view model (R-SES-2). The bridge also
+finds it on VRoid's welcome screen, so an app that an earlier version started
+and left at the first-run dialogs looks ready. When VRoid's preferences file
+(below) does not exist, `launch` fails with instructions to stop and launch,
+which accepts the terms (R-SES-8); `status` and request commands do not check.
+An older heartbeat can look fresh for a few seconds after the previous app
+exits. The wait fails
 early if the runner exits. On timeout the app keeps starting; running `launch`
 again resumes the wait. A bridge reporting another protocol version fails with
 instructions to stop and relaunch; bridges from other builds with the same
@@ -112,10 +112,22 @@ app it waits for the runner to finish. A stopped desktop is already stopped.
 
 1. Without a Wine user profile it creates the prefix with `wineboot -i`. Wine
    updates an existing prefix itself.
-2. It points `bepinex/core` and `bepinex/plugins` at the store and copies
+2. It accepts VRoid's first-run dialogs (R-SES-8). VRoid keeps its preferences
+   in `drive_c/users/USER/AppData/LocalLow/pixiv/VRoid Studio/preferences/editoroption.xml`
+   (`USER` is the prefix's only profile with an `AppData` directory) and
+   writes the file only after a person accepts the terms. Without it,
+   VRoid shows a welcome screen, then the terms and privacy policy, then a
+   tutorial dialog. With `AllAgreementsAreAccepted` and
+   `UpdatedPrivacyPolicyAreAccepted` set to `Yes` and `tutorialIsRead` set to
+   `true`, it skips all three, fills in its other defaults, and rewrites the
+   file as it does after a manual acceptance. The launcher writes that minimal
+   file, in UTF-8 with a byte order mark like VRoid's, when it is missing. It
+   never edits an existing file: one without both acceptances stops the launch
+   with instructions to delete it.
+3. It points `bepinex/core` and `bepinex/plugins` at the store and copies
    `plugin/BepInEx.cfg` from the store to `bepinex/config`, replacing all
    three each launch; BepInEx rewrites its config, so the copy is writable.
-3. It starts the store's VRoid with Doorstop's `--doorstop-*` arguments aimed
+4. It starts the store's VRoid with Doorstop's `--doorstop-*` arguments aimed
    at `bepinex/`, `--unhollowed-path` at the prebuilt interop assemblies,
    `-logFile` in the session, and the RPC directory in `VROID_BRIDGE_DIR`.
 
@@ -180,7 +192,7 @@ temporary file renamed over its target, so readers never see partial files.
 - `results/ID.json`: `{"ok", "result", "error"}`, written by the bridge before
   it removes the request. Results are never deleted (R-RPC-6).
 
-A request command takes the lock, requires accepted terms, requires a fresh
+A request command takes the lock, requires a fresh
 heartbeat with the same protocol (R-RPC-4), refuses if `request.json` exists
 (R-RPC-3), tags the request with the heartbeat's `boot`, and waits until the
 bridge removes the request, then reads the result. Waiting for the removal
@@ -366,5 +378,4 @@ open, dump, edit, refusal, save, rendering every view, restart, reopen, and
 reapplying the first dump, and checks the Framewisp input log and that
 BepInEx's log names the ready bridge's boot. It decodes each render with the
 Python standard library to check its size and framing, and compares `dump` and
-an editor screenshot before and after rendering. It needs graphics access and a
-session whose first-run dialogs are complete.
+an editor screenshot before and after rendering. It needs graphics access.

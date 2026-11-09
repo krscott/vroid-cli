@@ -76,17 +76,13 @@ PREFERENCES = "wine/drive_c/users/user/AppData/LocalLow/pixiv/VRoid Studio/prefe
 
 
 def bridge(tmp_path: Path, *, terms: bool = True, **fields: Any) -> Path:
+    """Act as a running bridge. Without `terms`, VRoid has no preferences yet."""
     rpc = tmp_path / "state/test/rpc"
     (rpc / "results").mkdir(parents=True)
     write_status(rpc, **fields)
-    preferences = rpc.parent / PREFERENCES
-    preferences.mkdir(parents=True)
-    accepted = "Yes" if terms else "No"
-    (preferences / "editoroption.xml").write_text(
-        f"\ufeff<EditorOption><Preference><AllAgreementsAreAccepted>{accepted}"
-        "</AllAgreementsAreAccepted></Preference></EditorOption>",
-        encoding="utf-8",
-    )
+    if terms:
+        (rpc.parent / PREFERENCES).mkdir(parents=True)
+        (rpc.parent / PREFERENCES / "editoroption.xml").touch()
     return rpc
 
 
@@ -306,7 +302,9 @@ def test_launch_ignores_a_heartbeat_from_before_launch(tmp_path: Path) -> None:
     )
 
 
-def test_commands_wait_for_the_user_to_accept_terms(tmp_path: Path) -> None:
+def test_launch_reports_an_app_an_older_build_left_at_the_terms(
+    tmp_path: Path,
+) -> None:
     # R-SES-8
     rpc = bridge(tmp_path, terms=False)
     env = running_desktop(tmp_path)
@@ -314,15 +312,9 @@ def test_commands_wait_for_the_user_to_accept_terms(tmp_path: Path) -> None:
     launched = invoke(tmp_path, "launch", timeout=8, env=env)
     beating.join()
     assert launched.returncode == 1
-    assert "never accepts them for you" in launched.stderr
+    assert "started by an older vroid-cli" in launched.stderr
+    assert "run stop, then launch" in launched.stderr
     assert "stop" not in (tmp_path / "framewisp.log").read_text().split()
-    edited = invoke(tmp_path, "categories", section="Body", env=env)
-    assert edited.returncode == 1
-    assert "terms" in edited.stderr
-    assert not (rpc / "request.json").exists()
-    status = json.loads(invoke(tmp_path, "status", env=env).stdout)
-    assert status["app_running"] is True
-    assert (status["terms_accepted"], status["ready"]) == (False, False)
 
 
 def test_launch_reports_why_the_app_exited(tmp_path: Path) -> None:

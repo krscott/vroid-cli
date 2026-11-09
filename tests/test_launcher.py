@@ -12,17 +12,24 @@ import pytest
 
 LAUNCHER = Path(__file__).resolve().parent.parent / "scripts/vroid-studio.sh"
 STORE = ["VROID_WINE", "VROID_APP", "VROID_INTEROP", "VROID_BEPINEX", "VROID_BRIDGE"]
+PREFERENCES = (
+    "wine/drive_c/users/user/AppData/LocalLow/pixiv/VRoid Studio"
+    "/preferences/editoroption.xml"
+)
 # Records each call in SESSION/calls.jsonl; wineboot creates a user profile.
-WINE = """\
-import json, os, sys
+# Starting VRoid copies the preferences it would read to SESSION/started.xml.
+WINE = f"""\
+import json, os, shutil, sys
 from pathlib import Path
 session = Path(os.environ["VROID_SESSION_DIR"])
 name = Path(sys.argv[0]).name
 with open(session / "calls.jsonl", "a") as calls:
-    calls.write(json.dumps({"program": sys.argv[0], "args": sys.argv[1:],
-                            "env": dict(os.environ)}) + "\\n")
+    calls.write(json.dumps({{"program": sys.argv[0], "args": sys.argv[1:],
+                            "env": dict(os.environ)}}) + "\\n")
 if name == "wineboot":
     Path(os.environ["WINEPREFIX"], "drive_c/users/user/AppData").mkdir(parents=True)
+if name == "wine" and sys.argv[1].endswith("VRoidStudio.exe"):
+    shutil.copyfile(session / {PREFERENCES!r}, session / "started.xml")
 """
 
 
@@ -66,10 +73,10 @@ def store(tmp_path: Path, version: str) -> dict[str, str]:
     return paths
 
 
-def launch(session: Path, paths: dict[str, str]) -> list[dict[str, Any]]:
+def run(session: Path, paths: dict[str, str]) -> subprocess.CompletedProcess[str]:
     session.mkdir(exist_ok=True)
     (session / "calls.jsonl").unlink(missing_ok=True)
-    result = subprocess.run(
+    return subprocess.run(
         ["bash", str(LAUNCHER)],
         env={k: v for k, v in os.environ.items() if not k.startswith("VROID_")}
         | paths
@@ -78,6 +85,10 @@ def launch(session: Path, paths: dict[str, str]) -> list[dict[str, Any]]:
         text=True,
         timeout=20,
     )
+
+
+def launch(session: Path, paths: dict[str, str]) -> list[dict[str, Any]]:
+    result = run(session, paths)
     assert result.returncode == 0, result.stderr
     calls = (session / "calls.jsonl").read_text().splitlines()
     return [json.loads(call) for call in calls]
@@ -171,3 +182,56 @@ def test_app_environment_names_its_store_paths(writable: Path) -> None:
             (prefix,) = [prefix for prefix in named if path.is_relative_to(prefix)]
             used.add(prefix)
     assert used == set(named)
+
+
+def test_launcher_accepts_terms_before_vroid_starts(writable: Path) -> None:
+    # R-SES-8
+    session = writable / "session"
+    launch(session, store(writable, "1"))
+    started = (session / "started.xml").read_bytes()
+    # VRoid's own encoding: UTF-8 with a byte order mark.
+    assert started.startswith(b'\xef\xbb\xbf<?xml version="1.0" encoding="utf-8"?>')
+    for element in [
+        b"<AllAgreementsAreAccepted>Yes</AllAgreementsAreAccepted>",
+        b"<UpdatedPrivacyPolicyAreAccepted>Yes</UpdatedPrivacyPolicyAreAccepted>",
+        b"<tutorialIsRead>true</tutorialIsRead>",
+    ]:
+        assert element in started
+
+
+def saved_preferences(session: Path, accepted: str) -> tuple[Path, bytes]:
+    """Write preferences like VRoid's, with other keys and CRLF line endings."""
+    preferences = session / PREFERENCES
+    preferences.parent.mkdir(parents=True)
+    content = (
+        '\ufeff<?xml version="1.0" encoding="utf-8"?>\r\n<EditorOption>\r\n'
+        "  <Preference>\r\n    <LanguageMode>Ja</LanguageMode>\r\n"
+        f"    <AllAgreementsAreAccepted>{accepted}</AllAgreementsAreAccepted>\r\n"
+        "    <UpdatedPrivacyPolicyAreAccepted>Yes</UpdatedPrivacyPolicyAreAccepted>\r\n"
+        "    <tutorialIsRead>false</tutorialIsRead>\r\n"
+        "  </Preference>\r\n</EditorOption>\r\n"
+    ).encode()
+    preferences.write_bytes(content)
+    return preferences, content
+
+
+def test_launcher_leaves_accepted_preferences_unchanged(writable: Path) -> None:
+    # R-SES-8
+    session = writable / "session"
+    preferences, content = saved_preferences(session, "Yes")
+    modified = preferences.stat().st_mtime_ns
+    launch(session, store(writable, "1"))
+    assert (session / "started.xml").read_bytes() == content
+    assert preferences.stat().st_mtime_ns == modified
+
+
+def test_launcher_refuses_preferences_without_accepted_terms(writable: Path) -> None:
+    # R-SES-8
+    session = writable / "session"
+    preferences, content = saved_preferences(session, "No")
+    result = run(session, store(writable, "1"))
+    assert result.returncode == 1
+    assert f"{preferences} do not record its accepted terms" in result.stderr
+    assert "Delete that file" in result.stderr
+    assert preferences.read_bytes() == content
+    assert not (session / "started.xml").exists()

@@ -13,8 +13,7 @@ usage() {
         'Opens SOURCE in SESSION, dumps its template, edits one Body and two Face' \
         'parameters in one request, saves a copy, renders each view, restarts,' \
         'checks the saved values, and applies the original template. SESSION' \
-        'must be stopped and past its first-run dialogs. Set VROID_CLI to choose' \
-        'the vroid-cli binary.'
+        'must be stopped. Set VROID_CLI to choose the vroid-cli binary.'
 }
 
 fatal_usage() {

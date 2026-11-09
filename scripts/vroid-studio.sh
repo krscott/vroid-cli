@@ -3,6 +3,11 @@
 # vroid-cli launch runs this on the session's private desktop.
 set -euo pipefail
 
+fatal() {
+    printf '%s\n' "$*" >&2
+    exit 1
+}
+
 : "${VROID_SESSION_DIR:?Start sessions with vroid-cli launch}"
 for name in VROID_WINE VROID_APP VROID_INTEROP VROID_BEPINEX VROID_BRIDGE VROID_BEPINEX_CONFIG; do
     : "${!name:?Missing packaged $name; run the vroid-studio wrapper}"
@@ -19,13 +24,48 @@ windows() {
     printf 'Z:%s' "${1//\//\\}"
 }
 
+user_profiles() {
+    shopt -s nullglob
+    profiles=("$WINEPREFIX"/drive_c/users/*/AppData)
+    shopt -u nullglob
+}
+
 # Create the prefix before VRoid starts. Wine updates an existing one itself.
-shopt -s nullglob
-profiles=("$WINEPREFIX"/drive_c/users/*/AppData)
-shopt -u nullglob
+user_profiles
 if ((${#profiles[@]} == 0)); then
     WINEDLLOVERRIDES=$overrides "$wine/wineboot" -i
     "$wine/wineserver" -w
+    user_profiles
+fi
+
+# R-SES-8: VRoid skips its first-run welcome, terms, and tutorial dialogs when
+# its preferences record them as done, and fills in the other preferences on
+# start. VRoid writes the file only after acceptance, so an existing file is
+# never edited.
+((${#profiles[@]} == 1)) || fatal "Expected one Wine user profile in $WINEPREFIX/drive_c/users; found ${#profiles[@]}. Inspect that directory, then delete $VROID_SESSION_DIR or use another session name."
+preferences="${profiles[0]}/LocalLow/pixiv/VRoid Studio/preferences/editoroption.xml"
+if [[ ! -e $preferences ]]; then
+    mkdir -p "${preferences%/*}"
+    {
+        printf '\xef\xbb\xbf' # VRoid writes UTF-8 with a byte order mark.
+        cat <<'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<EditorOption>
+  <Preference>
+    <AllAgreementsAreAccepted>Yes</AllAgreementsAreAccepted>
+    <UpdatedPrivacyPolicyAreAccepted>Yes</UpdatedPrivacyPolicyAreAccepted>
+    <tutorialIsRead>true</tutorialIsRead>
+  </Preference>
+</EditorOption>
+EOF
+    } >"$preferences.tmp"
+    mv "$preferences.tmp" "$preferences"
+else
+    saved=$(<"$preferences")
+    if [[ $saved != *'<AllAgreementsAreAccepted>Yes</AllAgreementsAreAccepted>'* ||
+        $saved != *'<UpdatedPrivacyPolicyAreAccepted>Yes</UpdatedPrivacyPolicyAreAccepted>'* ]]; then
+        fatal "VRoid's preferences in $preferences do not record its accepted terms. Delete that file to reset VRoid's preferences, then launch again."
+    fi
 fi
 
 # BepInEx's root: its own files are links into the store; config, cache, and
