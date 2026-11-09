@@ -19,7 +19,8 @@ Read `REQUIREMENTS.md` and `DESIGN.md` before changing behaviour.
 - `just test` and `nix flake check` need no graphics. `just gui-smoke` needs
   graphics, Unix sockets, and a session past VRoid's first-run dialogs; run it
   outside agent sandboxes.
-- What vroid-cli can and can't change is listed only in the Scope section of
-  `.agents/skills/vroid-cli/SKILL.md`. Update it there when adding a feature.
+- The Scope section of `.agents/skills/vroid-cli/SKILL.md` is the one list of
+  what vroid-cli can and can't change. Update it with each feature; don't
+  repeat the list elsewhere.
 - The bridge's file protocol lives in both `vroid_cli/rpc.py` and
   `plugin/Bridge.cs`. Change them together.

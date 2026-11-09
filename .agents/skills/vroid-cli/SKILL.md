@@ -35,14 +35,16 @@ field and result.
 
 ## Scope
 
-vroid-cli opens existing `.vroid` projects, reads and sets Face and Body
-numeric parameters (the sliders), and saves projects. It can't yet change
-colors, textures, hairstyles, outfits, accessories, or presets, create
-characters, or export VRM. When a request needs any of these, do the parts
-vroid-cli can and tell the user which parts you couldn't.
+vroid-cli opens existing `.vroid` projects, reads and sets the numeric sliders
+in the Face and Body editors, and saves projects. It can't yet change colors,
+textures, hairstyles, outfits, accessories, or presets, create characters,
+render the character, or export VRM. To see the character, take a Framewisp
+screenshot of the private desktop (see First run), which shows the editor
+window. When a request needs anything vroid-cli can't do, do the parts it can
+and tell the user which parts you couldn't.
 
-Face "Ear" parameters shape human ears at the sides of the head. Animal ears,
-such as cat ears, are hairstyle or accessory items.
+Face "Ear" parameters shape human ears at the sides of the head, not animal
+ears, which vroid-cli can't add yet.
 
 ## Rules
 
@@ -60,10 +62,9 @@ such as cat ears, are hairstyle or accessory items.
 - `apply` accepts finite values within each parameter's `min..max`. It checks
   every value before changing any; one bad value refuses the whole request.
   Its result's `undo` is an `apply` request that restores the previous values.
-- `categories`, `parameters`, `dump`, and `apply` switch VRoid's visible
-  editor to the section and category they read. `apply` leaves it on the last
-  category the request names, changed or not. For comparable screenshots, run
-  the same `parameters` request before each one.
+- `categories`, `parameters`, `dump`, and `apply` change which section and
+  category VRoid's editor shows, even when they change no value. For
+  comparable screenshots, run the same `parameters` request before each one.
 - Categories share parameters: "Eye Size X" in Face Sets and in Eyeliner is
   one value. An `apply` request may name each label in only one category per
   section.
