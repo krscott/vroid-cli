@@ -185,7 +185,7 @@ The bridge tracks these app objects:
 - Edit root: `VRoid.Studio.EditRootScreen.ViewModel.OnScreenActivate`
   captures it; `BackToModelSelect` clears it.
 - Selectors: `BasePresetsSelectorViewModel.UpdateSelectedPresets` captures the
-  Face and Body category selectors by concrete type.
+  Face, Hair, and Body category selectors by concrete type.
 - Rebuilds: `VRoidCoreModelUpdater.set_IsUpdatingModel` counts each
   true-to-false transition.
 
@@ -194,17 +194,17 @@ Operations:
 | Method | Internal call | Completion |
 | --- | --- | --- |
 | `open` | `MainViewModel.ImportFileAndMoveToEditRoot(path, false, false)` | Edit root captured and one rebuild finished |
-| `categories` | Edit root `set_EditMode(FaceEditor or BodyEditor)`, selector `Categories.Children[].Name` | Selector captured |
-| `parameters` | Selector `set_SelectedCategory`, then the category's `Parameters[]` `Label`, `CombinedValue` or `Value`, `MinValue`, `MaxValue` | No rebuild running |
-| `dump` | `parameters` for every Face and Body category in app order | No rebuild running |
-| `apply` | `parameters` for each named category, then parameter `set_CombinedValue` or `set_Value` per changed value | One rebuild finished per changed value (R-EDIT-6) |
+| `categories` | Edit root `set_EditMode(FaceEditor, HairEditor, or BodyEditor)`, selector `Categories.Children[].Name` | Selector captured |
+| `parameters` | Selector `set_SelectedCategory`, then the category's `Parameters[]` `Label`, `CombinedValue` or `Value`, `MinValue`, `MaxValue`, and its colours, below | No rebuild running |
+| `dump` | `parameters` for every Face, Hair, and Body category in app order | No rebuild running |
+| `apply` | `parameters` for each named category, then parameter `set_CombinedValue` or `set_Value`, or a colour's setter, per changed value | One rebuild finished per changed value (R-EDIT-6) |
 | `save` | Edit root `_mainActionHandler.SaveSync(path, true)` | Call returned true and the file is nonempty |
 
 `open` refuses once a project is open; changing projects needs a restart.
 Successful `open` and `save` clear `modified`.
 
-A template is an `apply` request: `Face` and `Body` map category names to
-parameter labels to values. Labels repeat within some categories (Face Sets
+A template is an `apply` request: `Face`, `Hair`, and `Body` map category
+names to labels to values. A value is a number, or a colour as `#RRGGBB`. Labels repeat within some categories (Face Sets
 and Nose each have two "Nose Size" parameters), so a repeated label maps to an
 array of its values in app order. Categories also share parameters: within a
 section, the same label in another category is the same value (Face Sets,
@@ -218,17 +218,55 @@ label in two categories of a section, since the later value would silently
 win.
 
 `apply` runs in two passes. The first resolves every category name and every
-value to its parameters, checking the label's count and the live bounds, and
-collects every refusal. Bounds compare the value as float32, as VRoid stores
-it, so a dumped bound such as 0.7 stays in range. Any refusal fails the
-request before a value changes (R-EDIT-3). The second pass revisits the
-categories and sets each value that differs, waiting for its rebuild, and
-stops at the first new refusal. It sets `modified` before the first change, so
-an interrupted edit still counts as unsaved. The result counts the changed
-values and holds an `undo` template of the previous values. If the second pass
-fails, the error lists the values already changed. Each rebuild takes a few
-frames, so even a template that changes every value finishes far within the
-request timeout.
+value to its parameters or colour, checking the label's count, the live
+bounds, and the value's kind, and collects every refusal. Bounds compare the
+value as float32, as VRoid stores it, so a dumped bound such as 0.7 stays in
+range. Any refusal fails the request before a value changes (R-EDIT-3). The
+second pass revisits the categories and sets each value that differs, waiting
+for its rebuild, and stops at the first new refusal. It sets `modified` before
+the first change, so an interrupted edit still counts as unsaved. The result
+counts the changed values and holds an `undo` template of the previous values.
+If the second pass fails, the error lists the values already changed and
+includes the `undo` request. Each rebuild takes a few frames, so even a
+template that changes every value finishes far within the request timeout.
+
+### Colours
+
+A colour is a field in a category's editor panel. Outfits have none: their
+colours live in the texture editor, which saves custom items.
+
+- Face, Hair, and Body categories: the selector's `CategoryColorSelection`
+  holds `_colorSelections[]`, each with `IsAvailable` and
+  `_subColorSelections[]`. A sub-selection's `TranslatedDisplayName` is the
+  label and its `Color` property the value. Unavailable fields (Lips for some
+  items) are not listed, and `apply` refuses them.
+- Hair categories except Hairstyle Sets and Base Hair: the edit root's
+  `HairEditor` view model's `HairMaterialTemplateColor` ("Main Color") and
+  `HairMaterialTemplateEmissionColor` ("Highlight Color"). One pair covers all
+  hair; Base Hair has its own field above. Hairstyle Sets' aggregate colour is
+  not exposed.
+
+Some colours are shared. A sub-selection's accessor writes the model keys in
+`_keysToSet`: Face Eyelids, Nose, and Skin and Body Whole Body each write all
+four skin keys, and Irises "Both Eyes" writes the keys of "R Eye" and "L Eye".
+The bridge reads the keys live and fails if a field has none, rather than
+treating it as unshared. `plugin/Colors.cs`, which `tests/protocol` also
+builds, holds the rules. Fields with equal keys are one colour: `dump` lists
+it under the first category in app order and fails if a later copy differs. A
+field whose keys strictly contain another's, such as "Both Eyes", writes
+several colours and is not dumped. `apply` refuses fields with overlapping
+keys in one request (R-EDIT-3), since the later write would win. The hair
+colour pair uses fixed keys.
+
+Values are the hex VRoid's editor shows, from
+`VRoid.UI.Util.ColorUtil.ColorToColorHex` (R-EDIT-8). VRoid stores colours on
+the editor's sRGB scale; #FAEBDE is 250/255, 235/255, 222/255. A write sets
+each channel to exactly `k/255f`, with no linear conversion, and keeps the
+alpha, which is not part of the value. A field that already reads as the
+wanted hex is not written, so a stored channel off the 1/255 grid survives a
+dump and reapply. After each write and its rebuild, the bridge reads the hex
+back and fails if it differs. VRoid's `TryParseColorHex` throws on bad input,
+so the bridge parses hex itself.
 
 IL2CPP reflection must convert native objects to their most derived proxy type.
 `Reflect.Concrete` maps `System.*` class names to `Il2CppSystem.*` proxies and
@@ -245,7 +283,7 @@ stdin. Every method is a request, so saved requests work in any session.
 `method`. pydantic's defaults would accept `NaN`, coerce `"0.5"`, and drop
 misspelled fields (R-CLI-3). Its JSON parser keeps the last of repeated keys,
 so the CLI rejects repeated keys first. Validation refuses non-finite values
-(R-EDIT-2) and checks `.vroid` suffixes, an existing `open` source, and a new
+and colours that are not `#RRGGBB` in either case (R-EDIT-2) and checks `.vroid` suffixes, an existing `open` source, and a new
 `save` destination in an existing directory (R-EDIT-4), all before touching
 session state. Paths resolve against the current directory, and `open` and
 `save` report the resolved path rather than the bridge's Wine path. The bridge
@@ -268,9 +306,11 @@ errors (R-CLI-2).
 
 - `tests/test_cli.py`: the CLI against a stand-in bridge and Framewisp.
 - `tests/test_launcher.py`: the launcher against a stand-in Wine.
-- `tests/protocol`: the bridge's file protocol under the .NET SDK.
+- `tests/protocol`: the bridge's file protocol and colour rules under the .NET
+  SDK.
 
 `scripts/gui-smoke.sh`, run by `just gui-smoke`, drives a real session through
-open, dump, edit, refusal, save, restart, reopen, and reapplying the first
-dump, and checks the Framewisp input log. It needs graphics access and a
+open, dump, numeric and colour edits, refusal, save, restart, reopen, and
+reapplying the first dump, and checks the Framewisp input log. It saves
+screenshots before and after the edits. It needs graphics access and a
 session whose first-run dialogs are complete.

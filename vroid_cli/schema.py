@@ -10,6 +10,7 @@ from pydantic import (
     ConfigDict,
     Field,
     PositiveFloat,
+    StringConstraints,
     TypeAdapter,
     ValidationError,
     ValidatorFunctionWrapHandler,
@@ -18,7 +19,15 @@ from pydantic import (
     model_validator,
 )
 
-Section = Literal["Face", "Body"]
+Section = Literal["Face", "Hair", "Body"]
+SECTIONS: tuple[Section, ...] = ("Face", "Hair", "Body")
+
+# As VRoid's editor shows it, on the same sRGB scale; there is no alpha.
+Color = Annotated[
+    str,
+    StringConstraints(pattern=r"^#[0-9A-Fa-f]{6}$"),
+    Field(description='a colour as "#RRGGBB"'),
+]
 
 
 def one_error(value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
@@ -26,19 +35,26 @@ def one_error(value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
     try:
         return handler(value)
     except ValidationError:
+        if isinstance(value, str):
+            raise ValueError(
+                f'{value!r} is neither a number nor a colour as "#RRGGBB"'
+            ) from None
         raise ValueError(
-            "expected a finite number, or an array of them for a repeated label"
+            "expected a finite number, an array of them for a repeated label, "
+            'or a colour as "#RRGGBB"'
         ) from None
 
 
-Value = Annotated[float | list[float], WrapValidator(one_error)]
+Value = Annotated[float | list[float] | Color, WrapValidator(one_error)]
 Template = Annotated[
     dict[str, dict[str, Value]],
     Field(
-        description="category name -> parameter label -> value. A label that "
-        "occurs more than once in a category takes an array of its values in "
-        "app order. Categories share parameters by label, so each label may "
-        "appear in only one category."
+        description="category name -> label -> value: a number, or a colour "
+        'as "#RRGGBB". A numeric label that occurs more than once in a '
+        "category takes an array of its values in app order. Categories share "
+        "numeric parameters by label, so each numeric label may appear in only "
+        "one category. Some colours are shared too, such as skin; set each in "
+        "one place."
     ),
 ]
 
@@ -102,7 +118,7 @@ class Categories(Model):
 
 
 class Parameters(Model):
-    """List a category's numeric parameters."""
+    """List a category's numeric parameters and colours."""
 
     method: Literal["parameters"]
     section: Section
@@ -110,29 +126,33 @@ class Parameters(Model):
 
 
 class Dump(Model):
-    """Return every Face and Body numeric value as an apply request."""
+    """Return every Face, Hair, and Body value and colour as an apply request."""
 
     method: Literal["dump"]
 
 
 class Apply(Model):
-    """Set numeric values, keyed by category and parameter label.
+    """Set numeric values and colours, keyed by category and label.
 
-    Every name and bound is checked before any value changes.
+    Every name, bound, and colour is checked before any value changes.
     """
 
     method: Literal["apply"]
     Face: Template = Field(default_factory=dict)
+    Hair: Template = Field(default_factory=dict)
     Body: Template = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def each_parameter_once(self) -> "Apply":
-        # The same label in two categories of a section is one parameter; the
-        # later value would silently win.
-        for section, template in [("Face", self.Face), ("Body", self.Body)]:
+        # The same numeric label in two categories of a section is one
+        # parameter; the later value would silently win. Colour labels such as
+        # "Color" repeat across unrelated colours; the bridge checks those.
+        for section in SECTIONS:
             first: dict[str, str] = {}
-            for category, values in template.items():
-                for label in values:
+            for category, values in getattr(self, section).items():
+                for label, value in values.items():
+                    if isinstance(value, str):
+                        continue
                     if (other := first.setdefault(label, category)) != category:
                         raise ValueError(
                             f"{section}/{category}/{label} is the same parameter "
@@ -193,6 +213,11 @@ class Parameter(Model):
     max: float
 
 
+class ColorParameter(Model):
+    label: str
+    value: Color
+
+
 class Applied(Model):
     changed: int = Field(description="number of values that changed")
     undo: Apply = Field(description="restores the previous values")
@@ -209,7 +234,7 @@ RESULTS: dict[str, TypeAdapter[Any]] = {
     "stop": TypeAdapter(Stopped),
     "open": TypeAdapter(Opened),
     "categories": TypeAdapter(list[str]),
-    "parameters": TypeAdapter(list[Parameter]),
+    "parameters": TypeAdapter(list[Parameter | ColorParameter]),
     "dump": TypeAdapter(Apply),
     "apply": TypeAdapter(Applied),
     "save": TypeAdapter(Saved),

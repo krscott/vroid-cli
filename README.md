@@ -7,9 +7,9 @@ display and changes characters through VRoid's internal methods. It uses no
 mouse or keyboard input, OCR, MCP server, or account login.
 
 This first version opens existing `.vroid` projects, reads and changes Face and
-Body numeric parameters, dumps and applies them as JSON templates, and saves
-projects. Character creation, presets, colors, hair and texture tools, and VRM
-export are not supported yet.
+Body numeric parameters and Face, Hair, and Body colours, dumps and applies them
+as JSON templates, and saves projects. Character creation, presets, outfit
+colours, hair and texture tools, and VRM export are not supported yet.
 
 ## Requirements
 
@@ -44,8 +44,9 @@ JSON Schema of every request and result.
 
 ### Templates
 
-`dump` prints every Face and Body value as an `apply` request, so a character's
-shape can be saved, diffed, edited, and applied to another project:
+`dump` prints every Face, Hair, and Body value and colour as an `apply`
+request, so a character's shape and colours can be saved, diffed, edited, and
+applied to another project:
 
 ```sh
 vroid-cli demo '{"method": "dump"}' > template.json
@@ -57,7 +58,9 @@ vroid-cli other @template.json
 category, such as "Nose Size" in Face Sets, maps to an array of its values.
 Categories share parameters ("Eye Size X" is in Face Sets, Eyes Sets, and
 Eyeliner), so `dump` lists each once, and a request may name each label in only
-one category per section.
+one category per section. Colours are `"#RRGGBB"` as VRoid's editor shows them;
+shared colours, such as skin in Face and Body, may also be set in only one
+place per request.
 
 Use one session name per agent or task. Session state lives in `.vroid/NAME/`
 at the Git worktree root (the current directory outside Git), or under

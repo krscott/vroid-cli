@@ -24,6 +24,7 @@ vroid-cli alice '{"method": "open", "path": "./alice.vroid"}'
 vroid-cli alice '{"method": "categories", "section": "Body"}'
 vroid-cli alice '{"method": "parameters", "section": "Body", "category": "Whole Body"}'
 vroid-cli alice '{"method": "apply", "Body": {"Whole Body": {"Head Size": 0.125}}}'
+vroid-cli alice '{"method": "apply", "Hair": {"Front": {"Main Color": "#FF8C00"}}}'
 vroid-cli alice '{"method": "dump"}' > alice.json
 vroid-cli alice @alice.json
 vroid-cli alice '{"method": "save", "path": "./alice-v2.vroid"}'
@@ -46,15 +47,24 @@ field and result.
   return them. A label that appears more than once in a category, like "Nose
   Size" in Face Sets, takes an array with one value per occurrence, in
   `parameters` order.
-- `apply` accepts finite values within each parameter's `min..max`. It checks
-  every value before changing any; one bad value refuses the whole request.
-  Its result's `undo` is an `apply` request that restores the previous values.
+- `apply` accepts finite values within each parameter's `min..max`, and
+  colours as `"#RRGGBB"` where `parameters` lists a colour. It checks every
+  value before changing any; one bad value refuses the whole request. Its
+  result's `undo` is an `apply` request that restores the previous values.
+- Colours are the hex VRoid's editor shows, without alpha. Face, Hair, and Body
+  have them; outfit colours are not supported. Hair's "Main Color" and
+  "Highlight Color" (under Front, Back, and the other hair parts) are one pair
+  for all hair; Base Hair has its own "Main Color".
+- Some colours are shared: skin is one colour in Face Eyelids, Nose, and Skin
+  and Body Whole Body, and Irises "Both Eyes" sets "R Eye" and "L Eye". Set
+  each in one place per request; the error names the conflict.
 - Categories share parameters: "Eye Size X" in Face Sets and in Eyeliner is
   one value. An `apply` request may name each label in only one category per
   section.
-- `dump` returns an `apply` request with every Face and Body value, each listed
-  once under the first category that has it. Save it as a template, edit or
-  diff it with JSON tools, and apply it in any session.
+- `dump` returns an `apply` request with every Face, Hair, and Body value and
+  colour, each listed once under the first category that has it (skin under
+  Face Eyelids, hair under Hair Front). Save it as a template, edit or diff it
+  with JSON tools, and apply it in any session.
 - Paths in requests, including saved ones, resolve against the current
   directory, not the request file's.
 - `save` needs a new `.vroid` path in an existing directory. It never
