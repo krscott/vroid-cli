@@ -544,3 +544,142 @@ def test_status_of_a_new_session_is_one_json_value(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     status = json.loads(result.stdout)
     assert status["app_running"] is False and status["ready"] is False
+
+
+@pytest.mark.parametrize(
+    ("fields", "reason"),
+    [
+        ({"path": "view.jpg"}, "path: image paths must end in .png"),
+        ({"path": "missing/view.png"}, "is not a directory"),
+        ({"path": "existing.png"}, "path: refusing to overwrite"),
+        ({"view": "left"}, "view: Input should be 'front'"),
+        ({"frame": "face"}, "frame: Input should be 'body' or 'head'"),
+        ({"width": 15}, "width: Input should be greater than or equal to 16"),
+        ({"height": 4097}, "height: Input should be less than or equal to 4096"),
+        ({"width": 512.0}, "width: Input should be a valid integer"),
+        ({"angle": 30}, "angle: Extra inputs"),
+    ],
+)
+def test_invalid_render_requests_are_rejected_without_state(
+    tmp_path: Path, fields: dict[str, Any], reason: str
+) -> None:
+    # R-CLI-3, R-VIEW-3
+    (tmp_path / "existing.png").write_bytes(b"earlier image")
+    request = {"method": "render", "path": "view.png", "view": "front"} | fields
+    result = run_cli(tmp_path, "test", json.dumps(request))
+    assert result.returncode == 2
+    assert reason in result.stderr
+    assert (tmp_path / "existing.png").read_bytes() == b"earlier image"
+    assert not (tmp_path / "view.png").exists()
+    assert not (tmp_path / "state").exists()
+
+
+def render_files(directory: Path) -> list[str]:
+    return sorted(path.name for path in directory.iterdir() if path.suffix == ".png")
+
+
+def writes_image(
+    image: bytes, *, then: Callable[[], object] = lambda: None, error: str | None = None
+) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    """A stand-in bridge reply that writes `image` where the request says."""
+
+    def reply(request: dict[str, Any]) -> dict[str, Any]:
+        assert request["path"].startswith("Z:")
+        Path(request["path"][2:]).write_bytes(image)
+        then()
+        if error is not None:
+            return {"ok": False, "result": None, "error": error}
+        result = {"rendered": request["path"], "bytes": len(image)}
+        return {"ok": True, "result": result, "error": None}
+
+    return reply
+
+
+def test_render_publishes_the_bridge_image_at_the_callers_path(
+    tmp_path: Path,
+) -> None:
+    # R-VIEW-3
+    rpc = bridge(tmp_path)
+    peer, received = answer(rpc, writes_image(b"\x89PNG image"))
+    result = invoke(tmp_path, "render", path="front.png", view="front")
+    peer.join()
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "rendered": str(tmp_path / "front.png"),
+        "bytes": 10,
+    }
+    assert (tmp_path / "front.png").read_bytes() == b"\x89PNG image"
+    assert render_files(tmp_path) == ["front.png"]
+    request = received[0]
+    assert Path(request["path"][2:]).parent == tmp_path
+    assert Path(request["path"]).name.startswith(".vroid-render-")
+    assert (request["view"], request["frame"]) == ("front", "body")
+    assert (request["width"], request["height"]) == (1024, 1024)
+
+
+def test_render_never_replaces_a_destination_created_meanwhile(
+    tmp_path: Path,
+) -> None:
+    # R-VIEW-3
+    rpc = bridge(tmp_path)
+    destination = tmp_path / "front.png"
+    peer, _ = answer(
+        rpc,
+        writes_image(
+            b"\x89PNG new", then=lambda: destination.write_bytes(b"earlier image")
+        ),
+    )
+    result = invoke(tmp_path, "render", path="front.png", view="front")
+    peer.join()
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "refusing to overwrite" in result.stderr
+    assert destination.read_bytes() == b"earlier image"
+    assert render_files(tmp_path) == ["front.png"]
+
+
+@pytest.mark.parametrize(
+    ("error", "hint"),
+    [("Unknown method: render", True), ("Open a project first", False)],
+)
+def test_failed_render_leaves_no_image(tmp_path: Path, error: str, hint: bool) -> None:
+    # R-VIEW-3
+    rpc = bridge(tmp_path)
+    peer, _ = answer(rpc, writes_image(b"\x89PNG partial", error=error))
+    result = invoke(tmp_path, "render", path="front.png", view="side", frame="head")
+    peer.join()
+    assert result.returncode == 1
+    assert error in result.stderr
+    assert ("predates render" in result.stderr) == hint
+    assert render_files(tmp_path) == []
+
+
+def test_only_render_suggests_updating_the_bridge(tmp_path: Path) -> None:
+    rpc = bridge(tmp_path)
+    peer, _ = answer(
+        rpc, lambda _: {"ok": False, "result": None, "error": "Unknown method: dump"}
+    )
+    result = invoke(tmp_path, "dump")
+    peer.join()
+    assert result.returncode == 1
+    assert "Unknown method: dump" in result.stderr
+    assert "predates" not in result.stderr
+
+
+def test_render_reports_a_missing_bridge_image(tmp_path: Path) -> None:
+    rpc = bridge(tmp_path)
+    peer, _ = answer(
+        rpc,
+        lambda r: {
+            "ok": True,
+            "result": {"rendered": r["path"], "bytes": 1},
+            "error": None,
+        },
+    )
+    result = invoke(tmp_path, "render", path="front.png", view="front")
+    peer.join()
+    assert result.returncode == 1
+    assert "cannot link .vroid-render-" in result.stderr
+    assert "No such file or directory" in result.stderr
+    assert "hard links" not in result.stderr
+    assert render_files(tmp_path) == []

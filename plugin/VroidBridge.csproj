@@ -12,6 +12,8 @@
   <ItemGroup>
     <Reference Include="$(LoaderDir)/dotnet/System*.dll" />
     <Reference Include="$(LoaderDir)/dotnet/mscorlib.dll" />
+    <!-- Runtime binder for `dynamic` in Render.cs. -->
+    <Reference Include="$(LoaderDir)/dotnet/Microsoft.CSharp.dll" />
     <Reference Include="$(LoaderDir)/dotnet/netstandard.dll" />
     <Reference Include="$(LoaderDir)/BepInEx/core/BepInEx.Core.dll" />
     <Reference Include="$(LoaderDir)/BepInEx/core/BepInEx.Unity.IL2CPP.dll" />

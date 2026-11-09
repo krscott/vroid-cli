@@ -50,10 +50,23 @@ class Model(BaseModel):
     )
 
 
-def project_path(value: Path) -> Path:
+def resolved(value: Path, suffix: str, kind: str) -> Path:
     path = (Path.cwd() / value).resolve()
-    if path.suffix.lower() != ".vroid":
-        raise ValueError("project paths must end in .vroid")
+    if path.suffix.lower() != suffix:
+        raise ValueError(f"{kind} paths must end in {suffix}")
+    return path
+
+
+def project_path(value: Path) -> Path:
+    return resolved(value, ".vroid", "project")
+
+
+def new_file(path: Path) -> Path:
+    """Refuse an existing destination or a missing directory (R-EDIT-4, R-VIEW-3)."""
+    if path.exists() or path.is_symlink():
+        raise ValueError(f"refusing to overwrite {path}")
+    if not path.parent.is_dir():
+        raise ValueError(f"{path.parent} is not a directory")
     return path
 
 
@@ -150,19 +163,52 @@ class Save(Model):
     @field_validator("path")
     @classmethod
     def new(cls, value: Path) -> Path:
-        path = project_path(value)
-        if path.exists() or path.is_symlink():
-            raise ValueError(f"refusing to overwrite {path}")  # R-EDIT-4
-        if not path.parent.is_dir():
-            raise ValueError(f"{path.parent} is not a directory")
-        return path
+        return new_file(project_path(value))
+
+
+ImageSize = Annotated[int, Field(ge=16, le=4096, description="pixels")]
+
+
+class Render(Model):
+    """Render the open character to a new PNG in an existing directory.
+
+    The image is orthographic on a plain background. Body views of one
+    character at one size share their scale and ground line.
+    """
+
+    method: Literal["render"]
+    path: Path
+    view: Literal["front", "three_quarter", "side", "back"] = Field(
+        description="three_quarter and side show the character's left side"
+    )
+    frame: Literal["body", "head"] = Field(
+        "body",
+        description="body fits the whole character; head fits everything "
+        "above the neck, so a front head view is a face close-up",
+    )
+    width: ImageSize = 1024
+    height: ImageSize = 1024
+
+    @field_validator("path")
+    @classmethod
+    def new(cls, value: Path) -> Path:
+        return new_file(resolved(value, ".png", "image"))
 
 
 Request = Annotated[
-    Launch | Status | Stop | Open | Categories | Parameters | Dump | Apply | Save,
+    Launch
+    | Status
+    | Stop
+    | Open
+    | Categories
+    | Parameters
+    | Dump
+    | Apply
+    | Save
+    | Render,
     Field(discriminator="method"),
 ]
-BridgeRequest = Open | Categories | Parameters | Dump | Apply | Save
+BridgeRequest = Open | Categories | Parameters | Dump | Apply | Save | Render
 REQUEST: TypeAdapter[Request] = TypeAdapter(Request)
 
 
@@ -206,6 +252,11 @@ class Saved(Model):
     bytes: int
 
 
+class Rendered(Model):
+    rendered: str
+    bytes: int
+
+
 RESULTS: dict[str, TypeAdapter[Any]] = {
     "launch": TypeAdapter(SessionStatus),
     "status": TypeAdapter(SessionStatus),
@@ -216,6 +267,7 @@ RESULTS: dict[str, TypeAdapter[Any]] = {
     "dump": TypeAdapter(Apply),
     "apply": TypeAdapter(Applied),
     "save": TypeAdapter(Saved),
+    "render": TypeAdapter(Rendered),
 }
 
 
