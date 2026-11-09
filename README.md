@@ -6,10 +6,9 @@ under Wine on a private [Framewisp](https://github.com/krscott/framewisp)
 display and changes characters through VRoid's internal methods. It uses no
 mouse or keyboard input, OCR, MCP server, or account login.
 
-This first version opens existing `.vroid` projects, reads and changes Face and
-Body numeric parameters, dumps and applies them as JSON templates, and saves
-projects. Character creation, presets, colors, hair and texture tools, and VRM
-export are not supported yet.
+It opens existing `.vroid` projects, changes them, and saves them. The agent
+skill's [Scope](.agents/skills/vroid-cli/SKILL.md#scope) lists what it can do
+so far.
 
 ## Requirements
 
@@ -28,7 +27,7 @@ Every command is `vroid-cli SESSION REQUEST`, where `REQUEST` is a JSON object,
 `@path` to read one from a file, or `-` to read stdin:
 
 ```sh
-nix develop   # or: nix shell github:krscott/vroid-cli
+nix develop   # or: nix shell github:krscott/vroid-cli github:krscott/vroid-cli#framewisp
 vroid-cli demo '{"method": "launch"}'
 vroid-cli demo '{"method": "open", "path": "./source.vroid"}'
 vroid-cli demo '{"method": "categories", "section": "Body"}'
