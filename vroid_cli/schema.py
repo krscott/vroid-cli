@@ -194,7 +194,11 @@ class Parameter(Model):
 
 
 class Applied(Model):
-    changed: int = Field(description="number of values that changed")
+    changed: int = Field(
+        description="number of values that changed. Each element of a repeated "
+        "label's array counts separately; values already equal to the request "
+        "don't count."
+    )
     undo: Apply = Field(description="restores the previous values")
 
 
