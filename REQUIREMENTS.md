@@ -15,8 +15,9 @@ it; name non-obvious constraints when useful. Backfill existing rationales only
 when relevant to the task, without a project-wide sweep. If the reason is unknown,
 investigate or ask; never invent a rationale.
 
-- The ID is stable. Never renumber or reuse an ID. To drop a requirement, keep
-  its bullet and change its tag to `[retired]`.
+- The ID is stable. Never renumber or reuse an ID. To drop a requirement,
+  change its tag to `[retired]` and delete its text and rationale; the ID
+  stays taken.
 - `[test]`: a test that `just test` or `nix flake check` runs covers it. Each
   covering test carries the ID in a comment.
 - `[manual: how]`: no automated test yet. The text says how an agent checks it.
@@ -48,18 +49,9 @@ investigate or ask; never invent a rationale.
   Rationale: Stopping discards unsaved edits, which may be the only copy of an
   agent's work.
 
-- **R-SES-5** [retired] An incomplete first installation is never repeated
-  automatically. Launching it reports how to recover.
+- **R-SES-5** [retired]
 
-  Rationale: Its logs explain the failure, and a repeated installation over a
-  partial prefix fails in less obvious ways.
-
-- **R-SES-6** [retired] Launching after an upgrade installs the new bridge over the
-  old one, including read-only copies from earlier installs. A failed copy is
-  retried on the next launch.
-
-  Rationale: A stale or partially copied bridge fails in confusing ways, and
-  users cannot repair an app directory they did not create.
+- **R-SES-6** [retired]
 
 - **R-SES-7** [manual: while a session is running, confirm no VRoid window
   appears on the user's desktop and the user's input reaches only their own
