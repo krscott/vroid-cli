@@ -3,7 +3,7 @@
 import json
 from collections import Counter
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, get_args
 
 from pydantic import (
     BaseModel,
@@ -20,7 +20,7 @@ from pydantic import (
 )
 
 Section = Literal["Face", "Hair", "Body"]
-SECTIONS: tuple[Section, ...] = ("Face", "Hair", "Body")
+SECTIONS: tuple[Section, ...] = get_args(Section)
 
 # As VRoid's editor shows it, on the same sRGB scale; there is no alpha.
 Color = Annotated[

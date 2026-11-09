@@ -56,8 +56,11 @@ field and result.
   "Highlight Color" (under Front, Back, and the other hair parts) are one pair
   for all hair; Base Hair has its own "Main Color".
 - Some colours are shared: skin is one colour in Face Eyelids, Nose, and Skin
-  and Body Whole Body, and Irises "Both Eyes" sets "R Eye" and "L Eye". Set
-  each in one place per request; the error names the conflict.
+  and Body Whole Body. Set each in one place per request; the error names the
+  conflict. Set Irises "R Eye" and "L Eye" separately; "Both Eyes" is refused.
+- A colour that is unavailable for the project's selected item, such as Lips
+  for some lips, is refused. Remove it from a template made in another
+  project.
 - Categories share parameters: "Eye Size X" in Face Sets and in Eyeliner is
   one value. An `apply` request may name each label in only one category per
   section.

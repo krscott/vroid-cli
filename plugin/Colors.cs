@@ -15,45 +15,48 @@ public static class Colors
         return text.ToUpperInvariant();
     }
 
-    /// The red, green, and blue channels of a normalized colour as VRoid stores
-    /// them: exactly k/255 on the editor's sRGB scale, with no linear conversion.
-    public static float[] Channels(string hex) =>
-        new[] { 1, 3, 5 }.Select(index => Convert.ToByte(hex.Substring(index, 2), 16) / 255f).ToArray();
+    /// Whether two normalized or lowercase colours differ.
+    public static bool Differs(string a, string b) => !string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 
-    /// Whether setting `wanted` changes a field that reads `current`. A colour
-    /// that already reads as `wanted` is never written, so a stored value off
-    /// the 1/255 grid keeps its exact channels.
-    public static bool Differs(string current, string wanted) =>
-        !string.Equals(current, wanted, StringComparison.OrdinalIgnoreCase);
+    /// The red, green, and blue channels to write to a field that reads
+    /// `current` so that it reads `wanted`, or null if it already does. The
+    /// channels are exactly k/255 on the editor's sRGB scale, with no linear
+    /// conversion. Skipping an equal colour keeps a stored value that is off
+    /// the 1/255 grid exactly as it is.
+    public static float[]? Write(string current, string wanted) => Differs(current, wanted)
+        ? new[] { 1, 3, 5 }.Select(index => Convert.ToByte(wanted.Substring(index, 2), 16) / 255f).ToArray()
+        : null;
 
     /// The fields a dump lists, in the given (app) order. Fields with equal
-    /// keys show one shared colour, listed under the first; a field whose keys
-    /// strictly contain another field's, such as "Both Eyes", writes several
-    /// colours at once and is not listed. Throws if a shared copy differs.
+    /// keys show one shared colour, listed under the first. Throws if a shared
+    /// copy differs, or if two listed fields overlap, since apply would refuse
+    /// the template.
     public static List<ColorField> Listed(IReadOnlyList<ColorField> fields)
     {
         var listed = new List<ColorField>();
         foreach (var field in fields)
         {
-            if (fields.Any(other => other.Keys.IsProperSubsetOf(field.Keys))) continue;
             var first = listed.FirstOrDefault(other => other.Keys.SetEquals(field.Keys));
             if (first == null) listed.Add(field);
             else if (Differs(first.Hex, field.Hex))
                 throw new InvalidOperationException(
                     $"{field.Path} is {field.Hex} but {first.Path} is {first.Hex}; they are not one shared colour");
         }
+        foreach (var (a, b) in Overlapping(listed))
+            throw new InvalidOperationException($"{a.Path} and {b.Path} write some of the same colours; a template cannot hold both");
         return listed;
     }
 
     /// One message for each pair of fields that write a common value; setting
     /// both in one request would keep whichever came last.
-    public static List<string> Conflicts(IReadOnlyList<ColorField> requested)
+    public static List<string> Conflicts(IReadOnlyList<ColorField> requested) =>
+        Overlapping(requested).Select(pair => $"{pair.A.Path} and {pair.B.Path} set the same colour; set it in one place").ToList();
+
+    private static IEnumerable<(ColorField A, ColorField B)> Overlapping(IReadOnlyList<ColorField> fields)
     {
-        var conflicts = new List<string>();
-        for (var i = 0; i < requested.Count; i++)
-            for (var j = i + 1; j < requested.Count; j++)
-                if (requested[i].Keys.Overlaps(requested[j].Keys))
-                    conflicts.Add($"{requested[i].Path} and {requested[j].Path} set the same colour; set it in one place");
-        return conflicts;
+        for (var i = 0; i < fields.Count; i++)
+            for (var j = i + 1; j < fields.Count; j++)
+                if (fields[i].Keys.Overlaps(fields[j].Keys))
+                    yield return (fields[i], fields[j]);
     }
 }

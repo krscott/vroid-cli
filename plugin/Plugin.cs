@@ -184,8 +184,9 @@ public sealed class Plugin : BasePlugin
     private sealed record CategoryEdit(string Name, Wanted[] Values);
     // A colour field: `Owner.Member` holds a UnityEngine.Color, and a write
     // changes the model values named by `Keys`.
-    private sealed record Swatch(string Label, object Owner, string Member, HashSet<string> Keys, bool Available);
-    private sealed record Category(string Name, object[] Parameters, Swatch[] Swatches);
+    private sealed record Swatch(string Label, object Owner, string Member, HashSet<string> Keys);
+    // `Refused` maps colour labels the panel shows but apply cannot set to the reason.
+    private sealed record Category(string Name, object[] Parameters, Swatch[] Swatches, Dictionary<string, string> Refused);
     private sealed record Paint(Swatch Swatch, string Hex, ColorField Field);
     private sealed record Target(string Section, Category Category,
         List<(object Parameter, float Value, string Path)> Matched, List<Paint> Painted);
@@ -234,15 +235,17 @@ public sealed class Plugin : BasePlugin
             yield return null;
             while (updating) yield return null;
             var node = Reflect.Get(category, "ParameterCategoryViewModel") ?? category;
-            yield return new Category(Name(category), Reflect.Items(Reflect.Get(node, "Parameters")).ToArray(),
-                Swatches(section, Name(category)));
+            var (swatches, refused) = Swatches(section, Name(category));
+            yield return new Category(Name(category), Reflect.Items(Reflect.Get(node, "Parameters")).ToArray(), swatches, refused);
         }
     }
 
-    // The selected category's colour fields, as its editor panel shows them.
-    private static Swatch[] Swatches(string section, string category)
+    // The selected category's colour fields that apply can set, and the reason
+    // for each other field its editor panel shows.
+    private static (Swatch[], Dictionary<string, string>) Swatches(string section, string category)
     {
-        var swatches = new List<Swatch>();
+        var shown = new List<(Swatch Swatch, bool Available)>();
+        string Unknown(string what) => $"Cannot determine {what} for {section}/{category}: this VRoid differs from the validated 2.16.0";
         var colors = Reflect.Get(Selector(section), "CategoryColorSelection");
         foreach (var selection in Reflect.Items(Reflect.Get(colors, "_colorSelections")))
         {
@@ -253,25 +256,38 @@ public sealed class Plugin : BasePlugin
                 // Fields that write the same keys show one shared colour, such as skin
                 // in Face and Body; without the keys, sharing cannot be told apart.
                 var keys = Reflect.Items(Reflect.Get(Reflect.Get(Reflect.Get(sub, "_model"), "Accessor"), "_keysToSet"))
-                    .Select(key => $"{Reflect.Get(key, "TransferableGroupType")}:{Reflect.Get(key, "Key")}").ToHashSet();
-                if (keys.Count == 0)
-                    throw new InvalidOperationException($"Cannot determine shared colours for {section}/{category}/{label}: "
-                        + "its colour accessor names no keys, so this VRoid differs from the validated 2.16.0");
-                swatches.Add(new Swatch(label, sub, "Color", keys, available));
+                    .Select(key => (Group: Reflect.Get(key, "TransferableGroupType") as string, Key: Reflect.Get(key, "Key") as string))
+                    .ToArray();
+                if (keys.Length == 0 || keys.Any(key => string.IsNullOrEmpty(key.Group) || string.IsNullOrEmpty(key.Key)))
+                    throw new InvalidOperationException(Unknown($"shared colours for {label}"));
+                shown.Add((new Swatch(label, sub, "Color", keys.Select(key => $"{key.Group}:{key.Key}").ToHashSet()), available));
             }
         }
         if (section == "Hair")
         {
             // One hair material colour pair covers every hair category. Hairstyle
             // Sets shows an aggregate colour instead, and Base Hair its own above.
-            var hair = Reflect.Get(Root, "HairEditor") ?? throw new InvalidOperationException("Hair editor is unavailable");
-            if (Reflect.Get(hair, "IsHairSet") is false && Reflect.Get(hair, "IsBaseHair") is false)
+            var hair = Reflect.Get(Root, "HairEditor");
+            if (Reflect.Get(hair, "IsHairSet") is not bool set || Reflect.Get(hair, "IsBaseHair") is not bool baseHair)
+                throw new InvalidOperationException(Unknown("hair colours"));
+            if (!set && !baseHair)
             {
-                swatches.Add(new Swatch("Main Color", hair, "HairMaterialTemplateColor", new() { "HairMaterial:Main" }, true));
-                swatches.Add(new Swatch("Highlight Color", hair, "HairMaterialTemplateEmissionColor", new() { "HairMaterial:Highlight" }, true));
+                shown.Add((new Swatch("Main Color", hair!, "HairMaterialTemplateColor", new() { "HairMaterial:Main" }), true));
+                shown.Add((new Swatch("Highlight Color", hair!, "HairMaterialTemplateEmissionColor", new() { "HairMaterial:Highlight" }), true));
             }
         }
-        return swatches.ToArray();
+        var swatches = new List<Swatch>();
+        var refused = new Dictionary<string, string>();
+        foreach (var (swatch, available) in shown)
+        {
+            // A field such as "Both Eyes" writes several colours and reads only one of
+            // them, so neither skipping an equal value nor its undo would be exact.
+            var parts = shown.Where(other => other.Swatch.Keys.IsProperSubsetOf(swatch.Keys)).Select(other => other.Swatch.Label).ToArray();
+            if (!available) refused[swatch.Label] = "unavailable for the selected item";
+            else if (parts.Length > 0) refused[swatch.Label] = $"sets {string.Join(" and ", parts)} together; set those instead";
+            else swatches.Add(swatch);
+        }
+        return (swatches.ToArray(), refused);
     }
 
     private static object ColorOf(Swatch swatch) => Reflect.Get(swatch.Owner, swatch.Member)
@@ -286,10 +302,9 @@ public sealed class Plugin : BasePlugin
             ?? throw new InvalidOperationException($"{path}: VRoid shows the colour as {text}, not RRGGBB");
     }
 
-    // Sets exact k/255 channels on the editor's scale and keeps the alpha.
-    private static void Write(Swatch swatch, string hex)
+    // Sets the red, green, and blue channels and keeps the alpha.
+    private static void Write(Swatch swatch, float[] channels)
     {
-        var channels = Colors.Channels(hex);
         var alpha = Convert.ToSingle(Reflect.Get(ColorOf(swatch), "a"));
         var color = Activator.CreateInstance(Reflect.Type("UnityEngine.Color"), channels[0], channels[1], channels[2], alpha)!;
         Reflect.Call(swatch.Owner, "set_" + swatch.Member, color);
@@ -324,25 +339,23 @@ public sealed class Plugin : BasePlugin
                 errors.Add($"{path}: is both a number and a colour; it cannot be set by label");
                 continue;
             }
+            var refused = category.Refused.TryGetValue(wanted.Label, out var reason) ? $"{path}: {reason}" : null;
             if (wanted.Color is { } color)
             {
-                if (swatches.Length != 1 || !swatches[0].Available || Colors.Normalize(color) is not { } hex)
-                    errors.Add(swatches.Length switch
-                    {
-                        0 when found.Length > 0 => $"{path}: is a number; give a number",
-                        0 => $"{path}: unknown parameter; list them first",
-                        > 1 => $"{path}: {swatches.Length} colours have this label; it cannot be set by label",
-                        _ when !swatches[0].Available => $"{path}: unavailable for the selected item",
-                        _ => $"{path}: {color} is not #RRGGBB",
-                    });
-                else painted.Add(new Paint(swatches[0], hex, new ColorField(path, swatches[0].Keys, ReadHex(swatches[0], path))));
+                if (swatches.Length == 1 && Colors.Normalize(color) is { } hex)
+                    painted.Add(new Paint(swatches[0], hex, new ColorField(path, swatches[0].Keys, ReadHex(swatches[0], path))));
+                else errors.Add(swatches.Length switch
+                {
+                    > 1 => $"{path}: {swatches.Length} colours have this label; it cannot be set by label",
+                    1 => $"{path}: {color} is not #RRGGBB",
+                    _ => refused ?? (found.Length > 0 ? $"{path}: is a number; give a number" : $"{path}: unknown parameter; list them first"),
+                });
                 continue;
             }
             if (found.Length == 0)
             {
-                errors.Add(swatches.Length > 0
-                    ? $"{path}: is a colour; give \"#RRGGBB\""
-                    : $"{path}: unknown parameter; list them first");
+                errors.Add(swatches.Length > 0 ? $"{path}: is a colour; give \"#RRGGBB\""
+                    : refused ?? $"{path}: unknown parameter; list them first");
                 continue;
             }
             if (found.Length != wanted.Values.Length || (found.Length == 1 && wanted.Repeated))
@@ -405,8 +418,9 @@ public sealed class Plugin : BasePlugin
         }
         errors.AddRange(Colors.Conflicts(colors));
         if (errors.Count > 0) throw new ArgumentException(string.Join("; ", errors) + ". Nothing changed");
-        undo = Sections.Aggregate(new Dictionary<string, object> { ["method"] = "apply" },
-            (request, section) => { request[section] = previous[section]; return request; });
+        var restore = new Dictionary<string, object> { ["method"] = "apply" };
+        foreach (var section in Sections) restore[section] = previous[section];
+        undo = restore;
         var changed = 0;
         foreach (var target in Targets(edits, errors))
         {
@@ -430,10 +444,10 @@ public sealed class Plugin : BasePlugin
             }
             foreach (var (swatch, hex, field) in found.Painted)
             {
-                if (!Colors.Differs(ReadHex(swatch, field.Path), hex)) continue;
+                if (Colors.Write(ReadHex(swatch, field.Path), hex) is not { } channels) continue;
                 var before = rebuilt;
                 modified = true;
-                Write(swatch, hex);
+                Write(swatch, channels);
                 Changed.Add(field.Path);
                 changed++;
                 while (rebuilt == before || updating) yield return true;
@@ -484,7 +498,7 @@ public sealed class Plugin : BasePlugin
                             $"{section}/{category.Name}/{label} differs from {section}/{first.Category}/{label}; they are not one shared parameter");
                 }
                 var labels = category.Parameters.Select(Label).ToHashSet();
-                foreach (var swatch in category.Swatches.Where(swatch => swatch.Available))
+                foreach (var swatch in category.Swatches)
                 {
                     var path = $"{section}/{category.Name}/{swatch.Label}";
                     // apply sets colours by label, so a template could not hold both.
@@ -544,7 +558,7 @@ public sealed class Plugin : BasePlugin
                         value = Read(value),
                         min = Convert.ToSingle(Reflect.Get(value, "MinValue")),
                         max = Convert.ToSingle(Reflect.Get(value, "MaxValue")),
-                    }).Concat(category.Swatches.Where(swatch => swatch.Available).Select(swatch => (object)new
+                    }).Concat(category.Swatches.Select(swatch => (object)new
                     {
                         label = swatch.Label,
                         value = ReadHex(swatch, $"{request.Text("section")}/{category.Name}/{swatch.Label}"),

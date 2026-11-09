@@ -155,8 +155,8 @@ done
 screenshot after
 
 # A value above its maximum, an unknown parameter, an unknown category, a number
-# for a colour, and a shared colour set twice refuse the whole request, and each
-# is reported.
+# for a colour, a shared colour set twice, and a colour that writes several
+# refuse the whole request, and each is reported.
 IFS='|' read -r section category label <<<"${edits[0]}"
 IFS='|' read -r other_section other_category other_label <<<"${edits[1]}"
 max=$(jq -cn --arg section "$section" --arg category "$category" \
@@ -168,12 +168,14 @@ refused=$(with_value "$section" "$category" "$label" "$(jq -n --argjson max "$ma
     with_value "$other_section" 'No Such Category' 'Any Parameter' 0 |
     with_value Face Irises 'R Eye' 0 |
     with_value Face Skin Color '"#123456"' |
-    with_value Body 'Whole Body' Color '"#123456"')
+    with_value Body 'Whole Body' Color '"#123456"' |
+    with_value Face Irises 'Both Eyes' '"#123456"')
 if vroid "$refused" >/dev/null 2>"$out/bounds.err"; then
     fatal "apply above the maximum succeeded"
 fi
 for reason in 'is outside' 'No Such Parameter: unknown parameter' 'No Such Category: unknown category' \
-    'Face/Irises/R Eye: is a colour' 'Face/Skin/Color and Body/Whole Body/Color set the same colour' 'Nothing changed'; do
+    'Face/Irises/R Eye: is a colour' 'Face/Skin/Color and Body/Whole Body/Color set the same colour' \
+    'Face/Irises/Both Eyes: sets R Eye and L Eye together' 'Nothing changed'; do
     grep -qF "$reason" "$out/bounds.err" || fatal "refusal lacks '$reason': $(<"$out/bounds.err")"
 done
 actual=$(value_of Body 'Whole Body' Color)
@@ -201,6 +203,19 @@ for edit in "${edits[@]}"; do
     actual=$(value_of "$section" "$category" "$label")
     same "$actual" "${expected[$edit]}" || fatal "$label reopened as $actual, saved ${expected[$edit]}"
 done
+# The edited project dumps, with each colour where the first dump listed it,
+# and the hair colour is shared by every hair category.
+vroid '{"method": "dump"}' >"$out/edited.json"
+for colour in "${colours[@]}"; do
+    IFS='|' read -r section category label _ <<<"$colour"
+    edit="$section|$category|$label"
+    jq -e --arg s "$section" --arg c "$category" --arg l "$label" --argjson v "${expected[$edit]}" \
+        '.[$s][$c][$l] == $v' "$out/edited.json" >/dev/null ||
+        fatal "$out/edited.json lacks $section/$category/$label ${expected[$edit]}"
+done
+front='Hair|Front|Main Color'
+actual=$(value_of Hair Back 'Main Color')
+same "$actual" "${expected[$front]}" || fatal "Hair/Back Main Color is $actual, not Front's"
 
 # The template dumped before the edits restores every value in a new app instance.
 vroid "@$out/original.json" >/dev/null

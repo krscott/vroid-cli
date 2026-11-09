@@ -239,7 +239,8 @@ colours live in the texture editor, which saves custom items.
   holds `_colorSelections[]`, each with `IsAvailable` and
   `_subColorSelections[]`. A sub-selection's `TranslatedDisplayName` is the
   label and its `Color` property the value. Unavailable fields (Lips for some
-  items) are not listed, and `apply` refuses them.
+  items) are not listed, and `apply` refuses them, so a template from a
+  project where such a field is available refuses as a whole.
 - Hair categories except Hairstyle Sets and Base Hair: the edit root's
   `HairEditor` view model's `HairMaterialTemplateColor` ("Main Color") and
   `HairMaterialTemplateEmissionColor` ("Highlight Color"). One pair covers all
@@ -250,13 +251,15 @@ Some colours are shared. A sub-selection's accessor writes the model keys in
 `_keysToSet`: Face Eyelids, Nose, and Skin and Body Whole Body each write all
 four skin keys, and Irises "Both Eyes" writes the keys of "R Eye" and "L Eye".
 The bridge reads the keys live and fails if a field has none, rather than
-treating it as unshared. `plugin/Colors.cs`, which `tests/protocol` also
-builds, holds the rules. Fields with equal keys are one colour: `dump` lists
-it under the first category in app order and fails if a later copy differs. A
-field whose keys strictly contain another's, such as "Both Eyes", writes
-several colours and is not dumped. `apply` refuses fields with overlapping
-keys in one request (R-EDIT-3), since the later write would win. The hair
-colour pair uses fixed keys.
+treating it as unshared; the hair colour pair uses fixed keys. A field whose
+keys strictly contain another field's in its category, such as "Both Eyes",
+reads only one of its colours, so it is neither listed nor settable; `apply`
+names the fields to set instead. `plugin/Colors.cs`, which `tests/protocol`
+also builds, holds the remaining rules. Fields with equal keys are one colour:
+`dump` lists it under the first category in app order, and fails if a later
+copy differs or if two listed fields still overlap, so every dump applies.
+`apply` refuses fields with overlapping keys in one request (R-EDIT-3), since
+the later write would win.
 
 Values are the hex VRoid's editor shows, from
 `VRoid.UI.Util.ColorUtil.ColorToColorHex` (R-EDIT-8). VRoid stores colours on
@@ -264,8 +267,9 @@ the editor's sRGB scale; #FAEBDE is 250/255, 235/255, 222/255. A write sets
 each channel to exactly `k/255f`, with no linear conversion, and keeps the
 alpha, which is not part of the value. A field that already reads as the
 wanted hex is not written, so a stored channel off the 1/255 grid survives a
-dump and reapply. After each write and its rebuild, the bridge reads the hex
-back and fails if it differs. VRoid's `TryParseColorHex` throws on bad input,
+dump and reapply. Undo after changing such a colour restores its hex, on the
+grid. After each write and its rebuild, the bridge reads the hex back and
+fails if it differs. VRoid's `TryParseColorHex` throws on bad input,
 so the bridge parses hex itself.
 
 IL2CPP reflection must convert native objects to their most derived proxy type.
