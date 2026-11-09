@@ -50,14 +50,12 @@ def one_error(value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
 Value = Annotated[float | list[float] | Color, WrapValidator(one_error)]
 # Marks an item that is not one of VRoid's built-in items.
 CUSTOM = "custom"
-ItemId = Annotated[
-    str,
-    StringConstraints(pattern=r"^[A-Za-z0-9_]+$"),
-    Field(
-        description='a built-in item\'s identifier as `items` lists it, or "custom" '
-        "for the non-built-in item the category already wears"
-    ),
-]
+ItemId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_]+$")]
+
+
+def no_default(schema: dict[str, Any]) -> None:
+    # An omitted item is kept, while an explicit null takes it off.
+    schema.pop("default", None)
 
 
 class Model(BaseModel):
@@ -77,8 +75,11 @@ class CategoryTemplate(BaseModel):
     __pydantic_extra__: dict[str, Value] = Field(init=False)  # pyright: ignore[reportIncompatibleVariableOverride]  # fmt: skip
     item: ItemId | None = Field(
         None,
-        description="the item to wear; null takes off the item of a category "
-        "that `items` reports as removable. Omit it to keep the current item.",
+        description="the item to wear: a built-in item's identifier as `items` "
+        'lists it, or "custom" for the item that is not built in that the '
+        "category already wears; null takes off the item of a category that "
+        "`items` reports as removable. Omit it to keep the current item.",
+        json_schema_extra=no_default,
     )
 
     @model_serializer(mode="wrap")
@@ -110,7 +111,10 @@ class Accessory(BaseModel):
     )
     # Types the extra labels; pyright cannot see pydantic allows narrowing it.
     __pydantic_extra__: dict[str, Color] = Field(init=False)  # pyright: ignore[reportIncompatibleVariableOverride]  # fmt: skip
-    item: ItemId
+    item: ItemId = Field(
+        description="a built-in accessory's identifier as `accessories` lists it, "
+        'or "custom" for a worn accessory that is not built in'
+    )
 
 
 def resolved(value: Path, suffix: str, kind: str) -> Path:
@@ -220,7 +224,9 @@ class Apply(Model):
     Accessories: list[Accessory] | None = Field(
         None,
         description="every accessory to wear, in any order; apply adds and "
-        "removes accessories to match. Omit it to keep the current ones.",
+        "removes accessories to match, so list the worn ones to keep them. Added "
+        "accessories take VRoid's default placement, and a removed one loses its "
+        "placement. Omit it to keep the current ones.",
     )
     discard_custom: bool = Field(
         False,
@@ -373,7 +379,7 @@ class AvailableAccessory(Model):
 
 
 class AccessoryList(Model):
-    worn: list[Accessory]
+    worn: list[Accessory] = Field(description="in the order `dump` lists them")
     available: list[AvailableAccessory] = Field(
         description="built-in accessories, including ones VRoid's editor does not "
         "offer, such as animal ears and tails"
@@ -386,7 +392,10 @@ class Applied(Model):
         "element of a repeated label's array counts separately; values already "
         "equal to the request don't count."
     )
-    undo: Apply = Field(description="restores the previous items and values")
+    undo: Apply = Field(
+        description="restores the previous items, accessories, and values, "
+        "except what `discarded` names"
+    )
     discarded: list[str] = Field(
         description="non-built-in items and accessories this request replaced or "
         "removed, which `undo` cannot restore"

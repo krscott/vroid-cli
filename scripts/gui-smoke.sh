@@ -12,7 +12,8 @@ usage() {
         '' \
         'Opens SOURCE in SESSION, dumps its template, edits one Body and two Face' \
         'parameters and four colours (orange hair, green eyes) in one request,' \
-        'then selects other Hair Front and Outfit Tops items and adds cat ears,' \
+        'then selects other Hair Front and Outfit Tops items and adds cat and' \
+        'rabbit ears,' \
         'saves a copy, renders each view, restarts, checks the saved values,' \
         'and applies the original template. Editor screenshots before and after' \
         'the edit land in the artifact directory. SESSION must be stopped. Set' \
@@ -230,7 +231,8 @@ colours=(
 
 # Categories whose items the smoke test changes.
 items=('Hair|Front' 'Outfit|Tops')
-ears='{"item": "CatEar", "Color": "#3A2A20"}'
+# Two accessories of one kind, which VRoid keeps in one group.
+ears='[{"item": "CatEar", "Color": "#3A2A20"}, {"item": "RabbitEar", "Color": "#F0F0F0"}]'
 
 launch
 inputs_before=$(input_events)
@@ -272,9 +274,9 @@ for edit in "${edits[@]}"; do
 done
 screenshot "$out/after.png"
 
-# Items: one Hair and one Outfit item, and cat ears added to the accessories.
+# Items: one Hair and one Outfit item, and ears added to the accessories.
 declare -A expected_item
-request=$(vroid '{"method": "accessories"}' | jq -c --argjson ears "$ears" '{method: "apply", Accessories: (.worn + [$ears])}')
+request=$(vroid '{"method": "accessories"}' | jq -c --argjson ears "$ears" '{method: "apply", Accessories: (.worn + $ears)}')
 for item in "${items[@]}"; do
     IFS='|' read -r section category <<<"$item"
     expected_item[$item]=$(pick_item "$section" "$category")
@@ -282,7 +284,7 @@ for item in "${items[@]}"; do
 done
 before=$(rebuilt)
 changed=$(vroid "$request" | jq .changed)
-((changed >= ${#items[@]} + 1)) || fatal "apply changed $changed items and accessories"
+((changed >= ${#items[@]} + 2)) || fatal "apply changed $changed items and accessories"
 vroid '{"method": "status"}' | jq -e --argjson before "$before" --argjson count "$changed" \
     '.bridge.rebuilt >= $before + $count and .bridge.updating == false' >/dev/null ||
     fatal "apply returned before a completed rebuild per item"
@@ -293,8 +295,8 @@ check_items() {
         items_of "$section" "$category" | jq -e --argjson item "${expected_item[$item]}" '.selected == $item' >/dev/null ||
             fatal "$section/$category does not wear ${expected_item[$item]} $1"
     done
-    vroid '{"method": "accessories"}' | jq -e --argjson ears "$ears" '[.worn[] | select(. == $ears)] | length == 1' >/dev/null ||
-        fatal "the cat ears are not worn $1"
+    vroid '{"method": "accessories"}' | jq -e --argjson ears "$ears" '.worn as $worn | all($ears[]; . as $ear | [$worn[] | select(. == $ear)] | length == 1)' >/dev/null ||
+        fatal "the ears are not worn $1"
 }
 check_items 'after apply'
 

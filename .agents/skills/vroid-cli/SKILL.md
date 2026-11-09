@@ -94,14 +94,17 @@ and tails are accessories.
   Hairstyle Sets, Whole Sets) select the items of other categories, so name
   either a set or those items. `dump` omits sets.
 - `"custom"` is an item that is not built in, such as a texture-edited outfit
-  or a sample model's part. `apply` refuses to replace or remove one, since
-  `undo` cannot restore it. To discard it anyway, `save` a copy of the
+  or a sample model's part. `apply` refuses to change any item in a section
+  that wears one, since VRoid may replace it and `undo` cannot restore it. To discard it anyway, `save` a copy of the
   project first, then add `"discard_custom": true`; the result's `discarded`
   names what was lost.
 - `Accessories` in `apply` is every accessory to wear; `apply` adds and
-  removes to match, and an omitted key leaves them alone. Each entry has an
-  `item` from `accessories` and its colours. Added ones take VRoid's default
-  placement. A pair of ears is one accessory.
+  removes to match, and an omitted key leaves them alone. To add one, append
+  it to `worn` from `accessories`, as the example's list would otherwise
+  remove the rest. Each entry has an `item` from `accessories` and its
+  colours. Added ones take VRoid's default placement, and a removed one loses
+  its placement, even through `undo`. A pair of ears is one accessory; VRoid
+  allows five.
 - `categories`, `parameters`, `items`, `accessories`, `dump`, and `apply`
   change which section VRoid's editor shows, and `parameters`, `dump`, and
   `apply` change its category, even when they change no value. `accessories`

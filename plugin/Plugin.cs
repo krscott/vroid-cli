@@ -442,21 +442,25 @@ public sealed partial class Plugin : BasePlugin
         }
         errors.AddRange(Colors.Conflicts(colors));
         if (errors.Count > 0) throw new ArgumentException(string.Join("; ", errors) + ". Nothing changed");
-        foreach (var (slot, item) in work.Picks)
-            if (!slot.IsSet && work.Before[slot.Path] is var before && before != item && before != ItemIds.Custom)
-                Entry(previous, slot.Section, slot.Name)["item"] = before;
-        var restore = new Dictionary<string, object> { ["method"] = "apply" };
-        foreach (var section in Sections) restore[section] = previous[section];
+        var restore = new Dictionary<string, object>();
+        // A new item resets its category's values and colours, and VRoid changes other
+        // categories' items with it, so the undo is a dump of everything.
+        if (Sections.Any(work.ItemsChange))
+            foreach (var step in Dump(restore)) yield return step;
+        else
+        {
+            restore["method"] = "apply";
+            foreach (var section in Sections) restore[section] = previous[section];
+        }
         if (work.Worn is { } worn)
         {
             // Accessories that are not built in and that this request removes cannot be restored.
             var removed = work.Plan!.Removed.Where(j => worn[j].Item == ItemIds.Custom).ToHashSet();
             var kept = Enumerable.Range(0, worn.Length).Where(j => !removed.Contains(j)).ToList();
-            restore["Accessories"] = AccessoryPlan.DumpOrder(kept.Select(j => worn[j].Item).ToList())
-                .Select(position => AccessoryEntry(worn[kept[position]], kept[position])).ToArray();
+            restore["Accessories"] = AccessoryList(kept.Select(j => worn[j]).ToArray());
         }
         undo = restore;
-        foreach (var step in ChangeItems(work, previous)) yield return step;
+        foreach (var step in ChangeItems(work, restore)) yield return step;
         foreach (var step in ChangeAccessories(work)) yield return step;
         var changed = work.Changed;
         foreach (var target in Targets(edits, errors, _ => false))
@@ -501,7 +505,8 @@ public sealed partial class Plugin : BasePlugin
 
     private static bool Same(object? a, object? b) => a is float[] x && b is float[] y ? x.SequenceEqual(y) : Equals(a, b);
 
-    private static IEnumerable<bool> Dump()
+    // Fills `dump` with an apply request for every item, accessory, value, and colour.
+    private static IEnumerable<bool> Dump(Dictionary<string, object> dump)
     {
         var sections = new Dictionary<string, List<(string Name, Dictionary<string, object?> Values)>>();
         // Every available colour in app order, with the category values that would list it.
@@ -555,15 +560,13 @@ public sealed partial class Plugin : BasePlugin
         var once = Colors.Listed(colors.Select(color => color.Field).ToList()).ToHashSet(ReferenceEqualityComparer.Instance);
         foreach (var (field, values, label) in colors.Where(color => once.Contains(color.Field)))
             values[label] = field.Hex;
-        var dump = new Dictionary<string, object> { ["method"] = "apply" };
+        dump["method"] = "apply";
         foreach (var (section, categories) in sections)
             dump[section] = categories.Where(category => category.Values.Count > 0)
                 .ToDictionary(category => category.Name, category => (object)category.Values);
         foreach (var step in EnterAccessories()) yield return step;
         var worn = WornAccessories();
-        dump["Accessories"] = AccessoryPlan.DumpOrder(worn.Select(accessory => accessory.Item).ToList())
-            .Select(index => AccessoryEntry(worn[index], index)).ToArray();
-        result = dump;
+        dump["Accessories"] = AccessoryList(worn);
     }
 
     // Writes a new file and removes it again if writing or closing it fails.
@@ -653,14 +656,18 @@ public sealed partial class Plugin : BasePlugin
                 var worn = WornAccessories();
                 result = new
                 {
-                    worn = worn.Select(AccessoryEntry).ToArray(),
+                    worn = AccessoryList(worn),
                     available = AvailableAccessories().Select(accessory => new { item = accessory.Item, name = accessory.Name }).ToArray(),
                 };
                 break;
             }
             case "dump":
-                foreach (var step in Dump()) yield return step;
+            {
+                var dump = new Dictionary<string, object>();
+                foreach (var step in Dump(dump)) yield return step;
+                result = dump;
                 break;
+            }
             case "apply":
                 foreach (var step in Apply(request)) yield return step;
                 break;

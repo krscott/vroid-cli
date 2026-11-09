@@ -380,6 +380,10 @@ Test("item identifiers come from VRoid's resource names", _ =>
     Check(ItemIds.Preset("pixiv/VRoid/Hair/N00/Preset_F/TransferableGroupType.N00.Level1.HairFront.transferablegroup") == "Preset_F", "Preset_F");
     Check(ItemIds.Preset("user/VRoid/Clothing/abc/TransferableGroupType.N00.Level1.Tops.transferablegroup") == null, "a user item is built in");
     Check(ItemIds.Preset(null) == null, "no resource is an item");
+    Check(ItemIds.Preset("pixiv/VRoid/Clothing/Tops/N00/a-b/x.transferablegroup") == null, "an ID the CLI refuses");
+    Check(ItemIds.Preset("pixiv/VRoid/Clothing/Tops/N00/custom/x.transferablegroup") == null, "the reserved ID");
+    Check(ItemIds.AccessoryKey("Model.N00.Transferable.GlassesLow") == "GlassesLow", "accessory key");
+    Check(ItemIds.AccessoryKey(null) == null && ItemIds.AccessoryKey("Other.GlassesLow") == null, "a user accessory is built in");
     Check(ItemIds.Attachment("pixiv/VRoid/Attachment/CatEar/N00/Base_N00_000_00_Accessory_CatEar/TransferableGroupType.N00.Level1.AnimalEar.transferablegroup") == "CatEar", "CatEar");
     Check(ItemIds.Attachment("pixiv/VRoid/Clothing/Tops/N00/159/x.transferablegroup") == null, "a top is an accessory");
     Check(ItemIds.Attachment("user/VRoid/AdditionalAccessoryTemplate/e004.transferable") == null, "a user accessory is built in");

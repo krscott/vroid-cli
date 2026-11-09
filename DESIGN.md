@@ -301,11 +301,15 @@ revisits the categories and sets each value that differs, waiting for each
 rebuild. It stops at the first new refusal, such as a colour the new item
 does not offer. It sets `modified` before the first change, so an interrupted
 edit still counts as unsaved. The result counts the changes, holds an `undo`
-template of the previous items, accessories, and values, and lists in
-`discarded` what `undo` cannot restore. If the second pass fails, the error
-lists what already changed and includes the `undo` request. Each rebuild
-takes a few frames; reapplying a dump that made 23 changes, most of them
-items and accessories, took 7 seconds, far within the request timeout.
+template, and lists in `discarded` what `undo` cannot restore. When the
+request changes items, `undo` is a `dump` taken before the change, since a
+new item resets its category's values and colours and VRoid changes other
+categories with it; otherwise it holds the previous values of what the
+request names. Either way it holds the previous accessories when the request
+lists them. If the second pass fails, the error lists what already changed
+and includes the `undo` request. Each rebuild takes a few frames, so even a
+template that changes every item and value finishes far within the request
+timeout.
 
 ### Items and accessories
 
@@ -326,16 +330,18 @@ texture-edited outfit or a sample model's part, which reads as `custom`; some
 of these show no selected option at all. Otherwise it reads as null.
 Selecting sets the option's `IsSelected`, which runs VRoid's own selection
 command; `ClearTransferableGroup` takes the item off a category whose
-`IsRemovable` is true. Each takes one rebuild, after which the selector
-updates `IsSelected` after a debounce, so the bridge waits for the rebuild,
-then for the category to read the new item.
+`IsRemovable` is true. Each takes a rebuild, after which the selector updates
+after a debounce, and VRoid can change other categories a few frames later,
+so the bridge waits for the rebuild, then for the category to read the new
+item and every category in the section to read the same for 20 frames
+without a rebuild.
 
 VRoid takes off conflicting items itself: the selector's
 `ConflictingTransferableTypes` lists their kinds, such as
 `TransferableType.N00.Onepiece` for Tops, matched by the last part of each
-category's `TransferableGroupType`. Some pairs list the conflict on one side
-only. `apply` refuses two conflicting items in one request (R-EDIT-3), and
-waits after a selection until the conflicting categories read null.
+category's `TransferableGroupType`. `apply` refuses two conflicting items in
+one request (R-EDIT-3), and waits after a selection until the conflicting
+categories read null.
 
 Sets (Face Sets, Eyes Sets, Hairstyle Sets, Whole Sets; group types ending in
 `Set`) select items in other categories, list those as conflicts, and read as
@@ -347,28 +353,40 @@ changes if a set no longer reads as selected.
 
 `apply` accepts the item a category already wears, including `custom` and a
 null that a category cannot take off, and changes nothing for it. `custom`
-elsewhere is refused. Without `discard_custom`, it refuses any change that
-replaces a worn item that is not built in: one in the named category, one
-VRoid would take off as a conflict, or any in the editor of a named set
-(R-EDIT-10). With it, the change goes ahead, and `discarded` names each such
-item, found by comparing every category before and after. `undo` restores
-every other category that changed, including those VRoid changed itself, such
-as a dress taken off for a top.
+elsewhere is refused. VRoid also replaces items it does not list as
+conflicts, such as a sample model's custom base hair when its overall hair
+changes, so without `discard_custom`, `apply` refuses any item change in a
+section that wears an item that is not built in (R-EDIT-10). With it, the
+change goes ahead, and `discarded` names each such
+item, found by comparing every category before and after. `undo` omits those
+categories, whose values belonged to the lost item, and restores every other
+category, including those VRoid changed itself, such as a dress taken off for
+a top.
 
 Accessories live in the Accessory editor (`AccessoryEditor`), whose
-`Instances` are the worn accessories in app order. An instance's
-`transferableInfo.GroupResourceName` is `pixiv/VRoid/Attachment/ID/...` for a
-built-in accessory, whose identifier is `ID`, such as `CatEar`; any other is
-`custom`. Each instance has its own colours in its `CategoryColorSelection`,
-read and written like Face colours but never shared. The editor's
+`Instances` are the worn accessories in app order. A built-in accessory
+template's resource name is `pixiv/VRoid/Attachment/ID/...`, and its
+identifier is `ID`, such as `CatEar`. VRoid keeps one group per kind of
+accessory, such as glasses: the first one added is the template's own
+transferable, and later ones of that kind are `AdditionalAccessoryTemplate`
+copies in the same group, so an instance's group names only the first one.
+`GetTransferableDisplayNameQuery` on the edit context's `editingModel`
+returns the instance's display name, whose `LocalizationKey`,
+`Model.N00.Transferable.ID`, names its own template; an instance whose key
+names no built-in template is `custom`. Each instance has its own colours in
+its `CategoryColorSelection`, read and written like Face colours but never
+shared. Every built-in accessory has one, labelled "Color", so the first pass
+refuses other labels for accessories the request adds, and the second checks
+it once they are worn. The editor's
 `Templates` list offers only the glasses, but the asset catalog
 (`_mainModel.assetStorage.AssetCatalog.TransferableGroupEntries`) also holds
 animal ears, tails, and hats, which VRoid's sample models wear. Selecting a
 template not in the list crashes VRoid, so `accessories` and `apply` first
 append a `TransferableGroupTemplateItemViewModel` for each missing attachment
 to `Templates`; the editor's own list then shows them too. Setting
-`SelectedTemplate` to a template adds one instance at the end of `Instances`,
-so `apply` clears it first; `AddSelectedTemplate` would add a second.
+`SelectedTemplate` to a different template adds one instance at the end of
+`Instances`, so `apply` sets it to null first, which lets the same template
+add another; `AddSelectedTemplate` would add a second instance.
 Selecting an index and calling `RemoveSelectedInstance` removes one. Each
 takes one rebuild.
 
@@ -377,10 +395,11 @@ first unmatched worn accessory with each wanted item in order, removes the
 other worn ones from the end, then adds the rest and sets their colours. It
 refuses an unknown item, `custom` with no other worn accessory that is not
 built in, more than the editor's `MaxInstanceCount`, and removing one that
-is not built in without `discard_custom`. `dump` lists accessories by item,
-built-in before `custom`, keeping app order within an item, so dumps compare
-across instances. Placement and shape sliders are not read or set; added
-accessories take VRoid's default placement. `plugin/ItemIds.cs`, which
+is not built in without `discard_custom`. `dump` and `accessories` list
+accessories by item, built-in before `custom`, keeping app order within an
+item, so lists compare across instances. Placement and shape sliders are not
+read or set: added accessories take VRoid's default placement, and a removed
+one loses its placement, which `undo` restores as the default. `plugin/ItemIds.cs`, which
 `tests/protocol` also builds, holds the identifier and matching rules.
 
 ### Colours
@@ -511,9 +530,10 @@ errors (R-CLI-2).
   placement, item identifiers, and accessory matching under the .NET SDK.
 
 `scripts/gui-smoke.sh`, run by `just gui-smoke`, drives a real session through
-open, dump, numeric and colour edits, item and accessory edits, refusal,
-save, rendering every view, restart, reopen with a read-back of every edited
-number, colour, item, and accessory (R-EDIT-1) and of each category's item
+open, dump, numeric and colour edits, item and accessory edits, including
+two accessories of one kind, refusal, save, rendering every view, restart,
+reopen with a read-back of every edited number, colour, item, and accessory
+(R-EDIT-1) and of each category's item
 identifiers (R-EDIT-9), and reapplying the first dump, and checks the Framewisp input log and that
 BepInEx's log names the ready bridge's boot. It saves editor screenshots
 before and after the edits. It decodes each render with the Python standard

@@ -1,5 +1,7 @@
 // Item identifiers and accessory matching. Has no Unity dependencies so
 // tests/protocol can exercise it directly.
+using System.Text.RegularExpressions;
+
 namespace VroidBridge;
 
 public static class ItemIds
@@ -9,26 +11,38 @@ public static class ItemIds
 
     private const string BuiltIn = "pixiv/VRoid/";
     private const string Attachments = "pixiv/VRoid/Attachment/";
+    private const string AccessoryName = "Model.N00.Transferable.";
+    // The CLI's ItemId pattern; "custom" is reserved.
+    private static readonly Regex Valid = new("^[A-Za-z0-9_]+$");
+
+    private static string? Checked(string id) => Valid.IsMatch(id) && id != Custom ? id : null;
 
     /// A built-in item's resource name ends in `.../ID/TYPE.transferablegroup`,
     /// such as `pixiv/VRoid/Clothing/Tops/N00/159/...`. The ID is unique within
-    /// its category in VRoid 2.16.0; null means the item is not built in.
+    /// its category in VRoid 2.16.0; null means the name has no valid ID.
     public static string? Preset(string? resourceName)
     {
         if (resourceName == null || !resourceName.StartsWith(BuiltIn)) return null;
         var parts = resourceName.Split('/');
-        return parts.Length >= 4 && parts[^2].Length > 0 ? parts[^2] : null;
+        return parts.Length >= 4 ? Checked(parts[^2]) : null;
     }
 
-    /// A built-in accessory's group resource name is
-    /// `pixiv/VRoid/Attachment/ID/...`, such as `CatEar`; null means the
-    /// accessory is not built in.
-    public static string? Attachment(string? groupResourceName)
-    {
-        if (groupResourceName == null || !groupResourceName.StartsWith(Attachments)) return null;
-        var id = groupResourceName[Attachments.Length..].Split('/')[0];
-        return id.Length > 0 ? id : null;
-    }
+    /// A built-in accessory template's resource name is
+    /// `pixiv/VRoid/Attachment/ID/...`, such as `CatEar`; null means it is not
+    /// built in.
+    public static string? Attachment(string? resourceName) =>
+        resourceName != null && resourceName.StartsWith(Attachments)
+            ? Checked(resourceName[Attachments.Length..].Split('/')[0])
+            : null;
+
+    /// A worn accessory's display name keeps the localization key of the
+    /// template it was added from, `Model.N00.Transferable.ID`, even for the
+    /// copies VRoid makes when it adds a second accessory of a kind; null means
+    /// the name has no such key.
+    public static string? AccessoryKey(string? localizationKey) =>
+        localizationKey != null && localizationKey.StartsWith(AccessoryName)
+            ? Checked(localizationKey[AccessoryName.Length..])
+            : null;
 
     /// What a category wears, such as `Onepiece`: the last part of its group
     /// type (`TransferableGroupType.N00.Level1.Onepiece`) or of a conflicting
