@@ -380,12 +380,15 @@ def test_launch_reports_why_the_app_exited(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "log, shown",
     [
-        ("[Error  :   BepInEx] plugin failed\n", "plugin failed"),
-        (f"[Warning:InteropManager] {OUTDATED_INTEROP}.\n", "do not match its VRoid"),
+        (
+            "[Error  :   BepInEx] plugin failed\n",
+            ["not ready after 2s", "plugin failed"],
+        ),
+        (f"[Warning:InteropManager] {OUTDATED_INTEROP}.\n", ["do not match its VRoid"]),
     ],
 )
 def test_launch_timeout_explains_the_bepinex_log(
-    tmp_path: Path, log: str, shown: str
+    tmp_path: Path, log: str, shown: list[str]
 ) -> None:
     # R-SES-11
     target = tmp_path / "state/test/bepinex/LogOutput.log"
@@ -398,9 +401,11 @@ def test_launch_timeout_explains_the_bepinex_log(
     )
     result = invoke(tmp_path, "launch", timeout=2, env=env)
     assert result.returncode == 1
-    assert shown in result.stderr
-    # Waiting longer never fixes a mismatch.
-    assert ("keeps starting" in result.stderr) == ("plugin failed" in log)
+    for text in shown:
+        assert text in result.stderr
+    if "do not match" in shown[0]:
+        # Waiting longer never fixes a mismatch.
+        assert "keeps starting" not in result.stderr
 
 
 def test_launch_fails_at_once_when_bepinex_fails_to_start(tmp_path: Path) -> None:

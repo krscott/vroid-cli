@@ -48,10 +48,21 @@ let
       WINEDLLOVERRIDES='mscoree,mshtml=' timeout 600 wine "$src" \
         /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER \
         '/DIR=C:\VRoidStudio' "/LOG=Z:$TMPDIR/installer.log" || status=$?
+      # timeout stops only the installer's launcher, not the setup it started.
+      if ((status)); then
+        wineserver -k
+      fi
       wineserver -w
-      if ((status)) || [[ ! -f $WINEPREFIX/drive_c/VRoidStudio/VRoidStudio.exe ]]; then
+      if ((status == 124)); then
+        problem="timed out after 600 s"
+      elif ((status)); then
+        problem="exited with status $status"
+      elif [[ ! -f $WINEPREFIX/drive_c/VRoidStudio/VRoidStudio.exe ]]; then
+        problem="did not create VRoidStudio.exe"
+      fi
+      if [[ -v problem ]]; then
         cat "$TMPDIR/installer.log" || true
-        echo "The VRoid installer exited with status $status (124: timed out) or did not create VRoidStudio.exe" >&2
+        echo "The VRoid installer $problem" >&2
         exit 1
       fi
       runHook postBuild
