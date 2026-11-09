@@ -152,7 +152,7 @@ def graphics_environment(
 
 
 def terms_accepted(session: Session) -> bool:
-    """Whether VRoid has preferences, which it writes only after acceptance (R-SES-9)."""
+    """Whether VRoid has preferences, which it writes only after acceptance (R-SES-8)."""
     users = session.directory / "wine/drive_c/users"
     return any(
         users.glob("*/AppData/LocalLow/pixiv/VRoid Studio/preferences/editoroption.xml")

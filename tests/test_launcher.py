@@ -132,7 +132,7 @@ def test_incomplete_installation_is_not_repeated(writable: Path) -> None:
 
 
 def test_launcher_accepts_terms_before_vroid_starts(writable: Path) -> None:
-    # R-SES-9
+    # R-SES-8
     session = writable / "session"
     install(session)
     result = launch(writable, session, store_bundle(writable / "bundle", "1"))
@@ -165,7 +165,7 @@ def saved_preferences(session: Path, accepted: str) -> tuple[Path, bytes]:
 
 
 def test_launcher_leaves_accepted_preferences_unchanged(writable: Path) -> None:
-    # R-SES-9
+    # R-SES-8
     session = writable / "session"
     install(session)
     preferences, content = saved_preferences(session, "Yes")
@@ -177,7 +177,7 @@ def test_launcher_leaves_accepted_preferences_unchanged(writable: Path) -> None:
 
 
 def test_launcher_refuses_preferences_without_accepted_terms(writable: Path) -> None:
-    # R-SES-9
+    # R-SES-8
     session = writable / "session"
     install(session)
     preferences, content = saved_preferences(session, "No")

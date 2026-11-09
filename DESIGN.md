@@ -78,7 +78,7 @@ launch began, and has found the main view model (R-SES-2). The bridge also
 finds it on VRoid's welcome screen, so an app that an earlier version started
 and left at the first-run dialogs looks ready. When VRoid's preferences file
 (below) does not exist, `launch` fails with instructions to stop and launch,
-which accepts the terms (R-SES-9); `status` and request commands do not check.
+which accepts the terms (R-SES-8); `status` and request commands do not check.
 An older heartbeat can look fresh for a few seconds after the previous app
 exits. The wait fails
 early if the runner exits. On timeout the app keeps starting; running `launch`
@@ -106,7 +106,7 @@ app it waits for the runner to finish. A stopped desktop is already stopped.
    --remove-destination`, and only then writes the marker (R-SES-6). Store
    files are read-only, and earlier copies kept their modes. Upgrades happen
    only here, so only while the app is stopped.
-3. It accepts VRoid's first-run dialogs (R-SES-9). VRoid keeps its preferences
+3. It accepts VRoid's first-run dialogs (R-SES-8). VRoid keeps its preferences
    in `drive_c/users/USER/AppData/LocalLow/pixiv/VRoid Studio/preferences/editoroption.xml`
    (`USER` is the prefix's only profile with an `AppData` directory) and
    writes the file only after a person accepts the terms. Without it,

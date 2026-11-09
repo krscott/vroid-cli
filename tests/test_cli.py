@@ -303,7 +303,7 @@ def test_launch_ignores_a_heartbeat_from_before_launch(tmp_path: Path) -> None:
 def test_launch_reports_an_app_an_older_build_left_at_the_terms(
     tmp_path: Path,
 ) -> None:
-    # R-SES-9
+    # R-SES-8
     rpc = bridge(tmp_path, terms=False)
     env = running_desktop(tmp_path)
     beating = heartbeats(rpc, 3)

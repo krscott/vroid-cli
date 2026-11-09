@@ -42,7 +42,7 @@ if [[ ! -f $marker || $(<"$marker") != "$VROID_BRIDGE_BUNDLE" ]]; then
     printf '%s\n' "$VROID_BRIDGE_BUNDLE" >"$marker"
 fi
 
-# R-SES-9: VRoid skips its first-run welcome, terms, and tutorial dialogs when
+# R-SES-8: VRoid skips its first-run welcome, terms, and tutorial dialogs when
 # its preferences record them as done, and fills in the other preferences on
 # start. VRoid writes the file only after acceptance, so an existing file is
 # never edited.
