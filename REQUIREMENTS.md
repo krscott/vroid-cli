@@ -155,26 +155,31 @@ investigate or ask; never invent a rationale.
 ## Editing (EDIT)
 
 - **R-EDIT-1** [manual: run `just gui-smoke SESSION SOURCE.vroid` with an
-  editable project] A saved Face or Body numeric value reads back unchanged
-  after a full restart and reopen.
+  editable project; it saves at least one value of each kind `apply` can set]
+  Every value `apply` can set reads back unchanged after a save, a full restart
+  and a reopen.
 
   Rationale: Saved projects are the deliverable of an editing session.
 
-- **R-EDIT-2** [test] `apply` rejects a value that is not finite before
-  contacting the app.
+- **R-EDIT-2** [test] `apply` rejects a value that is not finite, or a colour
+  that is not `#RRGGBB`, before contacting the app.
 
   Rationale: Non-finite values can corrupt a model without any visible error.
+  A malformed colour has no single meaning; guessing one, such as shorthand or
+  alpha, would change the character silently.
 
 - **R-EDIT-3** [manual: `just gui-smoke` applies one valid value, one above its
-  maximum, an unknown parameter, and an unknown category, then checks the
-  error and that the values are unchanged] `apply` refuses a request in which
-  any value is outside its parameter's bounds, names a category or parameter
-  that is unknown or ambiguous, or gives the wrong number of values for a
-  label, and changes nothing.
+  maximum, an unknown parameter, an unknown category, a number for a colour,
+  and one shared colour in two categories, then checks the error and that the
+  values are unchanged] `apply` refuses a request in which any value is outside
+  its parameter's bounds or of the wrong kind, names a category or parameter
+  that is unknown or ambiguous, gives the wrong number of values for a label,
+  or sets one shared colour more than once, and changes nothing.
 
   Rationale: VRoid's own controls never produce out-of-range values, so the
   app's behaviour for them is unknown. A partly applied template leaves a
-  character that matches neither the old nor the new version.
+  character that matches neither the old nor the new version. A shared colour
+  set twice in one request would take whichever value came last.
 
 - **R-EDIT-4** [test] `save` refuses an existing destination and leaves it
   unchanged.
@@ -201,6 +206,15 @@ investigate or ask; never invent a rationale.
 
   Rationale: Agents save, diff, and reapply templates to reuse characters. A
   template that drops or rounds values changes a character silently.
+
+- **R-EDIT-8** [manual: `just gui-smoke` checks that each colour it sets reads
+  back as the same hex; compare one field with VRoid's colour field in a
+  Framewisp screenshot] A colour reads and writes as the `#RRGGBB` value
+  VRoid's editor shows for that field.
+
+  Rationale: Agents match colours against reference sheets and VRoid's own
+  editor. A colour-space, rounding, or alpha mismatch would shift every colour
+  without an error.
 
 ## Views (VIEW)
 

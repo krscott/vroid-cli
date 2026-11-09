@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Drive a real session through edit, save, render, restart, reopen, and a
 # template round trip, checking R-EDIT-1, R-EDIT-3, R-EDIT-5, R-EDIT-6,
-# R-EDIT-7, R-VIEW-1, and R-VIEW-2.
+# R-EDIT-7, R-EDIT-8, R-VIEW-1, and R-VIEW-2.
 # Needs graphics access.
 set -euo pipefail
 shopt -s failglob
@@ -11,9 +11,11 @@ usage() {
         "Usage: $0 SESSION SOURCE.vroid" \
         '' \
         'Opens SOURCE in SESSION, dumps its template, edits one Body and two Face' \
-        'parameters in one request, saves a copy, renders each view, restarts,' \
-        'checks the saved values, and applies the original template. SESSION' \
-        'must be stopped. Set VROID_CLI to choose the vroid-cli binary.'
+        'parameters and four colours (orange hair, green eyes) in one request,' \
+        'saves a copy, renders each view, restarts, checks the saved values,' \
+        'and applies the original template. Editor screenshots before and after' \
+        'the edit land in the artifact directory. SESSION must be stopped. Set' \
+        'VROID_CLI to choose the vroid-cli binary.'
 }
 
 fatal_usage() {
@@ -71,8 +73,17 @@ pick() {
     jq -n --argjson current "$1" 'if $current == 0.125 then -0.125 else 0.125 end'
 }
 
+# Choose a colour that differs from the current one.
+pick_colour() {
+    jq -n --argjson current "$1" --arg colour "$2" --arg other "$3" \
+        'if ($current | ascii_upcase) == $colour then $other else $colour end'
+}
+
+# Numbers match within float precision; colours match exactly, in any case.
 same() {
-    jq -en --argjson a "$1" --argjson b "$2" '(($a - $b) | fabs) < 0.0001' >/dev/null
+    jq -en --argjson a "$1" --argjson b "$2" \
+        'if ($a | type) == "string" then ($a | ascii_upcase) == ($b | ascii_upcase) else (($a - $b) | fabs) < 0.0001 end' \
+        >/dev/null
 }
 
 input_events() {
@@ -104,6 +115,23 @@ modified() {
 
 screenshot() {
     framewisp "$(vroid '{"method": "status"}' | jq -r .desktop)" screenshot "$1" >/dev/null
+}
+
+# Screenshot once the editor stops animating, such as its tab underline after
+# a request switches sections: two consecutive screenshots must match.
+settled_screenshot() {
+    local attempt
+    screenshot "$1"
+    for attempt in {1..20}; do
+        sleep 0.25
+        screenshot "$1.next"
+        if cmp -s "$1" "$1.next"; then
+            rm "$1.next"
+            return
+        fi
+        mv "$1.next" "$1"
+    done
+    fatal "the editor kept changing after $attempt screenshots; see $1"
 }
 
 # Render one view: VIEW FRAME WIDTH HEIGHT PATH.
@@ -178,11 +206,23 @@ edits=(
     'Face|Face Sets|Eye Size X'
     'Face|Face Sets|Eye Size Y'
 )
+# Colours, each with a target and an alternative if it already has the target.
+# Hair needs the shared hair colour and Base Hair's own. Distinct targets show
+# the fields are independent. The last read back, Hair/Front, is the panel
+# after.png shows; its Main Color field reads the hex set here (R-EDIT-8).
+colours=(
+    'Face|Irises|R Eye|#2E8B57|#228B22'
+    'Face|Irises|L Eye|#3CB371|#32CD32'
+    'Hair|Base Hair|Main Color|#FFA500|#FF9900'
+    'Hair|Front|Main Color|#FF8C00|#FF7F00'
+)
 
 launch
 inputs_before=$(input_events)
 jq -cn --arg path "$source" '{method: "open", path: $path}' | vroid - >/dev/null
 vroid '{"method": "dump"}' >"$out/original.json"
+
+screenshot "$out/before.png"
 
 declare -A expected
 request='{"method": "apply"}'
@@ -191,6 +231,15 @@ for edit in "${edits[@]}"; do
     expected[$edit]=$(pick "$(value_of "$section" "$category" "$label")")
     request=$(with_value "$section" "$category" "$label" "${expected[$edit]}" <<<"$request")
 done
+for colour in "${colours[@]}"; do
+    IFS='|' read -r section category label target other <<<"$colour"
+    edit="$section|$category|$label"
+    edits+=("$edit")
+    expected[$edit]=$(pick_colour "$(value_of "$section" "$category" "$label")" "$target" "$other")
+    request=$(with_value "$section" "$category" "$label" "${expected[$edit]}" <<<"$request")
+done
+# Skin is one colour shown in several categories; the refusal below sets it twice.
+skin=$(value_of Body 'Whole Body' Color)
 before=$(rebuilt)
 vroid "$request" | jq -e --argjson count "${#edits[@]}" '.changed == $count' >/dev/null ||
     fatal "apply did not change ${#edits[@]} values"
@@ -202,8 +251,10 @@ for edit in "${edits[@]}"; do
     actual=$(value_of "$section" "$category" "$label")
     same "$actual" "${expected[$edit]}" || fatal "$label read back $actual after apply ${expected[$edit]}"
 done
+screenshot "$out/after.png"
 
-# A value above its maximum, an unknown parameter, and an unknown category
+# A value above its maximum, an unknown parameter, an unknown category, a number
+# for a colour, a shared colour set twice, and a colour that writes several
 # refuse the whole request, and each is reported.
 IFS='|' read -r section category label <<<"${edits[0]}"
 IFS='|' read -r other_section other_category other_label <<<"${edits[1]}"
@@ -213,13 +264,21 @@ max=$(jq -cn --arg section "$section" --arg category "$category" \
 refused=$(with_value "$section" "$category" "$label" "$(jq -n --argjson max "$max" '$max + 1')" <<<'{"method": "apply"}' |
     with_value "$other_section" "$other_category" "$other_label" "$(pick "${expected[${edits[1]}]}")" |
     with_value "$other_section" "$other_category" 'No Such Parameter' 0 |
-    with_value "$other_section" 'No Such Category' 'Any Parameter' 0)
+    with_value "$other_section" 'No Such Category' 'Any Parameter' 0 |
+    with_value Face Irises 'R Eye' 0 |
+    with_value Face Skin Color '"#123456"' |
+    with_value Body 'Whole Body' Color '"#123456"' |
+    with_value Face Irises 'Both Eyes' '"#123456"')
 if vroid "$refused" >/dev/null 2>"$out/bounds.err"; then
     fatal "apply above the maximum succeeded"
 fi
-for reason in 'is outside' 'No Such Parameter: unknown parameter' 'No Such Category: unknown category' 'Nothing changed'; do
+for reason in 'is outside' 'No Such Parameter: unknown parameter' 'No Such Category: unknown category' \
+    'Face/Irises/R Eye: is a colour' 'Face/Skin/Color and Body/Whole Body/Color set the same colour' \
+    'Face/Irises/Both Eyes: sets R Eye and L Eye together' 'Nothing changed'; do
     grep -qF "$reason" "$out/bounds.err" || fatal "refusal lacks '$reason': $(<"$out/bounds.err")"
 done
+actual=$(value_of Body 'Whole Body' Color)
+same "$actual" "$skin" || fatal "skin changed to $actual after a refused apply"
 for edit in "${edits[@]}"; do
     IFS='|' read -r section category label <<<"$edit"
     actual=$(value_of "$section" "$category" "$label")
@@ -239,7 +298,7 @@ fi
 # Rendering shows the whole character (R-VIEW-1) and changes nothing in the
 # app: values, unsaved state, and the editor's view stay the same (R-VIEW-2).
 vroid '{"method": "dump"}' >"$out/before-render.json"
-screenshot "$out/before-render.png"
+settled_screenshot "$out/before-render.png"
 renders=(
     'front|body|512|1024'
     'three_quarter|body|512|1024'
@@ -264,7 +323,7 @@ cmp -s "$image" "$out/render-front-body.copy" || fatal "a refused render changed
 vroid '{"method": "dump"}' >"$out/after-render.json"
 cmp -s "$out/before-render.json" "$out/after-render.json" ||
     fatal "dump changed while rendering; see $out/after-render.json"
-screenshot "$out/after-render.png"
+settled_screenshot "$out/after-render.png"
 cmp -s "$out/before-render.png" "$out/after-render.png" ||
     fatal "the editor's view changed while rendering; compare $out/before-render.png and $out/after-render.png"
 inputs_after=$(input_events)
@@ -284,11 +343,26 @@ for leftover in "${leftovers[@]}"; do
     [[ ! -e $leftover ]] || fatal "a failed render left $leftover"
 done
 jq -cn --arg path "$edited" '{method: "open", path: $path}' | vroid - >/dev/null
+# Every edited value, numbers and colours alike, reads back after the save,
+# restart, and reopen (R-EDIT-1).
 for edit in "${edits[@]}"; do
     IFS='|' read -r section category label <<<"$edit"
     actual=$(value_of "$section" "$category" "$label")
     same "$actual" "${expected[$edit]}" || fatal "$label reopened as $actual, saved ${expected[$edit]}"
 done
+# The edited project dumps, with each colour under the category it was set in,
+# and the hair colour is shared by every hair category.
+vroid '{"method": "dump"}' >"$out/edited.json"
+for colour in "${colours[@]}"; do
+    IFS='|' read -r section category label _ <<<"$colour"
+    edit="$section|$category|$label"
+    jq -e --arg s "$section" --arg c "$category" --arg l "$label" --argjson v "${expected[$edit]}" \
+        '.[$s][$c][$l] == $v' "$out/edited.json" >/dev/null ||
+        fatal "$out/edited.json lacks $section/$category/$label ${expected[$edit]}"
+done
+front='Hair|Front|Main Color'
+actual=$(value_of Hair Back 'Main Color')
+same "$actual" "${expected[$front]}" || fatal "Hair/Back Main Color is $actual, not Front's"
 
 # The template dumped before the edits restores every value in a new app instance.
 vroid "@$out/original.json" >/dev/null

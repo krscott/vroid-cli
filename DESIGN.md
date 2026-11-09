@@ -243,7 +243,7 @@ The bridge tracks these app objects:
 - Edit root: `VRoid.Studio.EditRootScreen.ViewModel.OnScreenActivate`
   captures it; `BackToModelSelect` clears it.
 - Selectors: `BasePresetsSelectorViewModel.UpdateSelectedPresets` captures the
-  Face and Body category selectors by concrete type.
+  Face, Hair, and Body category selectors by concrete type.
 - Rebuilds: `VRoidCoreModelUpdater.set_IsUpdatingModel` counts each
   true-to-false transition and captures the updater, whose `ModelOrigin` is
   the root transform of the model on screen.
@@ -253,18 +253,18 @@ Operations:
 | Method | Internal call | Completion |
 | --- | --- | --- |
 | `open` | `MainViewModel.ImportFileAndMoveToEditRoot(path, false, false)` | Edit root captured and one rebuild finished |
-| `categories` | Edit root `set_EditMode(FaceEditor or BodyEditor)`, selector `Categories.Children[].Name` | Selector captured |
-| `parameters` | Selector `set_SelectedCategory`, then the category's `Parameters[]` `Label`, `CombinedValue` or `Value`, `MinValue`, `MaxValue` | No rebuild running |
-| `dump` | `parameters` for every Face and Body category in app order | No rebuild running |
-| `apply` | `parameters` for each named category, then parameter `set_CombinedValue` or `set_Value` per changed value | One rebuild finished per changed value (R-EDIT-6) |
+| `categories` | Edit root `set_EditMode(FaceEditor, HairEditor, or BodyEditor)`, selector `Categories.Children[].Name` | Selector captured |
+| `parameters` | Selector `set_SelectedCategory`, then the category's `Parameters[]` `Label`, `CombinedValue` or `Value`, `MinValue`, `MaxValue`, and its colours, below | No rebuild running |
+| `dump` | `parameters` for every Face, Hair, and Body category in app order | No rebuild running |
+| `apply` | `parameters` for each named category, then parameter `set_CombinedValue` or `set_Value`, or a colour's setter, per changed value | One rebuild finished per changed value (R-EDIT-6) |
 | `save` | Edit root `_mainActionHandler.SaveSync(path, true)` | Call returned true and the file is nonempty |
 | `render` | A temporary Unity camera renders `ModelOrigin`, below | PNG written to a new file |
 
 `open` refuses once a project is open; changing projects needs a restart.
 Successful `open` and `save` clear `modified`.
 
-A template is an `apply` request: `Face` and `Body` map category names to
-parameter labels to values. Labels repeat within some categories (Face Sets
+A template is an `apply` request: `Face`, `Hair`, and `Body` map category
+names to labels to values. A value is a number, or a colour as `#RRGGBB`. Labels repeat within some categories (Face Sets
 and Nose each have two "Nose Size" parameters), so a repeated label maps to an
 array of its values in app order. Categories also share parameters: within a
 section, the same label in another category is the same value (Face Sets,
@@ -278,17 +278,59 @@ label in two categories of a section, since the later value would silently
 win.
 
 `apply` runs in two passes. The first resolves every category name and every
-value to its parameters, checking the label's count and the live bounds, and
-collects every refusal. Bounds compare the value as float32, as VRoid stores
-it, so a dumped bound such as 0.7 stays in range. Any refusal fails the
-request before a value changes (R-EDIT-3). The second pass revisits the
-categories and sets each value that differs, waiting for its rebuild, and
-stops at the first new refusal. It sets `modified` before the first change, so
-an interrupted edit still counts as unsaved. The result counts the changed
-values and holds an `undo` template of the previous values. If the second pass
-fails, the error lists the values already changed. Each rebuild takes a few
-frames, so even a template that changes every value finishes far within the
-request timeout.
+value to its parameters or colour, checking the label's count, the live
+bounds, and the value's kind, and collects every refusal. Bounds compare the
+value as float32, as VRoid stores it, so a dumped bound such as 0.7 stays in
+range. Any refusal fails the request before a value changes (R-EDIT-3). The
+second pass revisits the categories and sets each value that differs, waiting
+for its rebuild, and stops at the first new refusal. It sets `modified` before
+the first change, so an interrupted edit still counts as unsaved. The result
+counts the changed values and holds an `undo` template of the previous values.
+If the second pass fails, the error lists the values already changed and
+includes the `undo` request. Each rebuild takes a few frames, so even a
+template that changes every value finishes far within the request timeout.
+
+### Colours
+
+A colour is a field in a category's editor panel. Outfits have none: their
+colours live in the texture editor, which saves custom items.
+
+- Face, Hair, and Body categories: the selector's `CategoryColorSelection`
+  holds `_colorSelections[]`, each with `IsAvailable` and
+  `_subColorSelections[]`. A sub-selection's `TranslatedDisplayName` is the
+  label and its `Color` property the value. Unavailable fields (Lips for some
+  items) are not listed, and `apply` refuses them, so a template from a
+  project where such a field is available refuses as a whole.
+- Hair categories except Hairstyle Sets and Base Hair: the edit root's
+  `HairEditor` view model's `HairMaterialTemplateColor` ("Main Color") and
+  `HairMaterialTemplateEmissionColor` ("Highlight Color"). One pair covers all
+  hair; Base Hair has its own field above. Hairstyle Sets' aggregate colour is
+  not exposed.
+
+Some colours are shared. A sub-selection's accessor writes the model keys in
+`_keysToSet`: Face Eyelids, Nose, and Skin and Body Whole Body each write all
+four skin keys, and Irises "Both Eyes" writes the keys of "R Eye" and "L Eye".
+The bridge reads the keys live and fails if a field has none, rather than
+treating it as unshared; the hair colour pair uses fixed keys. A field whose
+keys strictly contain another field's in its category, such as "Both Eyes",
+reads only one of its colours, so it is neither listed nor settable; `apply`
+names the fields to set instead. `plugin/Colors.cs`, which `tests/protocol`
+also builds, holds the remaining rules. Fields with equal keys are one colour:
+`dump` lists it under the first category in app order, and fails if a later
+copy differs or if two listed fields still overlap, so every dump applies.
+`apply` refuses fields with overlapping keys in one request (R-EDIT-3), since
+the later write would win.
+
+Values are the hex VRoid's editor shows, from
+`VRoid.UI.Util.ColorUtil.ColorToColorHex` (R-EDIT-8). VRoid stores colours on
+the editor's sRGB scale; #FAEBDE is 250/255, 235/255, 222/255. A write sets
+each channel to exactly `k/255f`, with no linear conversion, and keeps the
+alpha, which is not part of the value. A field that already reads as the
+wanted hex is not written, so a stored channel off the 1/255 grid survives a
+dump and reapply. Undo after changing such a colour restores its hex, on the
+grid. After each write and its rebuild, the bridge reads the hex back and
+fails if it differs. VRoid's `TryParseColorHex` throws on bad input,
+so the bridge parses hex itself.
 
 `render` reads the model's enabled renderers under `ModelOrigin` on every
 request, so it follows rebuilds. VRoid's photo booth is a separate screen with
@@ -346,13 +388,14 @@ stdin. Every method is a request, so saved requests work in any session.
 `method`. pydantic's defaults would accept `NaN`, coerce `"0.5"`, and drop
 misspelled fields (R-CLI-3). Its JSON parser keeps the last of repeated keys,
 so the CLI rejects repeated keys first. Validation refuses non-finite values
-(R-EDIT-2) and checks `.vroid` and `.png` suffixes, an existing `open` source,
-and a new `save` or `render` destination in an existing directory (R-EDIT-4,
-R-VIEW-3), all before touching session state. Paths resolve against the current
-directory, and `open`, `save`, and `render` report the resolved path rather
-than the bridge's Wine path. The bridge rechecks the destination before saving.
-Validation errors print one `FIELD: REASON` line each. Output is indented JSON,
-so saved templates diff line by line.
+and colours that are not `#RRGGBB` in either case (R-EDIT-2) and checks
+`.vroid` and `.png` suffixes, an existing `open` source, and a new `save` or
+`render` destination in an existing directory (R-EDIT-4, R-VIEW-3), all before
+touching session state. Paths resolve against the current directory, and
+`open`, `save`, and `render` report the resolved path rather than the bridge's
+Wine path. The bridge rechecks the destination before saving. Validation errors
+print one `FIELD: REASON` line each. Output is indented JSON, so saved
+templates diff line by line.
 
 Every result, including the bridge's, is validated against its result model
 before printing, so `--agent-skill` (or `--help`), which prints the skill and
@@ -370,12 +413,14 @@ errors (R-CLI-2).
 - `tests/test_cli.py`: the CLI against a stand-in bridge and Framewisp.
 - `tests/test_launcher.py`: the launcher against a stand-in Wine and a
   read-only stand-in store.
-- `tests/protocol`: the bridge's file protocol and camera placement under the
-  .NET SDK.
+- `tests/protocol`: the bridge's file protocol, colour rules, and camera
+  placement under the .NET SDK.
 
 `scripts/gui-smoke.sh`, run by `just gui-smoke`, drives a real session through
-open, dump, edit, refusal, save, rendering every view, restart, reopen, and
-reapplying the first dump, and checks the Framewisp input log and that
-BepInEx's log names the ready bridge's boot. It decodes each render with the
-Python standard library to check its size and framing, and compares `dump` and
-an editor screenshot before and after rendering. It needs graphics access.
+open, dump, numeric and colour edits, refusal, save, rendering every view,
+restart, reopen with a read-back of every edited number and colour (R-EDIT-1),
+and reapplying the first dump, and checks the Framewisp input log and that
+BepInEx's log names the ready bridge's boot. It saves editor screenshots
+before and after the edits. It decodes each render with the Python standard
+library to check its size and framing, and compares `dump` and an editor
+screenshot before and after rendering. It needs graphics access.

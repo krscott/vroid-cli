@@ -61,7 +61,7 @@ def invoke(
 def write_status(rpc: Path, **fields: Any) -> dict[str, Any]:
     status = {
         "boot": "test-boot",
-        "protocol": 2,
+        "protocol": 3,
         "heartbeat": time.time() * 1000,
         "main": True,
         "modified": False,
@@ -169,9 +169,52 @@ def test_nonfinite_values_are_rejected_without_state(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    "color", ['"#12345"', '"123456"', '"#12345678"', '"#GGGGGG"', '"#FAEBDE\\n"']
+)
+def test_malformed_colours_are_rejected_without_state(
+    tmp_path: Path, color: str
+) -> None:
+    # R-EDIT-2
+    request = '{"method": "apply", "Face": {"Irises": {"R Eye": %s}}}' % color
+    result = run_cli(tmp_path, "test", request)
+    assert result.returncode == 2
+    assert "Face.Irises.R Eye: " in result.stderr
+    assert 'is neither a number nor a colour as "#RRGGBB"' in result.stderr
+    assert not (tmp_path / "state").exists()
+
+
+def test_colour_labels_may_repeat_across_categories(tmp_path: Path) -> None:
+    # "Color" names a different colour in each category; only the bridge knows
+    # which colours are shared.
+    rpc = bridge(tmp_path)
+    face = {"Eyebrows": {"Color": "#8f5836"}, "Eyelashes": {"Color": "#6E5B4D"}}
+    undo = {"method": "apply", "Face": face, "Hair": {}, "Body": {}}
+    peer, received = answer(
+        rpc,
+        lambda _: {"ok": True, "result": {"changed": 2, "undo": undo}, "error": None},
+    )
+    result = invoke(tmp_path, "apply", Face=face)
+    peer.join()
+    assert result.returncode == 0, result.stderr
+    assert received[0]["Face"] == face
+
+
+def test_bridge_from_an_older_protocol_is_refused(tmp_path: Path) -> None:
+    rpc = bridge(tmp_path, protocol=2)
+    result = invoke(tmp_path, "dump")
+    assert result.returncode == 1
+    assert "incompatible" in result.stderr
+    assert not (rpc / "request.json").exists()
+
+
+@pytest.mark.parametrize(
     ("request_text", "reason"),
     [
-        (APPLY % '"0.5"', "Body.Whole Body.Head Size: expected a finite number"),
+        (APPLY % "true", "Body.Whole Body.Head Size: expected a finite number"),
+        (
+            APPLY % '"0.5"',
+            "Body.Whole Body.Head Size: '0.5' is neither a number nor a colour",
+        ),
         ('{"method": "launch", "timout": 5}', "timout: Extra inputs"),
         ('{"method": "stop", "force": 1}', "force: Input should be a valid boolean"),
         ('{"method": "Apply"}', "does not match any of the expected tags"),
@@ -557,7 +600,12 @@ def test_request_roundtrip(tmp_path: Path, ok: bool) -> None:
     # R-CLI-1, R-CLI-2, R-RPC-5, R-RPC-6
     rpc = bridge(tmp_path)
     template = {"Whole Body": {"Head Size": -0.25}}
-    undo = {"method": "apply", "Face": {}, "Body": {"Whole Body": {"Head Size": 0}}}
+    undo = {
+        "method": "apply",
+        "Face": {},
+        "Hair": {},
+        "Body": {"Whole Body": {"Head Size": 0}},
+    }
     peer, received = answer(
         rpc,
         lambda _: {
@@ -572,7 +620,7 @@ def test_request_roundtrip(tmp_path: Path, ok: bool) -> None:
     request = received[0]
     assert request["boot"] == "test-boot"
     assert request["method"] == "apply"
-    assert (request["Face"], request["Body"]) == ({}, template)
+    assert (request["Face"], request["Hair"], request["Body"]) == ({}, {}, template)
     assert (rpc / "results" / f"{request['id']}.json").exists()
     if ok:
         assert result.returncode == 0
@@ -584,13 +632,27 @@ def test_request_roundtrip(tmp_path: Path, ok: bool) -> None:
         assert "engine refused" in result.stderr
 
 
-def test_dump_output_is_valid_apply_input(tmp_path: Path) -> None:
+# A template dumped before colours existed has no Hair section or colours.
+NUMERIC_DUMP = {
+    "method": "apply",
+    "Face": {"Face Sets": {"Eye Size X": 0.1, "Nose Size": [0.25, -0.5]}},
+    "Body": {"Whole Body": {"Head Size": 0.125}},
+}
+COLOUR_DUMP = {
+    "method": "apply",
+    "Face": {
+        "Face Sets": {"Eye Size X": 0.1, "Nose Size": [0.25, -0.5]},
+        "Irises": {"R Eye": "#9E6233", "L Eye": "#2E8B57"},
+    },
+    "Hair": {"Front": {"Main Color": "#FF8C00", "Highlight Color": "#DB8A3B"}},
+    "Body": {"Whole Body": {"Head Size": 0.125}},
+}
+
+
+@pytest.mark.parametrize("dump", [NUMERIC_DUMP, COLOUR_DUMP])
+def test_dump_output_is_valid_apply_input(tmp_path: Path, dump: dict[str, Any]) -> None:
+    # R-EDIT-7
     rpc = bridge(tmp_path)
-    dump = {
-        "method": "apply",
-        "Face": {"Face Sets": {"Eye Size X": 0.1, "Nose Size": [0.25, -0.5]}},
-        "Body": {"Whole Body": {"Head Size": 0.125}},
-    }
     peer, received = answer(
         rpc,
         lambda request: {
@@ -603,16 +665,28 @@ def test_dump_output_is_valid_apply_input(tmp_path: Path) -> None:
     )
     dumped = invoke(tmp_path, "dump")
     assert dumped.returncode == 0, dumped.stderr
-    assert json.loads(dumped.stdout) == dump
-    (tmp_path / "template.json").write_text(dumped.stdout)
+    assert json.loads(dumped.stdout) == {"Hair": {}} | dump
+    # Templates dumped before colours existed still apply unchanged.
+    (tmp_path / "template.json").write_text(json.dumps(dump))
     applied = run_cli(tmp_path, "test", "@template.json")
     peer.join()
     assert applied.returncode == 0, applied.stderr
-    assert received[1] | {"id": "", "boot": "", "timeout_ms": 0} == dump | {
-        "id": "",
-        "boot": "",
-        "timeout_ms": 0,
-    }
+    assert received[1] | {"id": "", "boot": "", "timeout_ms": 0} == {
+        "Hair": {}
+    } | dump | {"id": "", "boot": "", "timeout_ms": 0}
+
+
+def test_parameters_list_numbers_and_colours(tmp_path: Path) -> None:
+    rpc = bridge(tmp_path)
+    listed = [
+        {"label": "Head Size", "value": 0.125, "min": -1.0, "max": 1.0},
+        {"label": "Color", "value": "#FAEBDE"},
+    ]
+    peer, _ = answer(rpc, lambda _: {"ok": True, "result": listed, "error": None})
+    result = invoke(tmp_path, "parameters", section="Body", category="Whole Body")
+    peer.join()
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == listed
 
 
 def test_a_result_that_breaks_the_schema_is_an_error(tmp_path: Path) -> None:
