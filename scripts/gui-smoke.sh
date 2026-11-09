@@ -13,9 +13,9 @@ usage() {
         'Opens SOURCE in SESSION, dumps its template, edits one Body and two Face' \
         'parameters and four colours (orange hair, green eyes) in one request,' \
         'then selects other Hair Front and Outfit Tops items and adds cat and' \
-        'rabbit ears,' \
-        'saves a copy, renders each view, restarts, checks the saved values,' \
-        'and applies the original template. Editor screenshots before and after' \
+        'rabbit ears, saves a copy, renders each view, restarts, checks the' \
+        'saved values, and applies the original template. Editor screenshots' \
+        'before and after' \
         'the edit land in the artifact directory. SESSION must be stopped. Set' \
         'VROID_CLI to choose the vroid-cli binary.'
 }

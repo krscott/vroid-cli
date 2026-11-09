@@ -119,6 +119,16 @@ public sealed partial class Plugin : BasePlugin
         {
             if (current != null)
             {
+                // Ends the operation first, so its cleanup, such as dropping discarded
+                // items from the undo, runs before the message is written.
+                try
+                {
+                    operation?.Dispose();
+                }
+                catch (Exception cleanup)
+                {
+                    Diagnostics.LogError($"Could not end request {current.Id}: {cleanup}");
+                }
                 var message = (error.InnerException ?? error).Message;
                 if (Changed.Count > 0)
                 {
@@ -467,16 +477,10 @@ public sealed partial class Plugin : BasePlugin
             restore["method"] = "apply";
             foreach (var section in Sections) restore[section] = previous[section];
         }
-        if (work.Worn is { } worn)
-        {
-            // Accessories that are not built in and that this request removes cannot be restored.
-            var removed = work.Plan!.Removed.Where(j => worn[j].Item == ItemIds.Custom).ToHashSet();
-            var kept = Enumerable.Range(0, worn.Length).Where(j => !removed.Contains(j)).ToList();
-            restore["Accessories"] = AccessoryList(kept.Select(j => worn[j]).ToArray());
-        }
+        if (work.Worn != null) restore["Accessories"] = AccessoryList(work.WornEntries);
         undo = restore;
         foreach (var step in ChangeItems(work, restore)) yield return step;
-        foreach (var step in ChangeAccessories(work)) yield return step;
+        foreach (var step in ChangeAccessories(work, restore)) yield return step;
         var changed = work.Changed;
         foreach (var target in Targets(edits, errors, (_, _) => false))
         {

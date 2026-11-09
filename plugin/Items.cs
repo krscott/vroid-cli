@@ -99,7 +99,7 @@ public sealed partial class Plugin
 
     private const int SettledFrames = 20;
 
-    // VRoid declares some conflicts on one side only, such as dresses with tops.
+    // VRoid lists each conflict on both sides in 2.16.0; checking both is defensive.
     private static bool Conflict(Slot a, Slot b) =>
         a.Conflicts.Contains(ItemIds.Kind(b.Type)) || b.Conflicts.Contains(ItemIds.Kind(a.Type));
 
@@ -138,17 +138,21 @@ public sealed partial class Plugin
         return new Worn(item != null && AttachmentIds.Contains(item) ? item : ItemIds.Custom, name, instance, swatches.ToArray());
     }).ToArray();
 
-    // Accessories as template entries, each its item then its colours by label,
-    // in dump order so lists compare across instances.
-    private static Dictionary<string, object>[] AccessoryList(Worn[] worn) =>
-        AccessoryPlan.DumpOrder(worn.Select(accessory => accessory.Item).ToList()).Select(index =>
-        {
-            var entry = new Dictionary<string, object> { ["item"] = worn[index].Item };
-            foreach (var swatch in worn[index].Swatches)
-                if (!entry.TryAdd(swatch.Label, ReadHex(swatch, $"Accessories/{worn[index].Name}/{swatch.Label}")))
-                    throw new InvalidOperationException($"Accessory {worn[index].Name} has two values labelled {swatch.Label}; a template cannot hold both");
-            return entry;
-        }).ToArray();
+    // An accessory as a template entry: its item, then its colours by label.
+    private static Dictionary<string, object> AccessoryEntry(Worn worn)
+    {
+        var entry = new Dictionary<string, object> { ["item"] = worn.Item };
+        foreach (var swatch in worn.Swatches)
+            if (!entry.TryAdd(swatch.Label, ReadHex(swatch, $"Accessories/{worn.Name}/{swatch.Label}")))
+                throw new InvalidOperationException($"Accessory {worn.Name} has two values labelled {swatch.Label}; a template cannot hold both");
+        return entry;
+    }
+
+    // Accessory entries in dump order, so lists compare across instances.
+    private static Dictionary<string, object>[] AccessoryList(IReadOnlyList<Dictionary<string, object>> entries) =>
+        AccessoryPlan.DumpOrder(entries.Select(entry => (string)entry["item"]).ToList()).Select(index => entries[index]).ToArray();
+
+    private static Dictionary<string, object>[] AccessoryList(Worn[] worn) => AccessoryList(worn.Select(AccessoryEntry).ToArray());
 
     // The asset catalog's built-in accessory templates, which do not change
     // while the app runs.
@@ -159,7 +163,8 @@ public sealed partial class Plugin
         .Select(entry => Reflect.As(entry, CatalogEntry))
         .Where(entry => ItemIds.Attachment(Reflect.Get(entry, "resourceName") as string) != null)
         .ToArray();
-    private static HashSet<string> AttachmentIds =>
+    private static HashSet<string>? attachmentIds;
+    private static HashSet<string> AttachmentIds => attachmentIds ??=
         Attachments().Select(entry => ItemIds.Attachment(Reflect.Get(entry, "resourceName") as string)!).ToHashSet();
 
     // Every built-in accessory with its name and template. The editor offers
@@ -231,8 +236,10 @@ public sealed partial class Plugin
         // Each slot's item before the request, by path.
         public readonly Dictionary<string, string?> Before = new();
         public readonly List<(Slot Slot, string? Item)> Picks = new();
-        // Null when the request leaves accessories alone.
+        // Null when the request leaves accessories alone; `WornEntries` holds their
+        // entries from before the change.
         public Worn[]? Worn;
+        public Dictionary<string, object>[] WornEntries = Array.Empty<Dictionary<string, object>>();
         public AccessoryPlan? Plan;
         public List<(string Item, Dictionary<string, string> Colors)> Wanted = new();
         public readonly List<string> Discarded = new();
@@ -282,13 +289,19 @@ public sealed partial class Plugin
                     errors.Add($"{path}: unknown item {id}; list them with items");
                 else work.Picks.Add((named[0], edit.Item));
             }
-            var wearing = work.Picks.Where(pick => pick.Slot.Section == section && pick.Item != null).ToList();
-            for (var i = 0; i < wearing.Count; i++)
-                for (var j = i + 1; j < wearing.Count; j++)
-                    if (Conflict(wearing[i].Slot, wearing[j].Slot))
-                        errors.Add(wearing[i].Slot.IsSet || wearing[j].Slot.IsSet
-                            ? $"{wearing[i].Slot.Path} and {wearing[j].Slot.Path}: the set selects the other category's item itself; give one of them"
-                            : $"{wearing[i].Slot.Path} and {wearing[j].Slot.Path}: VRoid cannot wear these together; take one off");
+            // A set selects its items itself, so it may not be named with any of them, even
+            // to take one off; other conflicting items may not both be worn.
+            var picked = work.Picks.Where(pick => pick.Slot.Section == section).ToList();
+            for (var i = 0; i < picked.Count; i++)
+                for (var j = i + 1; j < picked.Count; j++)
+                {
+                    var (a, b) = (picked[i], picked[j]);
+                    if (!Conflict(a.Slot, b.Slot)) continue;
+                    if ((a.Slot.IsSet && a.Item != null) || (b.Slot.IsSet && b.Item != null))
+                        errors.Add($"{a.Slot.Path} and {b.Slot.Path}: the set selects the other category's item itself; give one of them");
+                    else if (a.Item != null && b.Item != null)
+                        errors.Add($"{a.Slot.Path} and {b.Slot.Path}: VRoid cannot wear these together; take one off");
+                }
             // VRoid also replaces items it does not list as conflicts, such as a sample
             // model's base hair when its overall hair changes, so any item change in a
             // section may replace the section's items that are not built in.
@@ -302,6 +315,7 @@ public sealed partial class Plugin
             yield break;
         foreach (var step in EnterAccessories()) yield return step;
         var worn = work.Worn = WornAccessories();
+        work.WornEntries = worn.Select(AccessoryEntry).ToArray();
         var available = AvailableAccessories().Select(accessory => accessory.Item).ToHashSet();
         work.Wanted = accessories.EnumerateArray().Select(entry => (entry.GetProperty("item").GetString()!,
             entry.EnumerateObject().Where(color => color.Name != "item").ToDictionary(color => color.Name, color => color.Value.GetString()!))).ToList();
@@ -342,8 +356,9 @@ public sealed partial class Plugin
         foreach (var slot in work.Slots[section].Where(slot => work.Before[slot.Path] == ItemIds.Custom && State(slot) != ItemIds.Custom))
         {
             if (!work.Discarded.Contains(slot.Path)) work.Discarded.Add(slot.Path);
-            if (((Dictionary<string, object>)undo[section]).TryGetValue(slot.Name, out var values))
-                ((Dictionary<string, object?>)values).Remove("item");
+            // The undo is a dump whenever the request changes items.
+            if (undo[section] is Dictionary<string, object> categories && categories.TryGetValue(slot.Name, out var values))
+                (values as Dictionary<string, object?>)?.Remove("item");
         }
     }
 
@@ -357,15 +372,28 @@ public sealed partial class Plugin
             foreach (var step in Enter(section))
                 if (step == null) yield return true;
             var picks = work.Picks.Where(pick => pick.Slot.Section == section).OrderBy(pick => pick.Slot.Index).ToList();
-            foreach (var (slot, item) in picks)
+            try
             {
-                // An earlier set may already have selected it.
-                if (State(slot) == item) continue;
-                Changed.Add(slot.Path);
-                work.Changed++;
-                foreach (var step in Wear(slot, item, work.Slots[section])) yield return step;
-                // Keeps the undo in a later failure's message applicable.
-                Discard(work, section, undo);
+                foreach (var (slot, item) in picks)
+                {
+                    // An earlier set may already have selected it.
+                    if (State(slot) == item) continue;
+                    Changed.Add(slot.Path);
+                    work.Changed++;
+                    foreach (var step in Wear(slot, item, work.Slots[section])) yield return step;
+                }
+            }
+            finally
+            {
+                // Runs before a failure's message is written, so its undo applies.
+                try
+                {
+                    Discard(work, section, undo);
+                }
+                catch (Exception error)
+                {
+                    Diagnostics.LogError($"Could not check discarded items in {section}: {error}");
+                }
             }
             foreach (var (slot, item) in picks)
                 if (State(slot) != item)
@@ -375,10 +403,11 @@ public sealed partial class Plugin
     }
 
     // Removes, adds, and recolours accessories to match the request.
-    private static IEnumerable<bool> ChangeAccessories(Outfitting work)
+    private static IEnumerable<bool> ChangeAccessories(Outfitting work, Dictionary<string, object> undo)
     {
         if (work.Plan is not { } plan) yield break;
         var worn = work.Worn!;
+        var gone = new HashSet<int>();
         foreach (var step in EnterAccessories()) yield return step;
         // Removing from the end keeps the earlier indices valid.
         foreach (var j in plan.Removed.OrderByDescending(j => j))
@@ -386,8 +415,12 @@ public sealed partial class Plugin
             var path = $"Accessories/{(worn[j].Item == ItemIds.Custom ? worn[j].Name : worn[j].Item)}";
             Changed.Add(path);
             work.Changed++;
-            if (worn[j].Item == ItemIds.Custom) work.Discarded.Add(path);
             foreach (var step in RemoveAccessory(j)) yield return step;
+            if (worn[j].Item != ItemIds.Custom) continue;
+            // Undo cannot restore it once it is gone.
+            work.Discarded.Add(path);
+            gone.Add(j);
+            undo["Accessories"] = AccessoryList(work.WornEntries.Where((_, k) => !gone.Contains(k)).ToArray());
         }
         var targets = plan.Kept.Select(pair => (Index: pair.Worn - plan.Removed.Count(j => j < pair.Worn), pair.Wanted)).ToList();
         foreach (var i in plan.Added)

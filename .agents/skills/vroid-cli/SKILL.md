@@ -93,14 +93,14 @@ and tails are accessories.
   selected; a request naming both is refused. Sets (Face Sets, Eyes Sets,
   Hairstyle Sets, Whole Sets) select the items of other categories, so name
   either a set or those items. `dump` omits sets.
-- `"custom"` is an item that is not built in, such as a texture-edited outfit
-  or a sample model's part. `apply` refuses to change any item in a section
-  that wears one, since VRoid may replace it and `undo` cannot restore it.
-  In a template, `"custom"` only keeps the target's own such item; it cannot
-  copy one to another project, where `apply` refuses it. Undoing an item
-  change in such a section needs `discard_custom` as well. To discard it anyway, `save` a copy of the
-  project first, then add `"discard_custom": true`; the result's `discarded`
-  names what was lost.
+- `"custom"` is an item `items` does not list, such as a texture-edited
+  outfit or a sample model's part. `apply` refuses to change any item in a
+  section that wears one, since VRoid may replace it and `undo` cannot
+  restore it. To change items there anyway, `save` a copy of the project
+  first, then add `"discard_custom": true`; the result's `discarded` names
+  what VRoid replaced, which may be nothing. Undoing such a change needs the
+  flag too. In a template, `"custom"` only keeps the target's own such item;
+  it cannot copy one to another project, where `apply` refuses it.
 - `Accessories` in `apply` is every accessory to wear; `apply` adds and
   removes to match, and an omitted key leaves them alone. To add one, append
   it to `worn` from `accessories`, as the example's list would otherwise

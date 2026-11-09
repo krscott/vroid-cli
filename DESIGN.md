@@ -304,12 +304,13 @@ edit still counts as unsaved. The result counts the changes, holds an `undo`
 template, and lists in `discarded` what `undo` cannot restore. When the
 request changes items, `undo` is a `dump` taken before the change, since a
 new item resets its category's values and colours and VRoid changes other
-categories with it; otherwise it holds the previous values of what the
-request names. Either way it holds the previous accessories when the request
-lists them. If the second pass fails, the error lists what already changed
-and includes the `undo` request. Each rebuild takes a few frames, so even a
-template that changes every item and value finishes far within the request
-timeout.
+categories with it, so it includes the accessories; otherwise it holds the
+previous values of what the request names, and the previous accessories when
+the request lists them. A custom accessory leaves `undo` once it is removed.
+If the second pass fails, the bridge ends the operation, which drops what was
+discarded from `undo`, then reports what already changed with the `undo`
+request. Each item waits for its section to settle, so reapplying a whole
+template takes tens of seconds, within the request timeout.
 
 ### Items and accessories
 
@@ -325,9 +326,11 @@ and restarts (R-EDIT-9). VRoid has no item names, only thumbnails.
 
 A category reads as the identifier of its option whose `IsSelected` is true.
 Otherwise its `TemporaryCustomItem.WearingCustomItemSavableTransferableGroup`
-tells whether it wears an item that is not built in, such as a
-texture-edited outfit or a sample model's part, which reads as `custom`; some
-of these show no selected option at all. Otherwise it reads as null.
+tells whether it wears an item no option offers, which reads as `custom`.
+Such items include texture-edited outfits, whose group is a
+`user/VRoid/CustomItem/...` resource (the preset stays in
+`OriginalResourceName`), imported items, and sample models' parts, some of
+them built-in assets the selector does not offer, such as a sample's socks.
 Selecting sets the option's `IsSelected`, which runs VRoid's own selection
 command; `ClearTransferableGroup` takes the item off a category whose
 `IsRemovable` is true. Each takes a rebuild, after which the selector updates
@@ -348,8 +351,8 @@ Sets (Face Sets, Eyes Sets, Hairstyle Sets, Whole Sets; group types ending in
 selected only while those items match. `dump` therefore omits their items,
 since the other categories describe them, and editing one item of a dump
 still applies. `apply` accepts a set, selecting it before the other items in
-app order, refuses it with an item it would select, and fails after the
-changes if a set no longer reads as selected.
+app order, refuses it with any item it would select, including a null, and
+fails after the changes if a set no longer reads as selected.
 
 `apply` accepts the item a category already wears, including `custom` and a
 null that a category cannot take off, and changes nothing for it. `custom`
