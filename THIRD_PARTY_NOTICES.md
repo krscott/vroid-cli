@@ -19,8 +19,8 @@ These are fetched by hash and never committed:
 | [Unity 6000.0.62 base libraries](https://unity.bepinex.dev/libraries/) | Proprietary (Unity Technologies) |
 
 The bridge plugin links against BepInEx, Il2CppInterop, and HarmonyX from that
-bundle. App-specific interop assemblies are generated locally from the user's
-VRoid installation and stay in the session's Wine prefix.
+bundle. VRoid is installed, and its app-specific interop assemblies are
+generated from it, in local Nix builds; both stay in the user's Nix store.
 
 ## Framewisp
 

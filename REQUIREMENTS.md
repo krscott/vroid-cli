@@ -15,8 +15,9 @@ it; name non-obvious constraints when useful. Backfill existing rationales only
 when relevant to the task, without a project-wide sweep. If the reason is unknown,
 investigate or ask; never invent a rationale.
 
-- The ID is stable. Never renumber or reuse an ID. To drop a requirement, keep
-  its bullet and change its tag to `[retired]`.
+- The ID is stable. Never renumber or reuse an ID. To drop a requirement,
+  change its tag to `[retired]` and delete its text and rationale; the ID
+  stays taken.
 - `[test]`: a test that `just test` or `nix flake check` runs covers it. Each
   covering test carries the ID in a comment.
 - `[manual: how]`: no automated test yet. The text says how an agent checks it.
@@ -48,18 +49,9 @@ investigate or ask; never invent a rationale.
   Rationale: Stopping discards unsaved edits, which may be the only copy of an
   agent's work.
 
-- **R-SES-5** [test] An incomplete first installation is never repeated
-  automatically. Launching it reports how to recover.
+- **R-SES-5** [retired]
 
-  Rationale: Its logs explain the failure, and a repeated installation over a
-  partial prefix fails in less obvious ways.
-
-- **R-SES-6** [test] Launching after an upgrade installs the new bridge over the
-  old one, including read-only copies from earlier installs. A failed copy is
-  retried on the next launch.
-
-  Rationale: A stale or partially copied bridge fails in confusing ways, and
-  users cannot repair an app directory they did not create.
+- **R-SES-6** [retired]
 
 - **R-SES-7** [manual: while a session is running, confirm no VRoid window
   appears on the user's desktop and the user's input reaches only their own
@@ -78,6 +70,29 @@ investigate or ask; never invent a rationale.
   and cannot stop to ask a person to click through dialogs. The README states
   that using vroid-cli assumes the user has read and accepted VRoid Studio's
   terms.
+
+- **R-SES-9** [test] A session needs no installation step. `launch` runs the
+  VRoid and bridge that came with the vroid-cli build that ran it, in new
+  sessions and in sessions that earlier versions installed, and no session can
+  change them.
+
+  Rationale: Per-session installs took 10 minutes or more and about 2 GB each,
+  which made parallel agents and evals impractical. A per-session copy of the
+  bridge could go stale or be left partly copied, and users could not repair an
+  app directory they did not create.
+
+- **R-SES-10** [test] Garbage collection of the Nix store while a session's app
+  runs never removes files that app uses.
+
+  Rationale: Sessions run for hours next to the user's other Nix work. A
+  collection that removed VRoid's files would crash the app and lose unsaved
+  edits.
+
+- **R-SES-11** [test] When `launch` fails because the app exited or did not
+  become ready, its error shows the last lines of the log that explains why.
+
+  Rationale: The app runs on a private display, so an agent cannot see its
+  errors any other way.
 
 ## Requests (RPC)
 

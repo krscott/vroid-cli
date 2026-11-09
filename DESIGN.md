@@ -20,13 +20,15 @@ fresh check of every internal name below.
 | --- | --- |
 | `vroid_cli/` | Python CLI: request and result models (`schema.py`), sessions, lifecycle, bridge requests |
 | `plugin/` | C# BepInEx IL2CPP plugin ("bridge") running inside VRoid |
-| `scripts/vroid-studio.sh` | Runs on the private display: installs VRoid and the bridge, then starts VRoid |
-| `nix/vroid-studio.nix` | The installer, fetched by hash, and the launcher wrapper with Wine |
-| `nix/bridge.nix` | BepInEx, Unity base libraries, plugin, and loader config as one bundle |
-| `default.nix` | The `vroid-cli` package; its wrapper sets `VROID_BRIDGE_BUNDLE`, `VROID_CLI_SKILL`, and `PATH` |
+| `scripts/vroid-studio.sh` | Runs on the private display: prepares the session's prefix and BepInEx root, then starts VRoid |
+| `nix/vroid-studio.nix` | VRoid installed into the store, its interop assemblies, and the launcher wrapper |
+| `nix/bepinex.nix` | BepInEx with Doorstop and .NET, and the Unity base libraries |
+| `nix/bridge.nix` | The bridge plugin alone |
+| `default.nix` | The `vroid-cli` package; its wrapper sets `VROID_CLI_SKILL` and `PATH` |
 | `.agents/skills/vroid-cli/` | Shared agent skill, printed with the JSON Schema by `vroid-cli --agent-skill` |
 
-The flake permits only the unfree `vroid-studio` and `vroid-bridge` packages.
+The flake permits only the unfree `vroid-studio-app`, `vroid-studio-interop`,
+and `vroid-bepinex` packages; the installer is fetched only to build the first.
 Framewisp's headless compositor hardcodes the Pixman software renderer; the
 flake substitutes GLES2, which VRoid needs for usable frame rates.
 
@@ -43,10 +45,14 @@ digits, `_`, or `-`.
 | --- | --- |
 | `command.lock` | Controller lock |
 | `desktop/` | Framewisp session (`session.json`, `inputs.jsonl`, `app.log`) |
-| `wine/` | Wine prefix; VRoid in `drive_c/VRoidStudio` |
-| `installed` | Marks a completed installation |
+| `wine/` | Wine prefix: VRoid's preferences and Wine's own files |
+| `bepinex/` | BepInEx root: links to the store, its config, cache, `LogOutput.log`, and `preloader.log` |
 | `rpc/` | File protocol, below |
-| `runner.log`, `installer.log`, `player.log` | Framewisp runner, installer, and Unity player logs |
+| `runner.log`, `player.log` | Framewisp runner and Unity player logs |
+
+Sessions from versions that installed VRoid into the prefix also hold
+`wine/drive_c/VRoidStudio`, `installed`, and `installer.log`. Nothing reads
+them; deleting them only frees space.
 
 Every command except `status` holds an exclusive, nonblocking `flock` on
 `command.lock` for its whole run and fails at once if another command holds
@@ -63,18 +69,21 @@ The CLI reads the desktop as one of three states:
   runner is shutting down.
 - Running: `framewisp DESKTOP status` reports the app running.
 
-`launch` records its start time and takes the lock. A stopped desktop starts
+`launch` records its start time and takes the lock. A stopped desktop has its
+BepInEx logs removed, so any BepInEx log belongs to the app the desktop runs,
+and then starts
 `framewisp DESKTOP run --x11 --width 2560 --height 1440 -- vroid-studio` in a
 new process session, logging to `runner.log`. A running app is waited for. An
 exited app fails with instructions to wait or stop. If the runner exits during
 the wait, the error shows the end of `desktop/app.log` when Framewisp recorded
 VRoid's exit during this launch, which is where the launcher script's own
-errors land (R-SES-5).
-Otherwise the desktop failed before VRoid started, `app.log` may be from an
-earlier run, and the error shows the end of `runner.log`.
+errors land, followed by the end of BepInEx's log (R-SES-11). Otherwise the
+desktop failed before VRoid started, `app.log` may be from an earlier run, and
+the error shows the end of `runner.log`. A timeout also shows the end of
+BepInEx's log, or explains an interop mismatch it reports.
 
-It then waits for a bridge heartbeat that is fresh, was written after the
-launch began, and has found the main view model (R-SES-2). The bridge also
+`launch` then waits for a bridge heartbeat that is fresh, was written after
+the launch began, and has found the main view model (R-SES-2). The bridge also
 finds it on VRoid's welcome screen, so an app that an earlier version started
 and left at the first-run dialogs looks ready. When VRoid's preferences file
 (below) does not exist, `launch` fails with instructions to stop and launch,
@@ -84,7 +93,12 @@ exits. The wait fails
 early if the runner exits. On timeout the app keeps starting; running `launch`
 again resumes the wait. A bridge reporting another protocol version fails with
 instructions to stop and relaunch; bridges from other builds with the same
-protocol keep working until the next launch installs the new one.
+protocol keep working until the next launch runs the new one.
+
+BepInEx writes `bepinex/preloader.log` only when it fails to start, and then
+waits behind an error dialog nobody can close, so `launch` fails as soon as
+that file appears. A timeout whose BepInEx log reports an interop mismatch
+fails with that explanation instead of advice to keep waiting.
 
 The compositor uses the first AMD or Intel render node unless
 `WLR_RENDER_DRM_DEVICE` is set. Automatic NVIDIA selection stalled during
@@ -97,16 +111,9 @@ app it waits for the runner to finish. A stopped desktop is already stopped.
 
 `scripts/vroid-studio.sh` runs inside the private desktop:
 
-1. Without the `installed` marker it installs VRoid silently into a new prefix.
-   An existing prefix without the marker is an incomplete installation; it
-   stops with recovery steps instead of reinstalling (R-SES-5).
-2. When `drive_c/VRoidStudio/.vroid-bridge-bundle` does not name the current
-   bundle path, it makes existing copies of the bundle's top-level entries
-   writable, copies the bundle with `cp -r --no-preserve=mode
-   --remove-destination`, and only then writes the marker (R-SES-6). Store
-   files are read-only, and earlier copies kept their modes. Upgrades happen
-   only here, so only while the app is stopped.
-3. It accepts VRoid's first-run dialogs (R-SES-8). VRoid keeps its preferences
+1. Without a Wine user profile it creates the prefix with `wineboot -i`. Wine
+   updates an existing prefix itself.
+2. It accepts VRoid's first-run dialogs (R-SES-8). VRoid keeps its preferences
    in `drive_c/users/USER/AppData/LocalLow/pixiv/VRoid Studio/preferences/editoroption.xml`
    (`USER` is the prefix's only profile with an `AppData` directory) and
    writes the file only after a person accepts the terms. Without it,
@@ -118,16 +125,56 @@ app it waits for the runner to finish. A stopped desktop is already stopped.
    file, in UTF-8 with a byte order mark like VRoid's, when it is missing. It
    never edits an existing file: one without both acceptances stops the launch
    with instructions to delete it.
-4. It starts VRoid with `winhttp` overridden to load BepInEx's Doorstop, the
-   RPC directory in `VROID_BRIDGE_DIR`, and the `.NET` settings below.
+3. It points `bepinex/core` and `bepinex/plugins` at the store and copies
+   `plugin/BepInEx.cfg` from the store to `bepinex/config`, replacing all
+   three each launch; BepInEx rewrites its config, so the copy is writable.
+4. It starts the store's VRoid with Doorstop's `--doorstop-*` arguments aimed
+   at `bepinex/`, `--unhollowed-path` at the prebuilt interop assemblies,
+   `-logFile` in the session, and the RPC directory in `VROID_BRIDGE_DIR`.
 
-On first start BepInEx generates interop assemblies from the installed game.
-Proprietary VRoid assemblies are neither bundled nor built against. The Unity
-base libraries are prefetched into `BepInEx/unity-libs` instead of downloaded.
-Generation runs out of managed memory without an explicit heap ceiling: the
-launcher defaults to `DOTNET_PROCESSOR_COUNT=2` and
-`DOTNET_GCHeapHardLimit=400000000`, which is hexadecimal (16 GiB). Both can be
-overridden from the environment.
+Every Wine call disables Wine's Mono and Gecko setup with
+`WINEDLLOVERRIDES=mscoree,mshtml=`, which otherwise stalls on the private
+desktop. `BEPINEX_PRELOADER_LOG` keeps a startup failure's log in the session
+rather than next to the read-only exe.
+
+## Shared install
+
+All sessions run one read-only VRoid from the Nix store (R-SES-9). A session
+holds only its prefix and BepInEx root, about 600 MB; a new one is ready in
+about 15 s, most of it creating the prefix. Upgrades are new store paths, so
+nothing is copied and no marker records a version.
+
+- `vroid-studio-app` runs the vendor installer headless under Wine's `null`
+  graphics driver; innoextract cannot read its Inno Setup 6.7 format. Doorstop
+  loads BepInEx only through a `winhttp.dll` next to the exe, so the build
+  adds it. VRoid and Unity write only to the prefix's AppData and `-logFile`.
+- `vroid-studio-interop` is BepInEx's unhollowed directory, generated by
+  starting VRoid with `-batchmode -nographics` until BepInEx writes
+  `interop/assembly-hash.txt`, and fails early if BepInEx logs that
+  generation failed. It depends on the app, BepInEx, and the loader config
+  but not the plugin, so bridge changes do not regenerate it. The app depends
+  only on the installer, BepInEx, and Wine. The output works the same
+  each time but is not bit-reproducible. Generation runs out of managed memory
+  without an explicit heap ceiling, so the build sets `DOTNET_PROCESSOR_COUNT=2`
+  and `DOTNET_GCHeapHardLimit=400000000`, which is hexadecimal (16 GiB). It
+  needs about 5 GB of memory.
+- BepInEx hashes `GameAssembly.dll`, the extracted Unity libraries, and its
+  generator versions to decide whether the interop assemblies are current;
+  all are inputs to the interop build. `UpdateInteropAssemblies = false` keeps
+  BepInEx from regenerating them into the store. On a mismatch it logs
+  "Interop assemblies are possibly out of date" instead, and `launch` fails
+  with that log. BepInEx rewrites `LogOutput.log` on every start, and the
+  bridge logs `vroid-cli bridge loaded; boot ID` when it loads, so `launch`
+  reads only a log naming the ready bridge's boot. be.788 passes
+  `InstantFlushing` to its log writer inverted, so `false` writes each line at
+  once and the line is on disk before the first heartbeat.
+- The launcher wrapper sets `VROID_WINE`, `VROID_APP`, `VROID_INTEROP`,
+  `VROID_BEPINEX`, `VROID_BRIDGE`, and `VROID_BEPINEX_CONFIG`, and the
+  launcher passes them to Wine.
+  Nix's garbage collector treats a store path in a running process's
+  environment as a root, so every Wine process keeps the app's files for its
+  whole life (R-SES-10). A stopped session needs nothing from the store; its
+  links are replaced at the next launch.
 
 ## File protocol
 
@@ -365,14 +412,16 @@ errors (R-CLI-2).
 `just test` and the Nix package checks run:
 
 - `tests/test_cli.py`: the CLI against a stand-in bridge and Framewisp.
-- `tests/test_launcher.py`: the launcher against a stand-in Wine.
+- `tests/test_launcher.py`: the launcher against a stand-in Wine and a
+  read-only stand-in store.
 - `tests/protocol`: the bridge's file protocol, colour rules, and camera
   placement under the .NET SDK.
 
 `scripts/gui-smoke.sh`, run by `just gui-smoke`, drives a real session through
 open, dump, numeric and colour edits, refusal, save, rendering every view,
 restart, reopen with a read-back of every edited number and colour (R-EDIT-1),
-and reapplying the first dump, and checks the Framewisp input log. It saves editor screenshots before and after the edits. It decodes each
-render with the Python standard library to check its size and framing, and
-compares `dump` and an editor screenshot before and after rendering. It needs
-graphics access.
+and reapplying the first dump, and checks the Framewisp input log and that
+BepInEx's log names the ready bridge's boot. It saves editor screenshots
+before and after the edits. It decodes each render with the Python standard
+library to check its size and framing, and compares `dump` and an editor
+screenshot before and after rendering. It needs graphics access.

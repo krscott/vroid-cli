@@ -21,11 +21,13 @@ so far.
 - x86_64 Linux with Nix flakes and working GPU drivers. The compositor prefers
   an AMD or Intel GPU. NVIDIA-only systems are untested; set
   `WLR_RENDER_DRM_DEVICE=/dev/dri/renderD...` to choose a device.
-- About 6 GB of disk per session and up to 16 GiB of memory during the first
-  launch.
+- About 600 MB of disk per session. All sessions share one read-only VRoid
+  install in the Nix store (about 1.4 GB). Building it once takes about a
+  minute and 5 GB of memory.
 - Only VRoid Studio 2.16.0 is supported. The flake fetches its installer by
-  hash; VRoid is proprietary, and the flake permits only it and the bridge
-  bundle as unfree packages.
+  hash and installs it into the store; VRoid and Unity's libraries are
+  proprietary, and the flake permits only the packages built from them as
+  unfree.
 
 ## Usage
 
@@ -95,17 +97,17 @@ project's skills directory.
 
 ### First launch
 
-The first `launch` of a session installs VRoid into its own Wine prefix and
-generates app bindings. This can take 10 minutes or more. If `launch` times out,
-the app keeps starting; run `launch` again to keep waiting.
+A new session's first `launch` creates its Wine prefix and is ready in about
+15 seconds; later launches take a few seconds. If `launch` times out, the app
+keeps starting; run `launch` again to keep waiting.
 
 ## Recovery
 
 `vroid-cli NAME '{"method": "status"}'` reports whether the app runs, whether
 it is ready, any pending request, and unsaved changes (`bridge.modified`).
-Logs are in the session directory: `runner.log`, `installer.log`,
-`player.log`, `desktop/app.log`, and
-`wine/drive_c/VRoidStudio/BepInEx/LogOutput.log`.
+Logs are in the session directory: `runner.log`, `player.log`,
+`desktop/app.log`, `bepinex/LogOutput.log`, and, if BepInEx failed to start,
+`bepinex/preloader.log`.
 
 - **Timed-out request:** do not repeat it. It stays pending and blocks other
   commands until its result appears in `rpc/results/ID.json`. Restarting the
@@ -114,13 +116,16 @@ Logs are in the session directory: `runner.log`, `installer.log`,
   pending request. Save to a new path, or send
   `{"method": "stop", "force": true}` to discard them.
 - **Another project:** save, `stop`, and `launch` before opening it.
-- **Incomplete installation:** it is not repeated. Read `installer.log`, then
-  delete the session directory or use another session name.
 - **Unclean desktop shutdown:** run `framewisp ABSOLUTE/SESSION/desktop recover`
   as the error message says, then launch again.
-- **Upgrades:** `launch` installs a new bridge only while the app is stopped. A
-  running session keeps working with a newer CLI unless the file protocol
-  changed; then save with the older build or stop and launch again.
+- **Upgrades:** `launch` runs the VRoid and bridge of the vroid-cli build
+  that ran it. A running session keeps working with a newer CLI unless the
+  file protocol changed; then save with the older build or stop and launch
+  again.
+- **Sessions from earlier versions** launch with the shared install and keep
+  their VRoid preferences. Their own copy of VRoid in
+  `wine/drive_c/VRoidStudio`, `installed`, and `installer.log` are no longer
+  used. Deleting them is optional and only frees about 1.4 GB.
 
 ## Development
 

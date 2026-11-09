@@ -9,7 +9,6 @@
   git,
   framewisp,
   vroid-studio,
-  vroid-bridge,
 }:
 buildPythonApplication {
   pname = "vroid-cli";
@@ -21,6 +20,8 @@ buildPythonApplication {
       ./vroid_cli
       ./tests
       ./scripts
+      # tests/test_cli.py checks the bridge's load message, which launch reads.
+      ./plugin/Plugin.cs
       ./.agents/skills/vroid-cli/SKILL.md
     ];
   };
@@ -35,9 +36,6 @@ buildPythonApplication {
   ];
   pythonImportsCheck = [ "vroid_cli" ];
   makeWrapperArgs = [
-    "--set"
-    "VROID_BRIDGE_BUNDLE"
-    "${vroid-bridge}"
     "--set"
     "VROID_CLI_SKILL"
     "${./.agents/skills/vroid-cli/SKILL.md}"

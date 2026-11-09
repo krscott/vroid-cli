@@ -96,6 +96,15 @@ input_events() {
     fi
 }
 
+# launch's interop check reads the BepInEx log of the boot that reported ready,
+# so that log must name the boot by the time launch returns.
+launch() {
+    local launched
+    launched=$(vroid '{"method": "launch"}')
+    grep -qF "boot $(jq -r .bridge.boot <<<"$launched")" "$(jq -r .directory <<<"$launched")/bepinex/LogOutput.log" ||
+        fatal "BepInEx's log did not name the bridge's boot when launch returned"
+}
+
 rebuilt() {
     vroid '{"method": "status"}' | jq .bridge.rebuilt
 }
@@ -208,7 +217,7 @@ colours=(
     'Hair|Front|Main Color|#FF8C00|#FF7F00'
 )
 
-vroid '{"method": "launch", "timeout": 1200}' >/dev/null
+launch
 inputs_before=$(input_events)
 jq -cn --arg path "$source" '{method: "open", path: $path}' | vroid - >/dev/null
 vroid '{"method": "dump"}' >"$out/original.json"
@@ -321,7 +330,7 @@ inputs_after=$(input_events)
 ((inputs_after == inputs_before)) || fatal "input log grew from $inputs_before to $inputs_after events"
 
 vroid '{"method": "stop"}' >/dev/null
-vroid '{"method": "launch", "timeout": 1200}' >/dev/null
+launch
 inputs_before=$(input_events)
 if render front body 64 64 "$out/unopened.png" >/dev/null 2>"$out/unopened.err"; then
     fatal "render without an open project succeeded"
