@@ -319,7 +319,9 @@ Face, Hair, Body, and Outfit categories that wear items are
 `PresetCategoryViewModel` holds them. Their `_presets[]` are the built-in
 items, each a `PresetOptionViewModel` whose `_model.resourceName` is a fixed
 asset path such as `pixiv/VRoid/Clothing/Tops/N00/159/....transferablegroup`.
-An item's identifier is that path's second-to-last part (`159`, `Default`,
+A built-in item, in the requirements and here, is one a category's selector
+offers, which `items` lists. An item's identifier is that path's
+second-to-last part (`159`, `Default`,
 `Preset_F`), unique within each category in 2.16.0; the bridge fails if one
 repeats. The path, and so the identifier, does not change between sessions
 and restarts (R-EDIT-9). VRoid has no item names, only thumbnails.
@@ -361,7 +363,8 @@ conflicts, such as a sample model's custom base hair when its overall hair
 changes, so without `discard_custom`, `apply` refuses any item change in a
 section that wears an item that is not built in (R-EDIT-10). With it, the
 change goes ahead, and `discarded` names each such
-item, found by comparing every category after each selection with before.
+item, found by comparing every category with before once a section's
+selections end, including when one fails.
 `undo` omits those items but keeps their categories' values, some shared with
 other categories, and restores every other category, including those VRoid
 changed itself, such as a dress taken off for a top. Its own item changes in

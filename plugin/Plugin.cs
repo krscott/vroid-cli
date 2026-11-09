@@ -29,6 +29,9 @@ public sealed partial class Plugin : BasePlugin
     // them, reported if it fails.
     private static readonly List<string> Changed = new();
     private static object? undo;
+    // Items that are not built in and that the current operation replaced or
+    // removed, which its undo cannot restore (R-EDIT-10).
+    private static readonly List<string> Discarded = new();
     private static readonly Stopwatch Elapsed = new();
     private static readonly Stopwatch SinceHeartbeat = new();
 
@@ -104,6 +107,7 @@ public sealed partial class Plugin : BasePlugin
                 Elapsed.Restart();
                 result = null;
                 Changed.Clear();
+                Discarded.Clear();
                 undo = null;
                 operation = Execute(current).GetEnumerator();
             }
@@ -121,18 +125,12 @@ public sealed partial class Plugin : BasePlugin
             {
                 // Ends the operation first, so its cleanup, such as dropping discarded
                 // items from the undo, runs before the message is written.
-                try
-                {
-                    operation?.Dispose();
-                }
-                catch (Exception cleanup)
-                {
-                    Diagnostics.LogError($"Could not end request {current.Id}: {cleanup}");
-                }
+                EndOperation();
                 var message = (error.InnerException ?? error).Message;
                 if (Changed.Count > 0)
                 {
                     message += $" Changed before the failure: {string.Join(", ", Changed)}.";
+                    if (Discarded.Count > 0) message += $" Discarded, which undo cannot restore: {string.Join(", ", Discarded)}.";
                     if (undo != null) message += $" Apply this to restore them: {JsonSerializer.Serialize(undo)}";
                 }
                 Complete(false, message);
@@ -176,19 +174,26 @@ public sealed partial class Plugin : BasePlugin
         }
     }
 
-    private static void Complete(bool ok, object? payload)
+    // Runs the operation's pending cleanup; a failing cleanup never keeps a
+    // result from being published.
+    private static void EndOperation()
     {
-        var request = current!;
-        current = null;
         try
         {
             operation?.Dispose();
         }
         catch (Exception error)
         {
-            Diagnostics.LogError($"Could not end request {request.Id}: {error}");
+            Diagnostics.LogError($"Could not end request {current?.Id}: {error}");
         }
         operation = null;
+    }
+
+    private static void Complete(bool ok, object? payload)
+    {
+        var request = current!;
+        EndOperation();
+        current = null;
         rpc.Finish(request, ok, payload);
     }
 
@@ -519,7 +524,7 @@ public sealed partial class Plugin : BasePlugin
             }
         }
         if (errors.Count > 0) throw new InvalidOperationException(string.Join("; ", errors));
-        result = new { changed, undo, discarded = work.Discarded };
+        result = new { changed, undo, discarded = Discarded };
     }
 
     private static bool Same(object? a, object? b) => a is float[] x && b is float[] y ? x.SequenceEqual(y) : Equals(a, b);

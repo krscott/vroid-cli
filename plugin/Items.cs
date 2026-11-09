@@ -103,8 +103,9 @@ public sealed partial class Plugin
     private static bool Conflict(Slot a, Slot b) =>
         a.Conflicts.Contains(ItemIds.Kind(b.Type)) || b.Conflicts.Contains(ItemIds.Kind(a.Type));
 
-    // A worn accessory instance: its item, VRoid's name for it, and its available colours.
-    private sealed record Worn(string Item, string Name, object Instance, Swatch[] Swatches);
+    // A worn accessory instance: its item, VRoid's name for it, its transferable,
+    // and its available colours.
+    private sealed record Worn(string Item, string Name, string Id, object Instance, Swatch[] Swatches);
 
     private static object AccessoryEditor => Reflect.Get(Root, "AccessoryEditor") ?? throw Differs("the accessory editor");
 
@@ -135,7 +136,7 @@ public sealed partial class Plugin
             foreach (var sub in Reflect.Items(Reflect.Get(selection, "_subColorSelections")))
                 swatches.Add(new Swatch(Reflect.Get(sub, "TranslatedDisplayName") as string ?? "", sub, "Color", new HashSet<string>()));
         }
-        return new Worn(item != null && AttachmentIds.Contains(item) ? item : ItemIds.Custom, name, instance, swatches.ToArray());
+        return new Worn(item != null && AttachmentIds.Contains(item) ? item : ItemIds.Custom, name, id, instance, swatches.ToArray());
     }).ToArray();
 
     // An accessory as a template entry: its item, then its colours by label.
@@ -242,7 +243,6 @@ public sealed partial class Plugin
         public Dictionary<string, object>[] WornEntries = Array.Empty<Dictionary<string, object>>();
         public AccessoryPlan? Plan;
         public List<(string Item, Dictionary<string, string> Colors)> Wanted = new();
-        public readonly List<string> Discarded = new();
         public int Changed;
 
         public bool ItemsChange(string section) =>
@@ -355,7 +355,7 @@ public sealed partial class Plugin
     {
         foreach (var slot in work.Slots[section].Where(slot => work.Before[slot.Path] == ItemIds.Custom && State(slot) != ItemIds.Custom))
         {
-            if (!work.Discarded.Contains(slot.Path)) work.Discarded.Add(slot.Path);
+            if (!Discarded.Contains(slot.Path)) Discarded.Add(slot.Path);
             // The undo is a dump whenever the request changes items.
             if (undo[section] is Dictionary<string, object> categories && categories.TryGetValue(slot.Name, out var values))
                 (values as Dictionary<string, object?>)?.Remove("item");
@@ -415,12 +415,29 @@ public sealed partial class Plugin
             var path = $"Accessories/{(worn[j].Item == ItemIds.Custom ? worn[j].Name : worn[j].Item)}";
             Changed.Add(path);
             work.Changed++;
-            foreach (var step in RemoveAccessory(j)) yield return step;
-            if (worn[j].Item != ItemIds.Custom) continue;
-            // Undo cannot restore it once it is gone.
-            work.Discarded.Add(path);
-            gone.Add(j);
-            undo["Accessories"] = AccessoryList(work.WornEntries.Where((_, k) => !gone.Contains(k)).ToArray());
+            try
+            {
+                foreach (var step in RemoveAccessory(j)) yield return step;
+            }
+            finally
+            {
+                // Undo cannot restore a custom accessory once it is gone, even if the
+                // removal then fails or times out.
+                try
+                {
+                    if (worn[j].Item == ItemIds.Custom
+                        && Instances().All(instance => Reflect.Get(Reflect.Get(instance, "transferableInfo"), "Id") as string != worn[j].Id))
+                    {
+                        Discarded.Add(path);
+                        gone.Add(j);
+                        undo["Accessories"] = AccessoryList(work.WornEntries.Where((_, k) => !gone.Contains(k)).ToArray());
+                    }
+                }
+                catch (Exception error)
+                {
+                    Diagnostics.LogError($"Could not check the removal of {path}: {error}");
+                }
+            }
         }
         var targets = plan.Kept.Select(pair => (Index: pair.Worn - plan.Removed.Count(j => j < pair.Worn), pair.Wanted)).ToList();
         foreach (var i in plan.Added)
