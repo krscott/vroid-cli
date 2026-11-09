@@ -97,7 +97,8 @@ and tails are accessories.
   or a sample model's part. `apply` refuses to change any item in a section
   that wears one, since VRoid may replace it and `undo` cannot restore it.
   In a template, `"custom"` only keeps the target's own such item; it cannot
-  copy one to another project, where `apply` refuses it. To discard it anyway, `save` a copy of the
+  copy one to another project, where `apply` refuses it. Undoing an item
+  change in such a section needs `discard_custom` as well. To discard it anyway, `save` a copy of the
   project first, then add `"discard_custom": true`; the result's `discarded`
   names what was lost.
 - `Accessories` in `apply` is every accessory to wear; `apply` adds and

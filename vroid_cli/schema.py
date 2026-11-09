@@ -394,7 +394,8 @@ class Applied(Model):
     )
     undo: Apply = Field(
         description="restores the previous items, accessories, and values, "
-        "except what `discarded` names"
+        "except what `discarded` names. Undoing an item change in a section "
+        "that still wears an item that is not built in needs discard_custom."
     )
     discarded: list[str] = Field(
         description="non-built-in items and accessories this request replaced or "

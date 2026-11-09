@@ -170,7 +170,14 @@ public sealed partial class Plugin : BasePlugin
     {
         var request = current!;
         current = null;
-        operation?.Dispose();
+        try
+        {
+            operation?.Dispose();
+        }
+        catch (Exception error)
+        {
+            Diagnostics.LogError($"Could not end request {request.Id}: {error}");
+        }
         operation = null;
         rpc.Finish(request, ok, payload);
     }
@@ -413,9 +420,12 @@ public sealed partial class Plugin : BasePlugin
     private static IEnumerable<Target?> Targets(Dictionary<string, CategoryEdit[]> edits, List<string> errors,
         Func<string, string, bool> itemChanges)
     {
-        foreach (var section in Sections.Where(section => edits[section].Any(edit => edit.Values.Length > 0)))
+        // Item-only categories are checked with the items; any other, even an empty
+        // one, must name a category.
+        static bool Visited(CategoryEdit edit) => edit.Values.Length > 0 || !edit.HasItem;
+        foreach (var section in Sections.Where(section => edits[section].Any(Visited)))
         {
-            var valued = edits[section].Where(edit => edit.Values.Length > 0).ToArray();
+            var valued = edits[section].Where(Visited).ToArray();
             foreach (var category in Visit(section, valued.Select(edit => edit.Name), errors))
                 yield return category == null ? null
                     : Match(section, category, valued.Single(edit => edit.Name == category.Name), errors, itemChanges(section, category.Name));

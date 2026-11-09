@@ -72,8 +72,10 @@ public sealed partial class Plugin
     // update of every category in the section.
     private static IEnumerable<bool> Wear(Slot slot, string? id, Slot[] section)
     {
-        // A set lists the kinds of item it selects as conflicts; those are not taken off.
-        var conflicting = id == null || slot.IsSet ? Array.Empty<Slot>() : section.Where(other => Conflict(slot, other)).ToArray();
+        // A set lists the kinds of item it selects as conflicts; those are not taken
+        // off, and a set reads as selected again whenever its items match.
+        var conflicting = id == null || slot.IsSet ? Array.Empty<Slot>()
+            : section.Where(other => !other.IsSet && Conflict(slot, other)).ToArray();
         var before = rebuilt;
         modified = true;
         if (id == null) Reflect.Call(slot.Presets, "ClearTransferableGroup");
@@ -191,7 +193,7 @@ public sealed partial class Plugin
     private static IEnumerable<bool> WaitForAccessories(long before, int count)
     {
         while (rebuilt == before || updating) yield return true;
-        for (var frame = 0; Instances().Length != count; frame++)
+        for (var frame = 0; Instances().Length != count || updating; frame++)
         {
             if (frame > 300) throw new InvalidOperationException($"VRoid lists {Instances().Length} accessories, expected {count}");
             yield return true;
@@ -215,6 +217,8 @@ public sealed partial class Plugin
         var before = rebuilt;
         modified = true;
         Reflect.Call(AccessoryEditor, "set_SelectedIndex", index);
+        // RemoveSelectedInstance removes whichever accessory is selected.
+        if (!Equals(Reflect.Get(AccessoryEditor, "SelectedIndex"), index)) throw Differs($"how to select accessory {index}");
         Reflect.Call(AccessoryEditor, "RemoveSelectedInstance");
         foreach (var step in WaitForAccessories(before, count - 1)) yield return step;
     }
@@ -292,7 +296,7 @@ public sealed partial class Plugin
             if (!discard && custom.Length > 0 && work.ItemsChange(section))
                 errors.Add($"{string.Join(", ", custom)} {(custom.Length == 1 ? "wears an item" : "wear items")} that "
                     + $"{(custom.Length == 1 ? "is" : "are")} not built in, which changing {section} items may replace; "
-                    + "undo cannot restore them. Set discard_custom to allow it");
+                    + "undo cannot restore them. Set discard_custom to allow it; undoing such a change needs it too");
         }
         if (!request.Body.TryGetProperty("Accessories", out var accessories) || accessories.ValueKind != JsonValueKind.Array)
             yield break;
@@ -331,14 +335,15 @@ public sealed partial class Plugin
     private const string AccessoryColor = "Color";
 
     // Reports each worn item that is not built in and is now gone, including
-    // ones VRoid took off itself, and drops its category from `undo`, which
-    // could neither restore it nor apply its values to another item.
+    // ones VRoid took off itself, and drops it from `undo`, which cannot
+    // restore it; `undo` keeps the category's values, some of them shared.
     private static void Discard(Outfitting work, string section, Dictionary<string, object> undo)
     {
         foreach (var slot in work.Slots[section].Where(slot => work.Before[slot.Path] == ItemIds.Custom && State(slot) != ItemIds.Custom))
         {
             if (!work.Discarded.Contains(slot.Path)) work.Discarded.Add(slot.Path);
-            ((Dictionary<string, object>)undo[section]).Remove(slot.Name);
+            if (((Dictionary<string, object>)undo[section]).TryGetValue(slot.Name, out var values))
+                ((Dictionary<string, object?>)values).Remove("item");
         }
     }
 
@@ -352,20 +357,14 @@ public sealed partial class Plugin
             foreach (var step in Enter(section))
                 if (step == null) yield return true;
             var picks = work.Picks.Where(pick => pick.Slot.Section == section).OrderBy(pick => pick.Slot.Index).ToList();
-            try
+            foreach (var (slot, item) in picks)
             {
-                foreach (var (slot, item) in picks)
-                {
-                    // An earlier set may already have selected it.
-                    if (State(slot) == item) continue;
-                    Changed.Add(slot.Path);
-                    work.Changed++;
-                    foreach (var step in Wear(slot, item, work.Slots[section])) yield return step;
-                }
-            }
-            finally
-            {
-                // Keeps the undo in a failure's message applicable.
+                // An earlier set may already have selected it.
+                if (State(slot) == item) continue;
+                Changed.Add(slot.Path);
+                work.Changed++;
+                foreach (var step in Wear(slot, item, work.Slots[section])) yield return step;
+                // Keeps the undo in a later failure's message applicable.
                 Discard(work, section, undo);
             }
             foreach (var (slot, item) in picks)

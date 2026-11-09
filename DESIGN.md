@@ -358,10 +358,12 @@ conflicts, such as a sample model's custom base hair when its overall hair
 changes, so without `discard_custom`, `apply` refuses any item change in a
 section that wears an item that is not built in (R-EDIT-10). With it, the
 change goes ahead, and `discarded` names each such
-item, found by comparing every category before and after. `undo` omits those
-categories, whose values belonged to the lost item, and restores every other
-category, including those VRoid changed itself, such as a dress taken off for
-a top.
+item, found by comparing every category after each selection with before.
+`undo` omits those items but keeps their categories' values, some shared with
+other categories, and restores every other category, including those VRoid
+changed itself, such as a dress taken off for a top. Its own item changes in
+a section that still wears an item that is not built in need
+`discard_custom` too.
 
 Accessories live in the Accessory editor (`AccessoryEditor`), whose
 `Instances` are the worn accessories in app order. A built-in accessory
