@@ -174,6 +174,7 @@ public sealed class Plugin : BasePlugin
     private sealed record Wanted(string Label, double[] Values, bool Repeated);
     private sealed record CategoryEdit(string Name, Wanted[] Values);
     private sealed record Category(string Name, object[] Parameters);
+    private sealed record Target(string Section, Category Category, List<(object Parameter, float Value, string Path)> Matched);
 
     private static string Name(object category) => (string?)Reflect.Get(category, "Name") ?? "";
     private static string Label(object parameter) => (string?)Reflect.Get(parameter, "Label") ?? "";
@@ -197,7 +198,7 @@ public sealed class Plugin : BasePlugin
     // Selects each named category, or every category in app order, and yields
     // it while it is selected; null means wait a frame. A name that matches no
     // single category adds a message to `errors` and is skipped.
-    private static IEnumerable<Category?> Visit(string section, IEnumerable<string>? names, List<string>? errors = null)
+    private static IEnumerable<Category?> Visit(string section, IEnumerable<string>? names, List<string> errors)
     {
         object[]? categories = null;
         foreach (var step in Enter(section))
@@ -210,8 +211,8 @@ public sealed class Plugin : BasePlugin
         {
             var found = categories!.Where(value => Name(value) == name).ToArray();
             if (found.Length == 1) selected.Add(found[0]);
-            else if (found.Length == 0) errors!.Add($"{section}/{name}: unknown category; list them first");
-            else errors!.Add($"{section}/{name}: {found.Length} categories have this name; it cannot be selected by name");
+            else if (found.Length == 0) errors.Add($"{section}/{name}: unknown category; list them first");
+            else errors.Add($"{section}/{name}: {found.Length} categories have this name; it cannot be selected by name");
         }
         foreach (var category in selected)
         {
@@ -233,7 +234,7 @@ public sealed class Plugin : BasePlugin
 
     // Resolves each wanted value to its parameter and checks its bounds,
     // adding a message to `errors` for each value it cannot set (R-EDIT-3).
-    private static List<(object Parameter, float Target, string Path)> Match(string section, Category category, CategoryEdit edit, List<string> errors)
+    private static List<(object Parameter, float Value, string Path)> Match(string section, Category category, CategoryEdit edit, List<string> errors)
     {
         var matched = new List<(object, float, string)>();
         foreach (var wanted in edit.Values)
@@ -275,13 +276,12 @@ public sealed class Plugin : BasePlugin
             group => group.Count() == 1 ? (object)Read(group.First()) : group.Select(Read).ToArray());
 
     // Visits each edited category with the values it resolved; null means wait a frame.
-    private static IEnumerable<(string Section, Category Category, List<(object Parameter, float Target, string Path)> Matched)?> Targets(
-        Dictionary<string, CategoryEdit[]> edits, List<string> errors)
+    private static IEnumerable<Target?> Targets(Dictionary<string, CategoryEdit[]> edits, List<string> errors)
     {
         foreach (var section in Sections.Where(section => edits[section].Length > 0))
             foreach (var category in Visit(section, edits[section].Select(edit => edit.Name), errors))
                 yield return category == null ? null
-                    : (section, category, Match(section, category, edits[section].Single(edit => edit.Name == category.Name), errors));
+                    : new Target(section, category, Match(section, category, edits[section].Single(edit => edit.Name == category.Name), errors));
     }
 
     private static IEnumerable<bool> Apply(Request request)
@@ -339,8 +339,8 @@ public sealed class Plugin : BasePlugin
             var seen = new HashSet<string>();
             // Categories share parameters by label; list each under the first category
             // that has it, and fail if a later copy disagrees.
-            var listed = new Dictionary<string, object>();
-            foreach (var category in Visit(section, null))
+            var listed = new Dictionary<string, (string Category, object Value)>();
+            foreach (var category in Visit(section, null, new List<string>()))
             {
                 if (category == null)
                 {
@@ -353,9 +353,14 @@ public sealed class Plugin : BasePlugin
                 var values = new Dictionary<string, object>();
                 foreach (var (label, value) in Values(category.Parameters))
                 {
-                    if (!listed.TryGetValue(label, out var first)) listed[label] = values[label] = value;
-                    else if (!Same(first, value))
-                        throw new InvalidOperationException($"{section}/{category.Name}/{label} differs from an earlier category's; categories no longer share it");
+                    if (!listed.TryGetValue(label, out var first))
+                    {
+                        listed[label] = (category.Name, value);
+                        values[label] = value;
+                    }
+                    else if (!Same(first.Value, value))
+                        throw new InvalidOperationException(
+                            $"{section}/{category.Name}/{label} differs from {section}/{first.Category}/{label}; they are not one shared parameter");
                 }
                 if (values.Count > 0) categories[category.Name] = values;
             }

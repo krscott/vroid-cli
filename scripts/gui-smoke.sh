@@ -11,8 +11,8 @@ usage() {
         '' \
         'Opens SOURCE in SESSION, dumps its template, edits one Body and two Face' \
         'parameters in one request, saves a copy, restarts, checks the saved' \
-        'values, and applies the original template. SESSION must be stopped and past its first-run' \
-        'dialogs. Set VROID_CLI to choose the vroid-cli binary.'
+        'values, and applies the original template. SESSION must be stopped and' \
+        'past its first-run dialogs. Set VROID_CLI to choose the vroid-cli binary.'
 }
 
 fatal_usage() {
@@ -117,18 +117,23 @@ for edit in "${edits[@]}"; do
     same "$actual" "${expected[$edit]}" || fatal "$label read back $actual after apply ${expected[$edit]}"
 done
 
-# One value above its maximum refuses the whole request.
+# A value above its maximum, an unknown parameter, and an unknown category
+# refuse the whole request, and each is reported.
 IFS='|' read -r section category label <<<"${edits[0]}"
 IFS='|' read -r other_section other_category other_label <<<"${edits[1]}"
 max=$(jq -cn --arg section "$section" --arg category "$category" \
     '{method: "parameters", section: $section, category: $category}' |
     vroid - | jq --arg label "$label" '.[] | select(.label == $label) | .max')
 refused=$(with_value "$section" "$category" "$label" "$(jq -n --argjson max "$max" '$max + 1')" <<<'{"method": "apply"}' |
-    with_value "$other_section" "$other_category" "$other_label" "$(pick "${expected[${edits[1]}]}")")
+    with_value "$other_section" "$other_category" "$other_label" "$(pick "${expected[${edits[1]}]}")" |
+    with_value "$other_section" "$other_category" 'No Such Parameter' 0 |
+    with_value "$other_section" 'No Such Category' 'Any Parameter' 0)
 if vroid "$refused" >/dev/null 2>"$out/bounds.err"; then
     fatal "apply above the maximum succeeded"
 fi
-grep -q 'outside .*Nothing changed' "$out/bounds.err" || fatal "unexpected bounds error: $(<"$out/bounds.err")"
+for reason in 'is outside' 'No Such Parameter: unknown parameter' 'No Such Category: unknown category' 'Nothing changed'; do
+    grep -qF "$reason" "$out/bounds.err" || fatal "refusal lacks '$reason': $(<"$out/bounds.err")"
+done
 for edit in "${edits[@]}"; do
     IFS='|' read -r section category label <<<"$edit"
     actual=$(value_of "$section" "$category" "$label")

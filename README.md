@@ -90,9 +90,10 @@ framewisp "$desktop" click X Y
 ## Recovery
 
 `vroid-cli NAME '{"method": "status"}'` reports whether the app runs, whether
-it is ready, any pending request, and unsaved changes (`bridge.modified`). Logs are in
-the session directory: `runner.log`, `installer.log`, `player.log`,
-`desktop/app.log`, and `wine/drive_c/VRoidStudio/BepInEx/LogOutput.log`.
+it is ready, any pending request, and unsaved changes (`bridge.modified`).
+Logs are in the session directory: `runner.log`, `installer.log`,
+`player.log`, `desktop/app.log`, and
+`wine/drive_c/VRoidStudio/BepInEx/LogOutput.log`.
 
 - **Timed-out request:** do not repeat it. It stays pending and blocks other
   commands until its result appears in `rpc/results/ID.json`. Restarting the
