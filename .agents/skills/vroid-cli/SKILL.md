@@ -29,6 +29,7 @@ vroid-cli alice '{"method": "apply", "Hair": {"Front": {"Main Color": "#FF8C00"}
 vroid-cli alice '{"method": "dump"}' > alice.json
 vroid-cli alice @alice.json
 vroid-cli alice '{"method": "save", "path": "./alice-v2.vroid"}'
+vroid-cli alice '{"method": "render", "path": "./alice-side.png", "view": "side"}'
 vroid-cli alice '{"method": "stop"}'
 ```
 
@@ -39,12 +40,12 @@ field and result.
 
 vroid-cli opens existing `.vroid` projects, reads and sets the numeric sliders
 in the Face and Body editors and the colour fields in the Face, Hairstyle, and
-Body editors, and saves projects. It can't yet change outfit colours, textures,
-hairstyles, outfits, accessories, or presets, create characters, render the
-character, or export VRM. To see the character, take a Framewisp screenshot of
-the private desktop that `status` reports as `desktop` (see First run); it
-shows the editor window. When a request needs anything vroid-cli can't do, do
-the parts it can and tell the user which parts you couldn't.
+Body editors, renders the character to PNG from the front, three-quarter,
+side, or back, and saves projects. It can't yet change outfit colours,
+textures, hairstyles, outfits, accessories, or presets, create characters, or
+export VRM. To see the character, use `render`, not screenshots of the editor
+window. When a request needs anything vroid-cli can't do, do the parts it can
+and tell the user which parts you couldn't.
 
 Face "Ear" parameters shape human ears at the sides of the head, not animal
 ears, which vroid-cli can't add yet.
@@ -77,7 +78,7 @@ ears, which vroid-cli can't add yet.
   from a template made in another project.
 - `categories`, `parameters`, `dump`, and `apply` change which section VRoid's
   editor shows, and all but `categories` change its category, even when they
-  change no value. For comparable screenshots, run the same `parameters`
+  change no value. For comparable editor screenshots, run the same `parameters`
   request before each one.
 - Categories share parameters: "Eye Size X" in Face Sets and in Eyeliner is
   one value. An `apply` request may name each label in only one category per
@@ -90,6 +91,13 @@ ears, which vroid-cli can't add yet.
   directory, not the request file's.
 - `save` needs a new `.vroid` path in an existing directory. It never
   overwrites. Choose a new versioned filename.
+- `render` writes a new `.png` of the open character, without changing it:
+  `view` is `front`, `three_quarter`, `side`, or `back`; `three_quarter` and
+  `side` show its left side. `frame: "head"` fits everything above the neck,
+  so a front head view is a face close-up and a side head view shows ear
+  shape. Views are orthographic, and body views at one `width` and `height`
+  share their scale, so they compare directly with a reference turnaround.
+  `width` and `height` default to 1024.
 - Opening another project requires `save`, `stop`, and `launch` first.
 - `stop` refuses while there are unsaved changes or a pending request. Save
   or wait first; send `{"method": "stop", "force": true}` only when discarding

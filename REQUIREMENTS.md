@@ -196,3 +196,30 @@ investigate or ask; never invent a rationale.
   Rationale: Agents match colours against reference sheets and VRoid's own
   editor. A colour-space, rounding, or alpha mismatch would shift every colour
   without an error.
+
+## Views (VIEW)
+
+- **R-VIEW-1** [manual: `just gui-smoke` renders each view after an `apply`
+  and checks the image size, that its edges are background, and that it shows
+  the character] `render` writes a PNG of the open character at the requested
+  size, from the front, three-quarter, side, or back, framed to show the whole
+  character or its whole head on a plain background.
+
+  Rationale: Agents judge edits by comparing the character with reference
+  turnarounds. Screenshots of the app window include editor panels, cut off
+  the feet, and cannot show the side or back.
+
+- **R-VIEW-2** [manual: `just gui-smoke` checks that `dump`, `modified`, and
+  the Framewisp input log are unchanged by rendering] Rendering changes nothing
+  in the app: the project, its unsaved state, and the editor's view stay as
+  they were, and it sends no pointer or keyboard input.
+
+  Rationale: Agents render between edits to check them. A render that changed
+  the character, marked it unsaved, or moved the user's view would make an
+  inspection look like an edit.
+
+- **R-VIEW-3** [test] `render` refuses an existing destination and leaves it
+  unchanged. The destination never holds a partial image.
+
+  Rationale: The destination may be an earlier image an agent is comparing
+  against, and a reader that finds the file must be able to use it.

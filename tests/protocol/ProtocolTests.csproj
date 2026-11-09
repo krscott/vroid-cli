@@ -10,5 +10,6 @@
   <ItemGroup>
     <Compile Include="../../plugin/Bridge.cs" />
     <Compile Include="../../plugin/Colors.cs" />
+    <Compile Include="../../plugin/Framing.cs" />
   </ItemGroup>
 </Project>
