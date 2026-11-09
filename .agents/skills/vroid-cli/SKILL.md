@@ -10,10 +10,11 @@ edits characters through VRoid's internal methods. It sends no mouse or
 keyboard input and needs no OCR, MCP server, or account login. The user can keep
 using their computer.
 
-Get it once with `nix shell github:krscott/vroid-cli`, or use `vroid-cli`
-inside the project's `nix develop` shell. Keep that build for the whole
-session. It supports VRoid Studio 2.16.0
-on x86_64 Linux.
+Get it once with
+`nix shell github:krscott/vroid-cli github:krscott/vroid-cli#framewisp`, or
+use `vroid-cli` and `framewisp` inside the project's `nix develop` shell. Keep
+that build for the whole session. It supports VRoid Studio 2.16.0 on x86_64
+Linux.
 
 Every command is `vroid-cli SESSION REQUEST`. `REQUEST` is a JSON object,
 `@path` to read one from a file, or `-` to read stdin:
@@ -34,6 +35,20 @@ vroid-cli alice '{"method": "stop"}'
 The JSON Schema at the end of `vroid-cli --agent-skill` lists every request
 field and result.
 
+## Scope
+
+vroid-cli opens existing `.vroid` projects, reads and sets the numeric sliders
+in the Face and Body editors and the colour fields in the Face, Hairstyle, and
+Body editors, and saves projects. It can't yet change outfit colours, textures,
+hairstyles, outfits, accessories, or presets, create characters, render the
+character, or export VRM. To see the character, take a Framewisp screenshot of
+the private desktop that `status` reports as `desktop` (see First run); it
+shows the editor window. When a request needs anything vroid-cli can't do, do
+the parts it can and tell the user which parts you couldn't.
+
+Face "Ear" parameters shape human ears at the sides of the head, not animal
+ears, which vroid-cli can't add yet.
+
 ## Rules
 
 - Give each agent its own session name and use it on every command. A second
@@ -51,16 +66,19 @@ field and result.
   colours as `"#RRGGBB"` where `parameters` lists a colour. It checks every
   value before changing any; one bad value refuses the whole request. Its
   result's `undo` is an `apply` request that restores the previous values.
-- Colours are the hex VRoid's editor shows, without alpha. Face, Hair, and Body
-  have them; outfit colours are not supported. Hair's "Main Color" and
-  "Highlight Color" (under Front, Back, and the other hair parts) are one pair
-  for all hair; Base Hair has its own "Main Color".
+- Colours are the hex VRoid's editor shows, without alpha. Hair's "Main Color"
+  and "Highlight Color" (under Front, Back, and the other hair parts) are one
+  pair for all hair; Base Hair has its own "Main Color".
 - Some colours are shared: skin is one colour in Face Eyelids, Nose, and Skin
   and Body Whole Body. Set each in one place per request; the error names the
   conflict. Set Irises "R Eye" and "L Eye" separately; "Both Eyes" is refused.
 - A colour that is unavailable for the project's selected item, such as Face
   Lips "Color" when the selected lips have no colour, is refused. Remove it
   from a template made in another project.
+- `categories`, `parameters`, `dump`, and `apply` change which section VRoid's
+  editor shows, and all but `categories` change its category, even when they
+  change no value. For comparable screenshots, run the same `parameters`
+  request before each one.
 - Categories share parameters: "Eye Size X" in Face Sets and in Eyeliner is
   one value. An `apply` request may name each label in only one category per
   section.
