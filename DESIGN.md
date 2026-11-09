@@ -359,8 +359,8 @@ errors (R-CLI-2).
 
 `scripts/gui-smoke.sh`, run by `just gui-smoke`, drives a real session through
 open, dump, numeric and colour edits, refusal, save, rendering every view,
-restart, reopen, and reapplying the first dump, and checks the Framewisp input
-log. It saves editor screenshots before and after the edits. It decodes each
+restart, reopen with a read-back of every edited number and colour (R-EDIT-1),
+and reapplying the first dump, and checks the Framewisp input log. It saves editor screenshots before and after the edits. It decodes each
 render with the Python standard library to check its size and framing, and
 compares `dump` and an editor screenshot before and after rendering. It needs
 graphics access and a session whose first-run dialogs are complete.

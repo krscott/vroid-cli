@@ -108,6 +108,23 @@ screenshot() {
     framewisp "$(vroid '{"method": "status"}' | jq -r .desktop)" screenshot "$1" >/dev/null
 }
 
+# Screenshot once the editor stops animating, such as its tab underline after
+# a request switches sections: two consecutive screenshots must match.
+settled_screenshot() {
+    local attempt
+    screenshot "$1"
+    for attempt in {1..20}; do
+        sleep 0.25
+        screenshot "$1.next"
+        if cmp -s "$1" "$1.next"; then
+            rm "$1.next"
+            return
+        fi
+        mv "$1.next" "$1"
+    done
+    fatal "the editor kept changing after $attempt screenshots; see $1"
+}
+
 # Render one view: VIEW FRAME WIDTH HEIGHT PATH.
 render() {
     jq -cn --arg view "$1" --arg frame "$2" --argjson width "$3" --argjson height "$4" --arg path "$5" \
@@ -272,7 +289,7 @@ fi
 # Rendering shows the whole character (R-VIEW-1) and changes nothing in the
 # app: values, unsaved state, and the editor's view stay the same (R-VIEW-2).
 vroid '{"method": "dump"}' >"$out/before-render.json"
-screenshot "$out/before-render.png"
+settled_screenshot "$out/before-render.png"
 renders=(
     'front|body|512|1024'
     'three_quarter|body|512|1024'
@@ -297,7 +314,7 @@ cmp -s "$image" "$out/render-front-body.copy" || fatal "a refused render changed
 vroid '{"method": "dump"}' >"$out/after-render.json"
 cmp -s "$out/before-render.json" "$out/after-render.json" ||
     fatal "dump changed while rendering; see $out/after-render.json"
-screenshot "$out/after-render.png"
+settled_screenshot "$out/after-render.png"
 cmp -s "$out/before-render.png" "$out/after-render.png" ||
     fatal "the editor's view changed while rendering; compare $out/before-render.png and $out/after-render.png"
 inputs_after=$(input_events)
@@ -317,6 +334,8 @@ for leftover in "${leftovers[@]}"; do
     [[ ! -e $leftover ]] || fatal "a failed render left $leftover"
 done
 jq -cn --arg path "$edited" '{method: "open", path: $path}' | vroid - >/dev/null
+# Every edited value, numbers and colours alike, reads back after the save,
+# restart, and reopen (R-EDIT-1).
 for edit in "${edits[@]}"; do
     IFS='|' read -r section category label <<<"$edit"
     actual=$(value_of "$section" "$category" "$label")

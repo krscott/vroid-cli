@@ -137,8 +137,9 @@ investigate or ask; never invent a rationale.
 ## Editing (EDIT)
 
 - **R-EDIT-1** [manual: run `just gui-smoke SESSION SOURCE.vroid` with an
-  editable project] A saved Face, Hair, or Body value, numeric or colour, reads
-  back unchanged after a full restart and reopen.
+  editable project; it saves at least one value of each kind `apply` can set]
+  Every value `apply` can set reads back unchanged after a save, a full restart
+  and a reopen.
 
   Rationale: Saved projects are the deliverable of an editing session.
 
