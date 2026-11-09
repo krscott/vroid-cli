@@ -1,6 +1,7 @@
 """Request and result models; the JSON Schema printed by --agent-skill comes from here."""
 
 import json
+import re
 from collections import Counter
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -19,6 +20,8 @@ from pydantic import (
 )
 
 Section = Literal["Face", "Body"]
+SESSION_NAME = r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}"
+SESSION_NAME_RULE = "session names are 1-64 letters, digits, '_' or '-'"
 
 
 def one_error(value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
@@ -77,6 +80,23 @@ class Stop(Model):
     force: bool = Field(
         False, description="stop despite unsaved changes or a pending request"
     )
+
+
+class Copy(Model):
+    """Create this new session from a stopped session's installation.
+
+    The copy keeps the source's accepted terms and nothing from its runs.
+    """
+
+    method: Literal["copy"]
+    source: str = Field(description="a stopped session whose installation is ready")
+
+    @field_validator("source")
+    @classmethod
+    def session_name(cls, value: str) -> str:
+        if not re.fullmatch(SESSION_NAME, value):
+            raise ValueError(SESSION_NAME_RULE)
+        return value
 
 
 class Open(Model):
@@ -159,7 +179,16 @@ class Save(Model):
 
 
 Request = Annotated[
-    Launch | Status | Stop | Open | Categories | Parameters | Dump | Apply | Save,
+    Launch
+    | Status
+    | Stop
+    | Copy
+    | Open
+    | Categories
+    | Parameters
+    | Dump
+    | Apply
+    | Save,
     Field(discriminator="method"),
 ]
 BridgeRequest = Open | Categories | Parameters | Dump | Apply | Save
@@ -207,6 +236,7 @@ RESULTS: dict[str, TypeAdapter[Any]] = {
     "launch": TypeAdapter(SessionStatus),
     "status": TypeAdapter(SessionStatus),
     "stop": TypeAdapter(Stopped),
+    "copy": TypeAdapter(SessionStatus),
     "open": TypeAdapter(Opened),
     "categories": TypeAdapter(list[str]),
     "parameters": TypeAdapter(list[Parameter]),

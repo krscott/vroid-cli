@@ -79,7 +79,8 @@ main view model on VRoid's welcome screen, before the user accepts the terms.
 VRoid records acceptance as `<AllAgreementsAreAccepted>Yes` in
 `wine/drive_c/users/*/AppData/LocalLow/pixiv/VRoid Studio/preferences/editoroption.xml`.
 `launch` and every request command fail with instructions while that is missing,
-and `status` reports it as `terms_accepted` (R-SES-8). An older heartbeat
+and `status` reports it as `terms_accepted` (R-SES-8). A copied session keeps
+the file, and with it the acceptance. An older heartbeat
 can look fresh for a few seconds after the previous app exits. The wait fails
 early if the runner exits. On timeout the app keeps starting; running `launch`
 again resumes the wait. A bridge reporting another protocol version fails with
@@ -94,6 +95,37 @@ testing, and NVIDIA-only hosts are unvalidated.
 `request.json` exists, unless `force` is true (R-SES-4). It then runs `framewisp
 DESKTOP stop`, which waits for the app and compositor to exit. For an exited
 app it waits for the runner to finish. A stopped desktop is already stopped.
+
+## Copying sessions
+
+`vroid-cli NEW '{"method": "copy", "source": "BASE"}'` creates `NEW` from
+`BASE` without installing VRoid again (R-SES-9). It refuses an existing `NEW`
+first. Then, holding `BASE`'s lock for the whole copy (R-SES-1), it refuses a
+`BASE` that is not stopped, has `rpc/request.json`, or lacks `wine/` or
+`installed`.
+
+Only `wine/` and `installed` are copied, into a staging directory
+`ROOT/.copy-NEW-*` beside the destination, with `cp -a --reflink=auto`, which
+clones extents where the filesystem supports it and copies otherwise.
+`create_state` then adds a new `.gitignore` and an empty `rpc/results/`. RPC
+files, `desktop/`, logs, and anything else in the session directory stay
+behind (R-SES-11). After `sync --file-system`, the staging directory is renamed
+to `ROOT/NEW` and `ROOT` is fsynced. `rename` refuses a nonempty destination,
+so a session created meanwhile is reported, not replaced. The name therefore
+appears only complete (R-SES-10). An error, or SIGTERM, which is raised as an
+error during the copy, removes the staging directory; after SIGKILL or a crash
+it remains. No command reads `.copy-*` entries, which are never valid session
+names, and they are safe to delete.
+
+A prefix survives the move: `dosdevices/c:` is relative and `z:` is `/`, the
+registry names only `C:` paths, and the launcher derives every session path
+from `VROID_SESSION_DIR`. The prefix's user directory is named after the Unix
+user, so copies are for the same user. VRoid's recent-file list in `LocalLow`
+keeps the source's paths. A stopped desktop has no Wine processes: Framewisp's
+subreaper kills every descendant, including `wineserver`, before removing
+`session.json`, and leaves its ownership journal otherwise.
+
+## Launcher
 
 `scripts/vroid-studio.sh` runs inside the private desktop:
 
@@ -239,7 +271,8 @@ enumerator.
 ## Command line
 
 `vroid-cli SESSION REQUEST` takes the request as JSON text, `@PATH`, or `-` for
-stdin. Every method is a request, so saved requests work in any session.
+stdin. Every method is a request, so saved requests work in any session;
+`copy` names its source in the request and creates `SESSION`.
 `vroid_cli/schema.py` defines each request as a pydantic model with
 `strict=True`, `extra="forbid"`, and `allow_inf_nan=False`, discriminated on
 `method`. pydantic's defaults would accept `NaN`, coerce `"0.5"`, and drop

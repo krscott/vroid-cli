@@ -1,21 +1,14 @@
 """Exercise the in-desktop launcher with a stand-in Wine."""
 
+import json
 import os
 import subprocess
 import sys
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 LAUNCHER = Path(__file__).resolve().parent.parent / "scripts/vroid-studio.sh"
-
-
-@pytest.fixture
-def writable(tmp_path: Path) -> Iterator[Path]:
-    yield tmp_path
-    for path in tmp_path.rglob("*"):
-        path.chmod(path.stat().st_mode | 0o700)
 
 
 def launch(
@@ -24,7 +17,13 @@ def launch(
     binary = tmp_path / "bin"
     binary.mkdir(exist_ok=True)
     wine = binary / "wine"
-    wine.write_text(f"#!{sys.executable}\n")
+    # Logs each call's arguments and RPC directory.
+    wine.write_text(
+        f"#!{sys.executable}\nimport json, os, sys\n"
+        f"with open({str(tmp_path / 'wine.log')!r}, 'a') as log:\n"
+        "    print(json.dumps([os.environ.get('VROID_BRIDGE_DIR'), *sys.argv[1:]]), "
+        "file=log)\n"
+    )
     wine.chmod(0o755)
     return subprocess.run(
         ["bash", str(LAUNCHER)],
@@ -112,3 +111,52 @@ def test_incomplete_installation_is_not_repeated(writable: Path) -> None:
     assert result.returncode == 1
     assert "Incomplete installation" in result.stderr
     assert list((session / "wine").iterdir()) == []
+
+
+def test_copied_session_launches_without_installing(writable: Path) -> None:
+    # R-SES-9
+    state = writable / "state"
+    source = state / "base"
+    app = source / "wine/drive_c/VRoidStudio"
+    app.mkdir(parents=True)
+    (app / "VRoidStudio.exe").touch()
+    (source / "installed").touch()
+    bundle = store_bundle(writable / "bundle", "1")
+    assert launch(writable, source, bundle).returncode == 0
+    copied = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "vroid_cli",
+            "copy",
+            '{"method":"copy","source":"base"}',
+        ],
+        cwd=LAUNCHER.parent.parent,
+        env=os.environ | {"VROID_STATE_DIR": str(state)},
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert copied.returncode == 0, copied.stderr
+    (writable / "wine.log").unlink()
+    copy = state / "copy"
+    launched = launch(writable, copy, bundle)
+    assert launched.returncode == 0, launched.stderr
+    calls = [
+        json.loads(line) for line in (writable / "wine.log").read_text().splitlines()
+    ]
+    assert calls == [
+        [
+            f"Z:{copy}/rpc",
+            f"{copy}/wine/drive_c/VRoidStudio/VRoidStudio.exe",
+            "-screen-width",
+            "2560",
+            "-screen-height",
+            "1440",
+            "-screen-fullscreen",
+            "0",
+            "-logFile",
+            f"Z:{copy}/player.log",
+        ]
+    ]
+    assert (copy / "wine/drive_c/VRoidStudio/winhttp.dll").read_text() == "1"

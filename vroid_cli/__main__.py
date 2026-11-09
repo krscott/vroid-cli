@@ -65,6 +65,9 @@ def run(session: sessions.Session, request: schema.Request) -> Any:
             return sessions.summary(session)
         case schema.Stop():
             return sessions.stop(session, force=request.force)
+        case schema.Copy():
+            source = sessions.resolve(request.source, cwd=Path.cwd())
+            return sessions.copy(session, source=source)
         case schema.Open() | schema.Save():
             result: Any = sessions.request(
                 session, method=request.method, args=bridge_args(request)

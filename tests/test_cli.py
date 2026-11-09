@@ -3,6 +3,8 @@
 import fcntl
 import json
 import os
+import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -552,3 +554,285 @@ def test_status_of_a_new_session_is_one_json_value(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     status = json.loads(result.stdout)
     assert status["app_running"] is False and status["ready"] is False
+
+
+def installed_session(root: Path, name: str = "base") -> Path:
+    """An installed, stopped session with records of earlier runs."""
+    session = root / "state" / name
+    app = session / "wine/drive_c/VRoidStudio"
+    app.mkdir(parents=True)
+    (app / "VRoidStudio.exe").write_bytes(b"exe")
+    preferences = session / PREFERENCES
+    preferences.mkdir(parents=True)
+    (preferences / "editoroption.xml").write_text(
+        "﻿<EditorOption><AllAgreementsAreAccepted>Yes"
+        "</AllAgreementsAreAccepted></EditorOption>",
+        encoding="utf-8",
+    )
+    (root / "outside").mkdir(exist_ok=True)
+    devices = session / "wine/dosdevices"
+    devices.mkdir()
+    (devices / "c:").symlink_to("../drive_c")
+    (devices / "z:").symlink_to(root / "outside")
+    # Earlier bridge installs copied the store's read-only modes.
+    (app / "dotnet").mkdir()
+    (app / "dotnet/runtime.dll").write_text("1")
+    (app / "dotnet/runtime.dll").chmod(0o444)
+    (app / "dotnet").chmod(0o555)
+    (session / "installed").touch()
+    (session / ".gitignore").write_text("*\n")
+    (session / "command.lock").touch()
+    (session / "rpc/results").mkdir(parents=True)
+    (session / "rpc/results/previous.json").write_text("{}")
+    (session / "rpc/request.invalid.json").write_text("{")
+    write_status(session / "rpc")
+    for log in ["runner.log", "installer.log", "player.log"]:
+        (session / log).write_text("earlier run\n")
+    (session / "desktop").mkdir()
+    (session / "desktop/app.log").write_text("earlier run\n")
+    (session / "smoke.X").mkdir()
+    (session / "smoke.X/edited.vroid").write_bytes(b"project")
+    return session
+
+
+def snapshot(root: Path) -> dict[str, tuple[int, str]]:
+    """Each entry's mode and its content or link target."""
+    entries: dict[str, tuple[int, str]] = {}
+    for path in sorted(root.rglob("*")):
+        mode = path.lstat().st_mode
+        if path.is_symlink():
+            content = os.readlink(path)
+        elif path.is_file():
+            content = path.read_bytes().hex()
+        else:
+            content = ""
+        entries[str(path.relative_to(root))] = (mode, content)
+    return entries
+
+
+def copy_session(
+    tmp_path: Path, source: str = "base", env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    request = json.dumps({"method": "copy", "source": source})
+    return run_cli(tmp_path, "copy", request, env=env)
+
+
+def staged(tmp_path: Path) -> list[Path]:
+    return list((tmp_path / "state").glob(".copy-*"))
+
+
+def test_copy_carries_only_the_installation(writable: Path) -> None:
+    # R-SES-11, R-SES-8, R-SES-3
+    source = installed_session(writable)
+    before = snapshot(source)
+    result = copy_session(writable)
+    assert result.returncode == 0, result.stderr
+    status = json.loads(result.stdout)
+    assert status["session"] == "copy"
+    assert (status["terms_accepted"], status["app_running"]) == (True, False)
+    assert (status["pending_request"], status["bridge"]) == (False, None)
+    copy = writable / "state/copy"
+    assert snapshot(copy / "wine") == snapshot(source / "wine")
+    assert sorted(path.name for path in copy.iterdir()) == [
+        ".gitignore",
+        "installed",
+        "rpc",
+        "wine",
+    ]
+    assert (copy / ".gitignore").read_text() == "*\n"
+    assert [path.name for path in (copy / "rpc").iterdir()] == ["results"]
+    assert list((copy / "rpc/results").iterdir()) == []
+    assert snapshot(source) == before
+    assert staged(writable) == []
+
+
+def make_running(source: Path) -> None:
+    (source / "desktop/session.json").write_text("{}")
+
+
+def make_exited(source: Path) -> None:
+    (source / "desktop/session.json").write_text("{}")
+    (source / "desktop/app-exit.json").write_text("{}")
+
+
+def make_abandoned(source: Path) -> None:
+    (source / "desktop/.headless-owner.json").write_text("{}")
+
+
+def make_pending(source: Path) -> None:
+    (source / "rpc/request.json").write_text("{}")
+
+
+def make_uninstalled(source: Path) -> None:
+    (source / "installed").unlink()
+
+
+def make_prefixless(source: Path) -> None:
+    subprocess.run(["chmod", "-R", "u+w", str(source / "wine")], check=True)
+    subprocess.run(["rm", "-r", str(source / "wine")], check=True)
+
+
+def make_destination(source: Path) -> None:
+    (source.parent / "copy").mkdir()
+    (source.parent / "copy/work.vroid").write_bytes(b"another agent's work")
+
+
+@pytest.mark.parametrize(
+    ("prepare", "source_name", "reason"),
+    [
+        (make_running, "base", "Session 'base' is running"),
+        (make_exited, "base", "Session 'base' is running"),
+        (make_abandoned, "base", "recover"),
+        (make_pending, "base", "pending request. Launch it"),
+        (make_uninstalled, "base", "no complete installation. Launch it"),
+        (make_prefixless, "base", "no complete installation. Launch it"),
+        (None, "missing", "Session 'missing' does not exist"),
+        (make_destination, "base", "Session 'copy' already exists"),
+    ],
+)
+def test_copy_refuses_without_effect(
+    writable: Path,
+    prepare: Callable[[Path], None] | None,
+    source_name: str,
+    reason: str,
+) -> None:
+    # R-SES-9
+    source = installed_session(writable)
+    if prepare:
+        prepare(source)
+    before = snapshot(writable / "state")
+    env = fake_framewisp(writable, "print(json.dumps({'app': {'running': True}}))")
+    result = copy_session(writable, source_name, env=env)
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert reason in result.stderr
+    assert snapshot(writable / "state") == before
+
+
+def test_copy_rejects_an_invalid_source_name(tmp_path: Path) -> None:
+    # R-CLI-3
+    result = copy_session(tmp_path, "../base")
+    assert result.returncode == 2
+    assert "source: session names are 1-64 letters" in result.stderr
+    assert not (tmp_path / "state").exists()
+
+
+def stand_in_cp(tmp_path: Path, script: str) -> dict[str, str]:
+    """Put a stand-in cp on PATH. `script` sees argv as `args` and may call `real()`."""
+    real = shutil.which("cp")
+    assert real is not None
+    binary = tmp_path / "bin"
+    binary.mkdir(exist_ok=True)
+    program = binary / "cp"
+    program.write_text(
+        f"#!{sys.executable}\nimport fcntl, os, sys, time\nfrom pathlib import Path\n"
+        f"args = sys.argv[1:]\ndef real(): os.execv({real!r}, [{real!r}, *args])\n"
+        f"{script}\n"
+    )
+    program.chmod(0o755)
+    return {"PATH": f"{binary}{os.pathsep}{os.environ['PATH']}"}
+
+
+def test_copy_holds_the_source_lock(writable: Path) -> None:
+    # R-SES-1
+    source = installed_session(writable)
+    with (source / "command.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        refused = copy_session(writable)
+    assert refused.returncode == 1
+    assert "Another command controls session 'base'" in refused.stderr
+    assert not (writable / "state/copy").exists()
+    assert staged(writable) == []
+
+    probe = writable / "probe"
+    env = stand_in_cp(
+        writable,
+        f"with open({str(source / 'command.lock')!r}, 'a') as lock:\n"
+        "    try:\n"
+        "        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+        f"        Path({str(probe)!r}).write_text('free')\n"
+        "    except BlockingIOError:\n"
+        f"        Path({str(probe)!r}).write_text('held')\n"
+        "real()",
+    )
+    copied = copy_session(writable, env=env)
+    assert copied.returncode == 0, copied.stderr
+    assert probe.read_text() == "held"
+
+
+PARTIAL_COPY = (
+    "Path(args[-1], 'wine').mkdir()\nPath(args[-1], 'wine/partial').touch()\n"
+)
+
+
+def test_failed_copy_leaves_no_session(writable: Path) -> None:
+    # R-SES-10
+    installed_session(writable)
+    env = stand_in_cp(
+        writable,
+        PARTIAL_COPY + "print('cp: No space left on device', file=sys.stderr)\n"
+        "sys.exit(1)",
+    )
+    result = copy_session(writable, env=env)
+    assert result.returncode == 1
+    assert "No space left on device" in result.stderr
+    assert "nothing was created" in result.stderr
+    assert not (writable / "state/copy").exists()
+    assert staged(writable) == []
+
+
+@pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGKILL])
+def test_interrupted_copy_leaves_no_session(writable: Path, signum: int) -> None:
+    # R-SES-10
+    installed_session(writable)
+    started = writable / "started"
+    env = stand_in_cp(
+        writable, PARTIAL_COPY + f"Path({str(started)!r}).touch()\ntime.sleep(60)"
+    )
+    environment = {k: v for k, v in os.environ.items() if k != "VROID_STATE_DIR"}
+    environment |= env | {
+        "VROID_STATE_DIR": str(writable / "state"),
+        "PYTHONPATH": os.pathsep.join(
+            filter(None, [str(SOURCE), os.environ.get("PYTHONPATH")])
+        ),
+    }
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "vroid_cli",
+            "copy",
+            '{"method":"copy","source":"base"}',
+        ],
+        cwd=writable,
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        deadline = time.monotonic() + 10
+        while not started.exists():
+            assert time.monotonic() < deadline, process.stderr
+            time.sleep(0.05)
+        os.kill(process.pid, signum)
+        stdout, stderr = process.communicate(timeout=10)
+        assert not (writable / "state/copy").exists()
+        if signum == signal.SIGTERM:
+            assert process.returncode == 1
+            assert stdout == ""
+            assert "Interrupted by SIGTERM; copy discarded" in stderr
+            assert staged(writable) == []
+            # The stand-in cp was stopped with the CLI.
+            with pytest.raises(ProcessLookupError):
+                os.killpg(process.pid, 0)
+    finally:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait()
+    # A leftover staging directory never blocks another copy.
+    retried = copy_session(writable)
+    assert retried.returncode == 0, retried.stderr

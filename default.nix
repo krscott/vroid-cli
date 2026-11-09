@@ -45,6 +45,7 @@ buildPythonApplication {
     "PATH"
     ":"
     (lib.makeBinPath [
+      coreutils
       framewisp
       vroid-studio
       git

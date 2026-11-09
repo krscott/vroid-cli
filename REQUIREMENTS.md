@@ -70,11 +70,38 @@ investigate or ask; never invent a rationale.
   characters.
 
 - **R-SES-8** [test] `launch` and edit commands fail with instructions until the
-  user has accepted VRoid's first-run terms in that session.
+  user has accepted VRoid's first-run terms in that session or in a session it
+  was copied from.
 
   Rationale: Accepting the terms is the user's decision, and vroid-cli never
-  accepts them. Edits made through internal methods could otherwise bypass
-  VRoid's own first-run flow.
+  accepts them. A copy keeps the acceptance the user gave for the installation
+  it copies, so parallel sessions do not each need the user. Edits made through
+  internal methods could otherwise bypass VRoid's own first-run flow.
+
+- **R-SES-9** [test] `copy` creates a new session from a stopped session whose
+  installation is complete, and launching the copy does not install VRoid
+  again. It refuses, without effect, a source that is running or has a pending
+  request, an incomplete installation, or an existing destination.
+
+  Rationale: Parallel agents and repeatable evals each need their own session
+  (R-SES-1), and a new installation takes 10 minutes or more. A running app can
+  change the prefix while it is copied. A pending request in a stopped session
+  has an unknown outcome (R-RPC-2) and must be resolved in its own session. An
+  incomplete installation would be copied broken (R-SES-5). The destination
+  may hold another agent's work.
+
+- **R-SES-10** [test] An interrupted `copy` leaves no destination session.
+
+  Rationale: A partial prefix that looked complete would fail later in
+  confusing ways, and one that looked incomplete would block the name
+  (R-SES-5).
+
+- **R-SES-11** [test] A copied session starts without the source's requests,
+  results, logs, or desktop state.
+
+  Rationale: These describe the source's app instances. In a copy they would
+  mislead diagnosis, and a copied desktop record would make the copy look
+  running or abandoned.
 
 ## Requests (RPC)
 

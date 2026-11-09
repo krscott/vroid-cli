@@ -37,6 +37,11 @@ field and result.
 
 - Give each agent its own session name and use it on every command. A second
   command on a busy session fails at once; wait and run it again.
+- To start a session without installing VRoid again, copy a stopped session
+  whose installation is ready and whose terms the user accepted:
+  `vroid-cli agent-2 '{"method": "copy", "source": "base"}'`. The base must
+  stay stopped while copies are made; never stop a session another agent is
+  using. Leftover `.copy-*` directories from a killed copy are safe to delete.
 - A successful command prints one JSON value on stdout. A failed command exits
   nonzero with the reason on stderr; exit 2 is a usage error, such as an
   invalid request or session name, and nothing ran.

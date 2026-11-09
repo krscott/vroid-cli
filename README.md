@@ -59,7 +59,15 @@ Categories share parameters ("Eye Size X" is in Face Sets, Eyes Sets, and
 Eyeliner), so `dump` lists each once, and a request may name each label in only
 one category per section.
 
-Use one session name per agent or task. Session state lives in `.vroid/NAME/`
+Use one session name per agent or task. To skip the installation and terms
+dialogs for each one, prepare a base session once, stop it, and copy it:
+
+```sh
+vroid-cli agent-1 '{"method": "copy", "source": "demo"}'
+```
+
+A copy holds the base's installation and accepted terms but nothing from its
+runs, and uses reflinks where the filesystem supports them. Session state lives in `.vroid/NAME/`
 at the Git worktree root (the current directory outside Git), or under
 `VROID_STATE_DIR`. The state directory ignores itself in Git.
 
@@ -106,6 +114,8 @@ Logs are in the session directory: `runner.log`, `installer.log`,
   delete the session directory or use another session name.
 - **Unclean desktop shutdown:** run `framewisp ABSOLUTE/SESSION/desktop recover`
   as the error message says, then launch again.
+- **Interrupted copy:** it creates no session. A killed copy can leave a
+  `.copy-NAME-*` directory beside the sessions; delete it.
 - **Upgrades:** `launch` installs a new bridge only while the app is stopped. A
   running session keeps working with a newer CLI unless the file protocol
   changed; then save with the older build or stop and launch again.

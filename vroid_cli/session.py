@@ -1,23 +1,29 @@
 """Named sessions: state directories, controller lock, and app lifecycle."""
 
+import errno
 import fcntl
 import json
 import os
 import re
+import shutil
+import signal
 import subprocess
+import tempfile
 import time
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from . import rpc
+from .schema import SESSION_NAME, SESSION_NAME_RULE
 
-SESSION_NAME = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}")
 # Must match the player size in scripts/vroid-studio.sh.
 DISPLAY = ("2560", "1440")
+# The parts of a session that a copy carries (R-SES-11).
+INSTALLATION = ("wine", "installed")
 # Mesa render devices; automatic NVIDIA selection stalled the compositor.
 PREFERRED_GPU_VENDORS = {"0x1002", "0x8086"}
 TERMS_ACCEPTED = "<AllAgreementsAreAccepted>Yes</AllAgreementsAreAccepted>"
@@ -58,8 +64,8 @@ def state_root(cwd: Path) -> Path:
 
 
 def resolve(name: str, *, cwd: Path) -> Session:
-    if not SESSION_NAME.fullmatch(name):
-        raise ValueError("session names are 1-64 letters, digits, '_' or '-'")
+    if not re.fullmatch(SESSION_NAME, name):
+        raise ValueError(SESSION_NAME_RULE)
     return Session(name=name, directory=state_root(cwd) / name)
 
 
@@ -309,3 +315,115 @@ def request(session: Session, *, method: str, args: dict[str, Any]) -> Any:
         if not status.compatible:
             raise RuntimeError(incompatible())
         return rpc.submit(session.rpc, boot=status.boot, method=method, args=args)
+
+
+def copy(session: Session, *, source: Session) -> dict[str, Any]:
+    """Create `session` from a stopped, installed `source` (R-SES-9).
+
+    The copy is staged under a name that is never a session and renamed into
+    place only once complete and synced, so an interruption leaves no
+    destination session (R-SES-10).
+    """
+    if session.directory.exists() or session.directory.is_symlink():
+        raise RuntimeError(
+            f"Session {session.name!r} already exists; choose another name"
+        )
+    with controller(source):
+        if desktop_state(source) is not Desktop.STOPPED:
+            raise RuntimeError(
+                f"Session {source.name!r} is running. Copy it once it has stopped; "
+                "stop it only if nothing else is using it"
+            )
+        if (source.rpc / "request.json").exists():
+            raise RuntimeError(
+                f"Session {source.name!r} stopped with a pending request. Launch it "
+                "to record the request's outcome, then stop it and copy again"
+            )
+        if not all((source.directory / entry).exists() for entry in INSTALLATION):
+            raise RuntimeError(
+                f"Session {source.name!r} has no complete installation. Launch it "
+                "until it is ready, then stop it and copy again"
+            )
+        root = session.directory.parent
+        staging: Path | None = None
+        previous = signal.signal(signal.SIGTERM, interrupted)
+        try:
+            staging = Path(tempfile.mkdtemp(prefix=f".copy-{session.name}-", dir=root))
+            populate(staging, source=source)
+            try:
+                staging.rename(session.directory)
+            except OSError as error:
+                if error.errno in {errno.EEXIST, errno.ENOTEMPTY, errno.ENOTDIR}:
+                    raise RuntimeError(
+                        f"Session {session.name!r} was created during the copy; "
+                        "choose another name"
+                    ) from None
+                raise
+        finally:
+            signal.signal(signal.SIGTERM, previous)
+            if staging is not None:
+                discard(staging)
+        directory = os.open(root, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    return summary(session)
+
+
+def interrupted(signum: int, _frame: object) -> NoReturn:
+    raise RuntimeError(f"Interrupted by {signal.Signals(signum).name}; copy discarded")
+
+
+def populate(staging: Path, *, source: Session) -> None:
+    # --reflink=auto clones extents where the filesystem can and copies
+    # otherwise; -a keeps Wine's dosdevices symlinks, modes, and timestamps.
+    copied = subprocess.run(
+        [
+            "cp",
+            "-a",
+            "--reflink=auto",
+            "--",
+            *(str(source.directory / entry) for entry in INSTALLATION),
+            str(staging),
+        ],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if copied.returncode:
+        raise RuntimeError(
+            f"Copying session {source.name!r} failed; nothing was created:\n"
+            f"{copied.stderr.strip()}"
+        )
+    create_state(Session(name=staging.name, directory=staging))
+    # The rename must not become durable before the data it publishes.
+    synced = subprocess.run(
+        ["sync", "--file-system", str(staging)],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if synced.returncode:
+        raise RuntimeError(
+            f"Syncing the copy failed; nothing was created:\n{synced.stderr.strip()}"
+        )
+
+
+def discard(path: Path) -> None:
+    """Remove a staged copy, including read-only directories from old bridges."""
+
+    def writable(
+        function: Callable[[str], object], name: str, error: BaseException
+    ) -> None:
+        if not isinstance(error, PermissionError):
+            raise error
+        os.chmod(os.path.dirname(name), 0o700)
+        function(name)
+
+    if path.exists():
+        shutil.rmtree(path, onexc=writable)
