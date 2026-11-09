@@ -42,6 +42,41 @@ if [[ ! -f $marker || $(<"$marker") != "$VROID_BRIDGE_BUNDLE" ]]; then
     printf '%s\n' "$VROID_BRIDGE_BUNDLE" >"$marker"
 fi
 
+# R-SES-8: VRoid skips its first-run welcome, terms, and tutorial dialogs when
+# its preferences record them as done, and fills in the other preferences on
+# start. VRoid writes the file only after acceptance, so an existing file is
+# never edited.
+shopt -u failglob
+shopt -s nullglob
+profiles=("$WINEPREFIX"/drive_c/users/*/AppData)
+shopt -u nullglob
+shopt -s failglob
+((${#profiles[@]} == 1)) || fatal "Expected one Wine user profile in $WINEPREFIX/drive_c/users; found ${#profiles[@]}. Inspect that directory, then delete $VROID_SESSION_DIR or use another session name."
+preferences="${profiles[0]}/LocalLow/pixiv/VRoid Studio/preferences/editoroption.xml"
+if [[ ! -e $preferences ]]; then
+    mkdir -p "${preferences%/*}"
+    {
+        printf '\xef\xbb\xbf' # VRoid writes UTF-8 with a byte order mark.
+        cat <<'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<EditorOption>
+  <Preference>
+    <AllAgreementsAreAccepted>Yes</AllAgreementsAreAccepted>
+    <UpdatedPrivacyPolicyAreAccepted>Yes</UpdatedPrivacyPolicyAreAccepted>
+    <tutorialIsRead>true</tutorialIsRead>
+  </Preference>
+</EditorOption>
+EOF
+    } >"$preferences.tmp"
+    mv "$preferences.tmp" "$preferences"
+else
+    saved=$(<"$preferences")
+    if [[ $saved != *'<AllAgreementsAreAccepted>Yes</AllAgreementsAreAccepted>'* ||
+        $saved != *'<UpdatedPrivacyPolicyAreAccepted>Yes</UpdatedPrivacyPolicyAreAccepted>'* ]]; then
+        fatal "VRoid's preferences in $preferences do not record its accepted terms. Delete that file to reset VRoid's preferences, then launch again."
+    fi
+fi
+
 export WINEDLLOVERRIDES='winhttp=n,b;mscoree,mshtml='
 export VROID_BRIDGE_DIR=Z:$VROID_SESSION_DIR/rpc
 # Interop generation runs out of managed memory without an explicit ceiling.

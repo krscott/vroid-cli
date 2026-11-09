@@ -69,12 +69,15 @@ investigate or ask; never invent a rationale.
   Rationale: Users keep working on their computer while agents edit
   characters.
 
-- **R-SES-8** [test] `launch` and edit commands fail with instructions until the
-  user has accepted VRoid's first-run terms in that session.
+- **R-SES-8** [test] `launch` never stops at VRoid's first-run welcome and terms
+  dialogs. It accepts VRoid's terms in every session it starts, including a
+  stopped session an earlier version left at those dialogs, and keeps VRoid's
+  other preferences.
 
-  Rationale: Accepting the terms is the user's decision, and vroid-cli never
-  accepts them. Edits made through internal methods could otherwise bypass
-  VRoid's own first-run flow.
+  Rationale: Agents launch sessions unattended, often in parallel and in evals,
+  and cannot stop to ask a person to click through dialogs. The README states
+  that using vroid-cli assumes the user has read and accepted VRoid Studio's
+  terms.
 
 ## Requests (RPC)
 

@@ -6,6 +6,12 @@ under Wine on a private [Framewisp](https://github.com/krscott/framewisp)
 display and changes characters through VRoid's internal methods. It uses no
 mouse or keyboard input, OCR, MCP server, or account login.
 
+> **Terms:** vroid-cli accepts VRoid Studio's first-run
+> [terms of use](https://policies.pixiv.net/en.html#vroidstudio) and
+> [privacy policy](https://policies.pixiv.net/en/privacy_policy.html) in every
+> session it launches. Using vroid-cli assumes you have read and accepted them,
+> and VRoid Studio's [guidelines](https://vroid.com/en/studio/guidelines).
+
 It opens existing `.vroid` projects, changes them, and saves them. The agent
 skill's [Scope](.agents/skills/vroid-cli/SKILL.md#scope) lists what it can do
 so far.
@@ -90,17 +96,6 @@ The first `launch` of a session installs VRoid into its own Wine prefix and
 generates app bindings. This can take 10 minutes or more. If `launch` times out,
 the app keeps starting; run `launch` again to keep waiting.
 
-VRoid then shows its welcome and terms dialogs once per session. vroid-cli never
-accepts them: `launch` and edit commands fail with instructions until you do.
-Read and accept them on the private desktop with Framewisp, then run `launch`
-again (if it still refuses, `stop` and `launch`):
-
-```sh
-desktop=$(vroid-cli demo '{"method": "status"}' | jq -r .desktop)
-framewisp "$desktop" screenshot /tmp/demo.png
-framewisp "$desktop" click X Y
-```
-
 ## Recovery
 
 `vroid-cli NAME '{"method": "status"}'` reports whether the app runs, whether
@@ -135,10 +130,10 @@ just check      # formatting, lint, type checks, nix flake check
 just gui-smoke SESSION SOURCE.vroid
 ```
 
-`just gui-smoke` needs graphics access and a session past its first-run
-dialogs. It runs the workflow above with a restart and checks the saved values
-and Framewisp's input log. See [DESIGN.md](DESIGN.md) for internals and
-[REQUIREMENTS.md](REQUIREMENTS.md) for the guarantees.
+`just gui-smoke` needs graphics access. It runs the workflow above with a
+restart and checks the saved values and Framewisp's input log. See
+[DESIGN.md](DESIGN.md) for internals and [REQUIREMENTS.md](REQUIREMENTS.md) for
+the guarantees.
 
 See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for third-party code and
 downloads.
