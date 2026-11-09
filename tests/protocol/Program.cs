@@ -1,5 +1,6 @@
-// Exercises plugin/Bridge.cs, the app side of the file protocol, and the
-// camera placement in plugin/Framing.cs, without Unity.
+// Exercises plugin/Bridge.cs, the app side of the file protocol, the colour
+// rules in plugin/Colors.cs, and the camera placement in plugin/Framing.cs,
+// without Unity.
 using System.Text.Json;
 using VroidBridge;
 
@@ -277,6 +278,99 @@ Test("unknown views and frames are refused", _ =>
         }
         catch (ArgumentException) { }
     }
+});
+
+ColorField Field(string path, string hex, params string[] keys) => new(path, keys.ToHashSet(), hex);
+
+void Throws(Action action, params string[] parts)
+{
+    try
+    {
+        action();
+    }
+    catch (InvalidOperationException error)
+    {
+        Check(parts.All(error.Message.Contains), error.Message);
+        return;
+    }
+    throw new Exception("did not throw");
+}
+
+// R-EDIT-8
+Test("every channel value round-trips through #RRGGBB as k/255", _ =>
+{
+    for (var k = 0; k < 256; k++)
+    {
+        // Blue is 255 - k, so the colour always differs from black.
+        var channels = Colors.Write("#000000", Colors.Normalize($"#{k:x2}{k:X2}{255 - k:x2}")!)!;
+        Check(channels[0] == k / 255f && channels[1] == k / 255f && channels[2] == (255 - k) / 255f, $"channel {k} drifted");
+        Check((int)Math.Round(channels[0] * 255) == k && (int)(channels[0] * 255) == k, $"channel {k} does not read back");
+    }
+    foreach (var bad in new[] { "#12345", "123456", "#1234567", "#12345678", "#GGGGGG", "#12345\n", "" })
+        Check(Colors.Normalize(bad) == null, $"accepted {bad}");
+    Check(Colors.Normalize("#faebde") == "#FAEBDE", "not normalized to uppercase");
+});
+
+// R-EDIT-7
+Test("a colour off the 1/255 grid dumps and reapplies without a write", _ =>
+{
+    // A stored channel such as 0.5 is off the grid; the dump holds the hex
+    // VRoid shows for it, H, and the field still reads H when it is reapplied.
+    var stored = Field("Face/Eyebrows/Color", "#808080", "Eyebrow:Overlay");
+    var dumped = Colors.Listed(new[] { stored }).Single();
+    Check(Colors.Write(stored.Hex, dumped.Hex) == null, "reapplying the dump writes the colour");
+    Check(Colors.Write(stored.Hex, "#808081") is { } changed && changed[2] == 129 / 255f, "a changed colour is not written");
+});
+
+// R-EDIT-7
+Test("a dump lists a shared colour once, under the first category", _ =>
+{
+    var fields = new[]
+    {
+        Field("Face/Irises/R Eye", "#9E6233", "Iris:Left"),
+        Field("Face/Irises/L Eye", "#2E8B57", "Iris:Right"),
+        Field("Face/Eyelids/Color", "#FAEBDE", "Eyelid:Main", "FaceSkin:Main", "BodySkin:Main"),
+        Field("Face/Skin/Color", "#FAEBDE", "FaceSkin:Main", "BodySkin:Main", "Eyelid:Main"),
+        Field("Face/Eyebrows/Color", "#8F5836", "Eyebrow:Overlay"),
+        Field("Body/Whole Body/Color", "#FAEBDE", "BodySkin:Main", "FaceSkin:Main", "Eyelid:Main"),
+    };
+    var listed = Colors.Listed(fields).Select(field => field.Path).ToArray();
+    Check(listed.SequenceEqual(new[] { "Face/Irises/R Eye", "Face/Irises/L Eye", "Face/Eyelids/Color", "Face/Eyebrows/Color" }),
+        $"listed {string.Join(", ", listed)}");
+});
+
+// R-EDIT-7
+Test("a dump fails rather than drop a colour or list one apply would refuse", _ =>
+{
+    Throws(() => Colors.Listed(new[]
+    {
+        Field("Face/Skin/Color", "#FAEBDE", "FaceSkin:Main", "BodySkin:Main"),
+        Field("Body/Whole Body/Color", "#FF0000", "BodySkin:Main", "FaceSkin:Main"),
+    }), "Body/Whole Body/Color", "Face/Skin/Color", "not one shared colour");
+    // A field writing a superset of another's keys, or part of them.
+    Throws(() => Colors.Listed(new[]
+    {
+        Field("Face/Irises/R Eye", "#9E6233", "Iris:Left"),
+        Field("Face/Other/Both", "#9E6233", "Iris:Left", "Iris:Right"),
+    }), "Face/Irises/R Eye and Face/Other/Both", "cannot hold both");
+    Throws(() => Colors.Listed(new[]
+    {
+        Field("Face/A/Color", "#000000", "k1", "k2"),
+        Field("Body/B/Color", "#000000", "k2", "k3"),
+    }), "Face/A/Color and Body/B/Color");
+});
+
+// R-EDIT-3
+Test("a request may set each shared colour in only one place", _ =>
+{
+    var skin = Field("Face/Skin/Color", "#FAEBDE", "FaceSkin:Main", "BodySkin:Main");
+    var body = Field("Body/Whole Body/Color", "#FAEBDE", "BodySkin:Main", "FaceSkin:Main");
+    var right = Field("Face/Irises/R Eye", "#9E6233", "Iris:Left");
+    var left = Field("Face/Irises/L Eye", "#9E6233", "Iris:Right");
+    var brows = Field("Face/Eyebrows/Color", "#8F5836", "Eyebrow:Overlay");
+    Check(Colors.Conflicts(new[] { skin, right, left, brows }).Count == 0, "disjoint colours conflict");
+    var shared = Colors.Conflicts(new[] { skin, body });
+    Check(shared.Single() == "Face/Skin/Color and Body/Whole Body/Color set the same colour; set it in one place", shared.Single());
 });
 
 return failures == 0 ? 0 : 1;
