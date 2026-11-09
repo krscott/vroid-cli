@@ -82,12 +82,8 @@ desktop failed before VRoid started, `app.log` may be from an earlier run, and
 the error shows the end of `runner.log`. A timeout also shows the end of
 BepInEx's log, or explains an interop mismatch it reports.
 
-BepInEx writes `bepinex/preloader.log` only when it fails to start, and then
-waits behind an error dialog nobody can close, so `launch` fails as soon as
-that file appears.
-
-It then waits for a bridge heartbeat that is fresh, was written after the
-launch began, and has found the main view model (R-SES-2). The bridge also
+`launch` then waits for a bridge heartbeat that is fresh, was written after
+the launch began, and has found the main view model (R-SES-2). The bridge also
 finds it on VRoid's welcome screen, so an app that an earlier version started
 and left at the first-run dialogs looks ready. When VRoid's preferences file
 (below) does not exist, `launch` fails with instructions to stop and launch,
@@ -98,6 +94,11 @@ early if the runner exits. On timeout the app keeps starting; running `launch`
 again resumes the wait. A bridge reporting another protocol version fails with
 instructions to stop and relaunch; bridges from other builds with the same
 protocol keep working until the next launch runs the new one.
+
+BepInEx writes `bepinex/preloader.log` only when it fails to start, and then
+waits behind an error dialog nobody can close, so `launch` fails as soon as
+that file appears. A timeout whose BepInEx log reports an interop mismatch
+fails with that explanation instead of advice to keep waiting.
 
 The compositor uses the first AMD or Intel render node unless
 `WLR_RENDER_DRM_DEVICE` is set. Automatic NVIDIA selection stalled during

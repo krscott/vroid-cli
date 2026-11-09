@@ -398,8 +398,9 @@ def test_launch_timeout_explains_the_bepinex_log(
     )
     result = invoke(tmp_path, "launch", timeout=2, env=env)
     assert result.returncode == 1
-    assert "not ready after 2s" in result.stderr
     assert shown in result.stderr
+    # Waiting longer never fixes a mismatch.
+    assert ("keeps starting" in result.stderr) == ("plugin failed" in log)
 
 
 def test_launch_fails_at_once_when_bepinex_fails_to_start(tmp_path: Path) -> None:

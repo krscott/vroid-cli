@@ -163,16 +163,20 @@ def bepinex_failed(session: Session) -> str | None:
 
 def bepinex_log(session: Session) -> str:
     """The end of BepInEx's log of the current app run (R-SES-11)."""
-    if failure := bepinex_failed(session):
+    if failure := bepinex_failed(session) or logged_mismatch(session):
         return failure
+    _, log = bepinex_logs(session)
+    return f"Last lines of {log}:\n{tail(log)}" if log.exists() else ""
+
+
+def logged_mismatch(session: Session) -> str | None:
+    """Explain a mismatch BepInEx logged in the current app run."""
     _, log = bepinex_logs(session)
     try:
         text = log.read_text(errors="replace")
     except OSError:
-        return ""
-    if OUTDATED_INTEROP in text:
-        return mismatch(log)
-    return f"Last lines of {log}:\n{tail(log)}"
+        return None
+    return mismatch(log) if OUTDATED_INTEROP in text else None
 
 
 def mismatch(log: Path) -> str:
@@ -305,6 +309,9 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
                 if desktop_state(session) is not Desktop.RUNNING:
                     raise RuntimeError(exited(session, since_ms=started_ms))
             if time.monotonic() >= deadline:
+                # A mismatch can keep the bridge from loading; waiting won't help.
+                if outdated := logged_mismatch(session):
+                    raise RuntimeError(outdated)
                 raise RuntimeError(
                     f"VRoid is not ready after {timeout_s:.0f}s and keeps starting. "
                     "Run launch again to keep waiting; inspect "
@@ -346,6 +353,9 @@ def stop(session: Session, *, force: bool) -> dict[str, Any]:
         deadline = time.monotonic() + 60
         while (session.desktop / "session.json").exists():
             if time.monotonic() >= deadline:
+                # A mismatch can keep the bridge from loading; waiting won't help.
+                if outdated := logged_mismatch(session):
+                    raise RuntimeError(outdated)
                 raise RuntimeError(abandoned(session))
             time.sleep(0.2)
         return {"session": session.name, "stopped": True}

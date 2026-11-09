@@ -44,13 +44,14 @@ let
       runHook preBuild
       ${headlessWine}
       # Any dialog would wait forever under the null driver.
+      status=0
       WINEDLLOVERRIDES='mscoree,mshtml=' timeout 600 wine "$src" \
         /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER \
-        '/DIR=C:\VRoidStudio' "/LOG=Z:$TMPDIR/installer.log"
+        '/DIR=C:\VRoidStudio' "/LOG=Z:$TMPDIR/installer.log" || status=$?
       wineserver -w
-      if [[ ! -f $WINEPREFIX/drive_c/VRoidStudio/VRoidStudio.exe ]]; then
+      if ((status)) || [[ ! -f $WINEPREFIX/drive_c/VRoidStudio/VRoidStudio.exe ]]; then
         cat "$TMPDIR/installer.log" || true
-        echo "The VRoid installer did not create VRoidStudio.exe" >&2
+        echo "The VRoid installer exited with status $status (124: timed out) or did not create VRoidStudio.exe" >&2
         exit 1
       fi
       runHook postBuild
