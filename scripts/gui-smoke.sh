@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Drive a real session through edit, save, restart, reopen, and a template
-# round trip, checking R-EDIT-1, R-EDIT-3, R-EDIT-5, R-EDIT-6, and R-EDIT-7.
+# Drive a real session through edit, save, render, restart, reopen, and a
+# template round trip, checking R-EDIT-1, R-EDIT-3, R-EDIT-5, R-EDIT-6,
+# R-EDIT-7, R-VIEW-1, and R-VIEW-2.
 # Needs graphics access.
 set -euo pipefail
 shopt -s failglob
@@ -10,9 +11,10 @@ usage() {
         "Usage: $0 SESSION SOURCE.vroid" \
         '' \
         'Opens SOURCE in SESSION, dumps its template, edits one Body and two Face' \
-        'parameters in one request, saves a copy, restarts, checks the saved' \
-        'values, and applies the original template. SESSION must be stopped and' \
-        'past its first-run dialogs. Set VROID_CLI to choose the vroid-cli binary.'
+        'parameters in one request, saves a copy, renders each view, restarts,' \
+        'checks the saved values, and applies the original template. SESSION' \
+        'must be stopped and past its first-run dialogs. Set VROID_CLI to choose' \
+        'the vroid-cli binary.'
 }
 
 fatal_usage() {
@@ -37,7 +39,9 @@ session=$1
 source=$(realpath -- "$2")
 [[ -f $source ]] || fatal_usage "No such project: $2"
 cli=${VROID_CLI:-vroid-cli}
-command -v jq >/dev/null || fatal 'Missing required command: jq'
+for command in jq python3 framewisp cmp; do
+    command -v "$command" >/dev/null || fatal "Missing required command: $command"
+done
 
 vroid() {
     "$cli" "$session" "$1"
@@ -84,6 +88,80 @@ input_events() {
 
 rebuilt() {
     vroid '{"method": "status"}' | jq .bridge.rebuilt
+}
+
+modified() {
+    vroid '{"method": "status"}' | jq .bridge.modified
+}
+
+screenshot() {
+    framewisp "$(vroid '{"method": "status"}' | jq -r .desktop)" screenshot "$1" >/dev/null
+}
+
+# Render one view: VIEW FRAME WIDTH HEIGHT PATH.
+render() {
+    jq -cn --arg view "$1" --arg frame "$2" --argjson width "$3" --argjson height "$4" --arg path "$5" \
+        '{method: "render", view: $view, frame: $frame, width: $width, height: $height, path: $path}' |
+        vroid -
+}
+
+# Check a rendered PNG: PATH FRAME WIDTH HEIGHT. Its size must match, it must
+# show the character, and the edges that frame the character must be
+# background: every edge for a body; for a head, whose frame cuts through the
+# neck and may show the shoulders, the top and the upper three quarters of each
+# side, which hold the ears.
+check_image() {
+    python3 - "$@" <<'PY' || fatal "$1 is not a framed render; see above"
+import struct
+import sys
+import zlib
+
+path, frame, width, height = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+data = open(path, "rb").read()
+if data[:8] != b"\x89PNG\r\n\x1a\n":
+    sys.exit(f"{path}: not a PNG")
+chunks, at = {}, 8
+while at < len(data):
+    length, kind = struct.unpack(">I4s", data[at : at + 8])
+    chunks[kind] = chunks.get(kind, b"") + data[at + 8 : at + 8 + length]
+    at += 12 + length
+w, h, depth, colour, _, _, interlace = struct.unpack(">IIBBBBB", chunks[b"IHDR"])
+if (w, h) != (width, height):
+    sys.exit(f"{path}: {w}x{h}, expected {width}x{height}")
+if depth != 8 or colour not in (2, 6) or interlace:
+    sys.exit(f"{path}: unexpected PNG format {depth}/{colour}/{interlace}")
+step = 3 if colour == 2 else 4
+raw, stride = zlib.decompress(chunks[b"IDAT"]), w * step
+rows, previous = [], bytearray(stride)
+for y in range(h):
+    kind, line = raw[y * (stride + 1)], bytearray(raw[y * (stride + 1) + 1 : (y + 1) * (stride + 1)])
+    for x in range(stride):
+        left = line[x - step] if x >= step else 0
+        up, corner = previous[x], previous[x - step] if x >= step else 0
+        if kind == 1:
+            line[x] = (line[x] + left) & 255
+        elif kind == 2:
+            line[x] = (line[x] + up) & 255
+        elif kind == 3:
+            line[x] = (line[x] + (left + up) // 2) & 255
+        elif kind == 4:
+            p = left + up - corner
+            pa, pb, pc = abs(p - left), abs(p - up), abs(p - corner)
+            line[x] = (line[x] + (left if pa <= pb and pa <= pc else up if pb <= pc else corner)) & 255
+    rows.append([bytes(line[x : x + 3]) for x in range(0, stride, step)])
+    previous = line
+background = rows[0][0]
+sides = rows[: h * 3 // 4] if frame == "head" else rows
+edges = {"top": rows[0], "left": [r[0] for r in sides], "right": [r[-1] for r in sides]}
+if frame == "body":
+    edges["bottom"] = rows[-1]
+for name in edges:
+    if any(pixel != background for pixel in edges[name]):
+        sys.exit(f"{path}: the character touches the {name} edge")
+shown = sum(pixel != background for row in rows for pixel in row)
+if shown < w * h // 20:
+    sys.exit(f"{path}: only {shown} pixels show the character")
+PY
 }
 
 # Two edits share a category, so one request changes several of its values.
@@ -140,17 +218,63 @@ for edit in "${edits[@]}"; do
     same "$actual" "${expected[$edit]}" || fatal "$label changed to $actual after a refused apply"
 done
 
+# Rendering keeps unsaved changes unsaved (R-VIEW-2).
+render front body 64 128 "$out/unsaved.png" >/dev/null
+[[ $(modified) == true ]] || fatal "rendering cleared the unsaved state"
+
 save=$(jq -cn --arg path "$edited" '{method: "save", path: $path}')
 vroid "$save" >/dev/null
 if vroid "$save" >/dev/null 2>&1; then
     fatal "second save to $edited succeeded"
 fi
+
+# Rendering shows the whole character (R-VIEW-1) and changes nothing in the
+# app: values, unsaved state, and the editor's view stay the same (R-VIEW-2).
+vroid '{"method": "dump"}' >"$out/before-render.json"
+screenshot "$out/before-render.png"
+renders=(
+    'front|body|512|1024'
+    'three_quarter|body|512|1024'
+    'side|body|512|1024'
+    'back|body|512|1024'
+    'front|head|512|512'
+    'side|head|512|512'
+)
+for item in "${renders[@]}"; do
+    IFS='|' read -r view frame width height <<<"$item"
+    image=$out/render-$view-$frame.png
+    render "$view" "$frame" "$width" "$height" "$image" >/dev/null
+    check_image "$image" "$frame" "$width" "$height"
+done
+image=$out/render-front-body.png
+cp "$image" "$out/render-front-body.copy"
+if render front body 512 1024 "$image" >/dev/null 2>&1; then
+    fatal "second render to $image succeeded"
+fi
+cmp -s "$image" "$out/render-front-body.copy" || fatal "a refused render changed $image"
+[[ $(modified) == false ]] || fatal "rendering marked the project modified"
+vroid '{"method": "dump"}' >"$out/after-render.json"
+cmp -s "$out/before-render.json" "$out/after-render.json" ||
+    fatal "dump changed while rendering; see $out/after-render.json"
+screenshot "$out/after-render.png"
+cmp -s "$out/before-render.png" "$out/after-render.png" ||
+    fatal "the editor's view changed while rendering; compare $out/before-render.png and $out/after-render.png"
 inputs_after=$(input_events)
 ((inputs_after == inputs_before)) || fatal "input log grew from $inputs_before to $inputs_after events"
 
 vroid '{"method": "stop"}' >/dev/null
 vroid '{"method": "launch", "timeout": 1200}' >/dev/null
 inputs_before=$(input_events)
+if render front body 64 64 "$out/unopened.png" >/dev/null 2>"$out/unopened.err"; then
+    fatal "render without an open project succeeded"
+fi
+grep -qiF 'open a project' "$out/unopened.err" || fatal "render without a project: $(<"$out/unopened.err")"
+shopt -u failglob
+leftovers=("$out"/unopened.png "$out"/.vroid-render-*)
+shopt -s failglob
+for leftover in "${leftovers[@]}"; do
+    [[ ! -e $leftover ]] || fatal "a failed render left $leftover"
+done
 jq -cn --arg path "$edited" '{method: "open", path: $path}' | vroid - >/dev/null
 for edit in "${edits[@]}"; do
     IFS='|' read -r section category label <<<"$edit"

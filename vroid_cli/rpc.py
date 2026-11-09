@@ -18,6 +18,14 @@ ENGINE_TIMEOUT_MS = 90_000
 RESPONSE_MARGIN_S = 30.0
 
 
+class BridgeError(RuntimeError):
+    """The bridge ran a request and reported `error`."""
+
+    def __init__(self, method: str, error: str) -> None:
+        super().__init__(f"{method} failed: {error}")
+        self.error = error
+
+
 @dataclass(frozen=True, kw_only=True)
 class BridgeStatus:
     boot: str
@@ -106,5 +114,5 @@ def submit(rpc: Path, *, boot: str, method: str, args: dict[str, Any]) -> Any:
         raise RuntimeError(f"The app discarded the request without a result; see {rpc}")
     payload: dict[str, Any] = json.loads(response.read_text())
     if not payload["ok"]:
-        raise RuntimeError(f"{method} failed: {payload['error']}")
+        raise BridgeError(method, str(payload["error"]))
     return payload["result"]

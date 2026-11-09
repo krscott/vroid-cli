@@ -66,6 +66,22 @@ internal static class Reflect
         return candidates[0].Invoke(value, args);
     }
 
+    internal static object New(string type, params object[] args) =>
+        Activator.CreateInstance(Type(type), args)!;
+
+    internal static object? CallStatic(string type, string name, params object[] args)
+    {
+        var candidates = Type(type).GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Where(method => method.Name == name && !method.IsGenericMethodDefinition && method.GetParameters().Length == args.Length).ToArray();
+        if (candidates.Length != 1)
+            throw new InvalidOperationException($"Expected one static {type}.{name}/{args.Length}; found {candidates.Length}");
+        return candidates[0].Invoke(null, args);
+    }
+
+    internal static PropertyInfo StaticProperty(string type, string name) =>
+        Type(type).GetProperty(name, BindingFlags.Public | BindingFlags.Static)
+            ?? throw new InvalidOperationException($"Missing static property {type}.{name}");
+
     internal static IEnumerable<object> Items(object? value)
     {
         if (value == null) yield break;
