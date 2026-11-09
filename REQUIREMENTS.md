@@ -127,6 +127,13 @@ investigate or ask; never invent a rationale.
   Rationale: Callers must never mistake a partial or diagnostic output for a
   result.
 
+- **R-CLI-3** [test] A request with an unknown method or field, a value of the
+  wrong type, or a repeated key fails as a usage error before any session state
+  is touched.
+
+  Rationale: A misspelled option or coerced value would otherwise be ignored or
+  reinterpreted, and the agent would believe it took effect.
+
 ## Editing (EDIT)
 
 - **R-EDIT-1** [manual: run `just gui-smoke SESSION SOURCE.vroid` with an
@@ -135,17 +142,21 @@ investigate or ask; never invent a rationale.
 
   Rationale: Saved projects are the deliverable of an editing session.
 
-- **R-EDIT-2** [test] `set` rejects a value that is not finite before
+- **R-EDIT-2** [test] `apply` rejects a value that is not finite before
   contacting the app.
 
   Rationale: Non-finite values can corrupt a model without any visible error.
 
-- **R-EDIT-3** [manual: `just gui-smoke` sets a value above the maximum and
-  checks the error and the unchanged value] `set` rejects a value outside the
-  parameter's bounds and leaves the model unchanged.
+- **R-EDIT-3** [manual: `just gui-smoke` applies one valid value, one above its
+  maximum, an unknown parameter, and an unknown category, then checks the
+  error and that the values are unchanged] `apply` refuses a request in which
+  any value is outside its parameter's bounds, names a category or parameter
+  that is unknown or ambiguous, or gives the wrong number of values for a
+  label, and changes nothing.
 
   Rationale: VRoid's own controls never produce out-of-range values, so the
-  app's behaviour for them is unknown.
+  app's behaviour for them is unknown. A partly applied template leaves a
+  character that matches neither the old nor the new version.
 
 - **R-EDIT-4** [test] `save` refuses an existing destination and leaves it
   unchanged.
@@ -159,9 +170,16 @@ investigate or ask; never invent a rationale.
   Rationale: Synthetic input depends on the exact screen layout and fails
   silently when it changes.
 
-- **R-EDIT-6** [manual: `just gui-smoke` checks that each `set` returns after a
-  completed rebuild and that values read back after `open`] `open` and `set`
-  succeed only after the model has finished rebuilding with the result.
+- **R-EDIT-6** [manual: `just gui-smoke` checks that each `apply` returns after
+  a completed rebuild and that values read back after `open`] `open` and
+  `apply` succeed only after the model has finished rebuilding with the result.
 
   Rationale: Commands that run during a rebuild read stale values or save a
   half-rebuilt model.
+
+- **R-EDIT-7** [manual: `just gui-smoke` applies a template dumped before its
+  edits after a restart and compares a new dump with it] Applying `dump`
+  output reproduces every dumped value exactly, in any app instance.
+
+  Rationale: Agents save, diff, and reapply templates to reuse characters. A
+  template that drops or rounds values changes a character silently.

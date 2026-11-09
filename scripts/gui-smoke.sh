@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Drive a real session through edit, save, restart, and reopen, checking
-# R-EDIT-1, R-EDIT-3, R-EDIT-5, and R-EDIT-6. Needs graphics access.
+# Drive a real session through edit, save, restart, reopen, and a template
+# round trip, checking R-EDIT-1, R-EDIT-3, R-EDIT-5, R-EDIT-6, and R-EDIT-7.
+# Needs graphics access.
 set -euo pipefail
 shopt -s failglob
 
@@ -8,8 +9,9 @@ usage() {
     printf '%s\n' \
         "Usage: $0 SESSION SOURCE.vroid" \
         '' \
-        'Opens SOURCE in SESSION, edits one Body and one Face parameter, saves a' \
-        'copy, restarts, and checks the saved values. SESSION must be stopped and' \
+        'Opens SOURCE in SESSION, dumps its template, edits one Body and two Face' \
+        'parameters in one request, saves a copy, restarts, checks the saved' \
+        'values, and applies the original template. SESSION must be stopped and' \
         'past its first-run dialogs. Set VROID_CLI to choose the vroid-cli binary.'
 }
 
@@ -38,18 +40,27 @@ cli=${VROID_CLI:-vroid-cli}
 command -v jq >/dev/null || fatal 'Missing required command: jq'
 
 vroid() {
-    "$cli" --session "$session" "$@"
+    "$cli" "$session" "$1"
 }
 
-state=$(vroid status)
+state=$(vroid '{"method": "status"}')
 [[ $(jq .app_running <<<"$state") == false ]] || fatal "Stop session $session first"
 out=$(mktemp -d "$(jq -r .directory <<<"$state")/smoke.XXXXXX")
 edited=$out/edited.vroid
 printf 'gui-smoke: artifacts in %s\n' "$out" >&2
 
+# Add one value to the apply request on stdin.
+with_value() {
+    jq -c --arg section "$1" --arg category "$2" --arg label "$3" --argjson value "$4" \
+        '.[$section][$category][$label] = $value'
+}
+
 # Print the current value of a parameter as JSON.
 value_of() {
-    vroid parameters "$1" "$2" | jq -e --arg label "$3" '[.[] | select(.label == $label)] | if length == 1 then .[0].value else error("expected one \($label)") end'
+    jq -cn --arg section "$1" --arg category "$2" \
+        '{method: "parameters", section: $section, category: $category}' |
+        vroid - |
+        jq -e --arg label "$3" '[.[] | select(.label == $label)] | if length == 1 then .[0].value else error("expected one \($label)") end'
 }
 
 # Choose a new in-range value that differs from the current one.
@@ -63,7 +74,7 @@ same() {
 
 input_events() {
     local log
-    log=$(vroid status | jq -r .desktop)/inputs.jsonl
+    log=$(vroid '{"method": "status"}' | jq -r .desktop)/inputs.jsonl
     if [[ -f $log ]]; then
         wc -l <"$log"
     else
@@ -71,57 +82,89 @@ input_events() {
     fi
 }
 
+rebuilt() {
+    vroid '{"method": "status"}' | jq .bridge.rebuilt
+}
+
+# Two edits share a category, so one request changes several of its values.
 edits=(
     'Body|Whole Body|Head Size'
     'Face|Face Sets|Eye Size X'
+    'Face|Face Sets|Eye Size Y'
 )
 
-vroid launch --timeout 1200 >/dev/null
+vroid '{"method": "launch", "timeout": 1200}' >/dev/null
 inputs_before=$(input_events)
-vroid open "$source" >/dev/null
+jq -cn --arg path "$source" '{method: "open", path: $path}' | vroid - >/dev/null
+vroid '{"method": "dump"}' >"$out/original.json"
 
 declare -A expected
+request='{"method": "apply"}'
 for edit in "${edits[@]}"; do
     IFS='|' read -r section category label <<<"$edit"
-    current=$(value_of "$section" "$category" "$label")
-    target=$(pick "$current")
-    rebuilt=$(vroid status | jq .bridge.rebuilt)
-    vroid set "$section" "$category" "$label" "$target" >/dev/null
-    vroid status | jq -e --argjson before "$rebuilt" \
-        '.bridge.rebuilt > $before and .bridge.updating == false' >/dev/null ||
-        fatal "set $label returned before a completed rebuild"
+    expected[$edit]=$(pick "$(value_of "$section" "$category" "$label")")
+    request=$(with_value "$section" "$category" "$label" "${expected[$edit]}" <<<"$request")
+done
+before=$(rebuilt)
+vroid "$request" | jq -e --argjson count "${#edits[@]}" '.changed == $count' >/dev/null ||
+    fatal "apply did not change ${#edits[@]} values"
+vroid '{"method": "status"}' | jq -e --argjson before "$before" --argjson count "${#edits[@]}" \
+    '.bridge.rebuilt >= $before + $count and .bridge.updating == false' >/dev/null ||
+    fatal "apply returned before a completed rebuild per value"
+for edit in "${edits[@]}"; do
+    IFS='|' read -r section category label <<<"$edit"
     actual=$(value_of "$section" "$category" "$label")
-    same "$actual" "$target" || fatal "$label read back $actual after set $target"
-    expected[$edit]=$target
+    same "$actual" "${expected[$edit]}" || fatal "$label read back $actual after apply ${expected[$edit]}"
 done
 
+# A value above its maximum, an unknown parameter, and an unknown category
+# refuse the whole request, and each is reported.
 IFS='|' read -r section category label <<<"${edits[0]}"
-max=$(vroid parameters "$section" "$category" | jq --arg label "$label" '.[] | select(.label == $label) | .max')
-if vroid set "$section" "$category" "$label" "$(jq -n --argjson max "$max" '$max + 1')" >/dev/null 2>"$out/bounds.err"; then
-    fatal "set above the maximum succeeded"
+IFS='|' read -r other_section other_category other_label <<<"${edits[1]}"
+max=$(jq -cn --arg section "$section" --arg category "$category" \
+    '{method: "parameters", section: $section, category: $category}' |
+    vroid - | jq --arg label "$label" '.[] | select(.label == $label) | .max')
+refused=$(with_value "$section" "$category" "$label" "$(jq -n --argjson max "$max" '$max + 1')" <<<'{"method": "apply"}' |
+    with_value "$other_section" "$other_category" "$other_label" "$(pick "${expected[${edits[1]}]}")" |
+    with_value "$other_section" "$other_category" 'No Such Parameter' 0 |
+    with_value "$other_section" 'No Such Category' 'Any Parameter' 0)
+if vroid "$refused" >/dev/null 2>"$out/bounds.err"; then
+    fatal "apply above the maximum succeeded"
 fi
-grep -q 'within' "$out/bounds.err" || fatal "unexpected bounds error: $(<"$out/bounds.err")"
-actual=$(value_of "$section" "$category" "$label")
-same "$actual" "${expected[${edits[0]}]}" || fatal "$label changed to $actual after a refused set"
+for reason in 'is outside' 'No Such Parameter: unknown parameter' 'No Such Category: unknown category' 'Nothing changed'; do
+    grep -qF "$reason" "$out/bounds.err" || fatal "refusal lacks '$reason': $(<"$out/bounds.err")"
+done
+for edit in "${edits[@]}"; do
+    IFS='|' read -r section category label <<<"$edit"
+    actual=$(value_of "$section" "$category" "$label")
+    same "$actual" "${expected[$edit]}" || fatal "$label changed to $actual after a refused apply"
+done
 
-vroid save "$edited" >/dev/null
-if vroid save "$edited" >/dev/null 2>&1; then
+save=$(jq -cn --arg path "$edited" '{method: "save", path: $path}')
+vroid "$save" >/dev/null
+if vroid "$save" >/dev/null 2>&1; then
     fatal "second save to $edited succeeded"
 fi
 inputs_after=$(input_events)
 ((inputs_after == inputs_before)) || fatal "input log grew from $inputs_before to $inputs_after events"
 
-vroid stop >/dev/null
-vroid launch --timeout 1200 >/dev/null
+vroid '{"method": "stop"}' >/dev/null
+vroid '{"method": "launch", "timeout": 1200}' >/dev/null
 inputs_before=$(input_events)
-vroid open "$edited" >/dev/null
+jq -cn --arg path "$edited" '{method: "open", path: $path}' | vroid - >/dev/null
 for edit in "${edits[@]}"; do
     IFS='|' read -r section category label <<<"$edit"
     actual=$(value_of "$section" "$category" "$label")
     same "$actual" "${expected[$edit]}" || fatal "$label reopened as $actual, saved ${expected[$edit]}"
 done
+
+# The template dumped before the edits restores every value in a new app instance.
+vroid "@$out/original.json" >/dev/null
+vroid '{"method": "dump"}' >"$out/restored.json"
+jq -e --slurpfile original "$out/original.json" '. == $original[0]' "$out/restored.json" >/dev/null ||
+    fatal "dump after applying $out/original.json differs; see $out/restored.json"
 inputs_after=$(input_events)
 ((inputs_after == inputs_before)) || fatal "input log grew from $inputs_before to $inputs_after events"
-vroid stop >/dev/null
+vroid '{"method": "stop", "force": true}' >/dev/null
 
 jq -n --arg project "$edited" '{ok: true, project: $project}'

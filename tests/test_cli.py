@@ -16,31 +16,50 @@ import pytest
 SOURCE = Path(__file__).resolve().parent.parent
 
 
-def invoke(
+def run_cli(
     tmp_path: Path,
     *args: str,
     env: dict[str, str] | None = None,
     cwd: Path | None = None,
     state: bool = True,
+    stdin: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     environment = {k: v for k, v in os.environ.items() if k != "VROID_STATE_DIR"}
-    environment["PYTHONPATH"] = str(SOURCE)
+    # Keep the inherited path, which provides dependencies in the Nix build.
+    environment["PYTHONPATH"] = os.pathsep.join(
+        filter(None, [str(SOURCE), environment.get("PYTHONPATH")])
+    )
     if state:
         environment["VROID_STATE_DIR"] = str(tmp_path / "state")
     return subprocess.run(
-        [sys.executable, "-m", "vroid_cli", "--session", "test", *args],
+        [sys.executable, "-m", "vroid_cli", *args],
         cwd=cwd or tmp_path,
         env=environment | (env or {}),
+        input=stdin,
         text=True,
         capture_output=True,
         timeout=20,
     )
 
 
+def invoke(
+    tmp_path: Path,
+    method: str,
+    /,
+    env: dict[str, str] | None = None,
+    cwd: Path | None = None,
+    state: bool = True,
+    **fields: Any,
+) -> subprocess.CompletedProcess[str]:
+    """Run one request against session `test`."""
+    request = json.dumps({"method": method} | fields)
+    return run_cli(tmp_path, "test", request, env=env, cwd=cwd, state=state)
+
+
 def write_status(rpc: Path, **fields: Any) -> dict[str, Any]:
     status = {
         "boot": "test-boot",
-        "protocol": 1,
+        "protocol": 2,
         "heartbeat": time.time() * 1000,
         "main": True,
         "modified": False,
@@ -138,13 +157,73 @@ def answer(
     return thread, received
 
 
+APPLY = '{"method": "apply", "Body": {"Whole Body": {"Head Size": %s}}}'
+
+
 def test_nonfinite_values_are_rejected_without_state(tmp_path: Path) -> None:
     # R-EDIT-2
-    for value in ["nan", "inf", "-inf"]:
-        result = invoke(tmp_path, "set", "Body", "Whole Body", "Head Size", "--", value)
+    for value in ["NaN", "Infinity", "-Infinity", "1e999", "[0.5, NaN]"]:
+        result = run_cli(tmp_path, "test", APPLY % value)
         assert result.returncode == 2
+        assert "Body.Whole Body.Head Size" in result.stderr
         assert "finite" in result.stderr
     assert not (tmp_path / "state").exists()
+
+
+@pytest.mark.parametrize(
+    ("request_text", "reason"),
+    [
+        (APPLY % '"0.5"', "Body.Whole Body.Head Size: expected a finite number"),
+        ('{"method": "launch", "timout": 5}', "timout: Extra inputs"),
+        ('{"method": "stop", "force": 1}', "force: Input should be a valid boolean"),
+        ('{"method": "Apply"}', "does not match any of the expected tags"),
+        ('{"method": "apply", "Body": {}, "Body": {}}', "duplicate keys: Body"),
+        (
+            '{"method": "apply", "Face": {"A": {"x": 0}, "B": {"y": 0, "x": 1}}}',
+            "Face/B/x is the same parameter as Face/A/x; set it once",
+        ),
+        ('{"method": "status"', "Invalid JSON"),
+        # Python's or pydantic's recursion limit refuses it, depending on the host.
+        ('{"method": "apply", "Face": ' + "[" * 100_000, "invalid request:"),
+        ("status", "REQUEST must be a JSON object, @PATH, or -"),
+    ],
+)
+def test_invalid_requests_are_rejected_without_state(
+    tmp_path: Path, request_text: str, reason: str
+) -> None:
+    # R-CLI-3
+    result = run_cli(tmp_path, "test", request_text)
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert reason in result.stderr
+    assert "Traceback" not in result.stderr
+    assert "errors.pydantic.dev" not in result.stderr
+    assert not (tmp_path / "state").exists()
+
+
+def test_requests_are_read_from_files_and_stdin(tmp_path: Path) -> None:
+    (tmp_path / "status.json").write_text('{"method": "status"}')
+    for result in [
+        run_cli(tmp_path, "test", "@status.json"),
+        run_cli(tmp_path, "test", "-", stdin='{"method": "status"}'),
+    ]:
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["session"] == "test"
+    missing = run_cli(tmp_path, "test", "@missing.json")
+    assert missing.returncode == 2
+    assert "cannot read missing.json" in missing.stderr
+
+
+def test_agent_skill_includes_the_request_and_result_schema(tmp_path: Path) -> None:
+    skill = SOURCE / ".agents/skills/vroid-cli/SKILL.md"
+    for flag in ["--agent-skill", "--help"]:
+        result = run_cli(tmp_path, flag, env={"VROID_CLI_SKILL": str(skill)})
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.startswith(skill.read_text().rstrip())
+        text = result.stdout.split("```json\n", 1)[1].rsplit("```", 1)[0]
+        generated = json.loads(text)
+        assert set(generated["results"]) >= {"dump", "apply", "launch"}
+        assert "apply" in generated["request"]["discriminator"]["mapping"]
 
 
 def test_existing_save_destination_is_preserved(tmp_path: Path) -> None:
@@ -152,7 +231,7 @@ def test_existing_save_destination_is_preserved(tmp_path: Path) -> None:
     rpc = bridge(tmp_path)
     project = tmp_path / "saved.vroid"
     project.write_bytes(b"deliverable")
-    result = invoke(tmp_path, "save", "saved.vroid")
+    result = invoke(tmp_path, "save", path="saved.vroid")
     assert result.returncode == 2
     assert project.read_bytes() == b"deliverable"
     assert not (rpc / "request.json").exists()
@@ -161,7 +240,7 @@ def test_existing_save_destination_is_preserved(tmp_path: Path) -> None:
 def test_stale_bridge_receives_no_requests(tmp_path: Path) -> None:
     # R-RPC-4
     rpc = bridge(tmp_path, heartbeat=(time.time() - 30) * 1000)
-    result = invoke(tmp_path, "categories", "Face")
+    result = invoke(tmp_path, "categories", section="Face")
     assert result.returncode == 1
     assert "not responding" in result.stderr
     assert not (rpc / "request.json").exists()
@@ -172,27 +251,27 @@ def test_pending_request_is_never_replaced(tmp_path: Path) -> None:
     rpc = bridge(tmp_path)
     request = rpc / "request.json"
     request.write_text('{"unfinished":true}')
-    result = invoke(tmp_path, "set", "Body", "Whole Body", "Head Size", "0.5")
+    result = invoke(tmp_path, "apply", Body={"Whole Body": {"Head Size": 0.5}})
     assert result.returncode == 1
     assert "pending" in result.stderr
     assert request.read_text() == '{"unfinished":true}'
 
 
 @pytest.mark.parametrize(
-    "command",
+    "body",
     [
-        ["categories", "Face"],
-        ["launch", "--timeout", "1"],
-        ["stop"],
+        {"method": "categories", "section": "Face"},
+        {"method": "launch", "timeout": 1},
+        {"method": "stop"},
     ],
 )
-def test_competing_controller_is_rejected(tmp_path: Path, command: list[str]) -> None:
+def test_competing_controller_is_rejected(tmp_path: Path, body: dict[str, Any]) -> None:
     # R-SES-1
     rpc = bridge(tmp_path)
     env = fake_framewisp(tmp_path, "raise SystemExit('framewisp must not run')")
     with (rpc.parent / "command.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        result = invoke(tmp_path, *command, env=env)
+        result = run_cli(tmp_path, "test", json.dumps(body), env=env)
     assert result.returncode == 1
     assert "Another command controls" in result.stderr
     assert not (rpc / "request.json").exists()
@@ -216,7 +295,7 @@ def test_launch_ignores_a_heartbeat_from_before_launch(tmp_path: Path) -> None:
 
     thread = threading.Thread(target=new_instance)
     thread.start()
-    result = invoke(tmp_path, "launch", "--timeout", "8", env=env)
+    result = invoke(tmp_path, "launch", timeout=8, env=env)
     thread.join()
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["bridge"]["boot"] == "new-boot"
@@ -230,12 +309,12 @@ def test_commands_wait_for_the_user_to_accept_terms(tmp_path: Path) -> None:
     rpc = bridge(tmp_path, terms=False)
     env = running_desktop(tmp_path)
     beating = heartbeats(rpc, 3)
-    launched = invoke(tmp_path, "launch", "--timeout", "8", env=env)
+    launched = invoke(tmp_path, "launch", timeout=8, env=env)
     beating.join()
     assert launched.returncode == 1
     assert "never accepts them for you" in launched.stderr
     assert "stop" not in (tmp_path / "framewisp.log").read_text().split()
-    edited = invoke(tmp_path, "categories", "Body", env=env)
+    edited = invoke(tmp_path, "categories", section="Body", env=env)
     assert edited.returncode == 1
     assert "terms" in edited.stderr
     assert not (rpc / "request.json").exists()
@@ -253,7 +332,7 @@ def test_launch_reports_why_the_app_exited(tmp_path: Path) -> None:
         "Path(args[0], 'app-exit.json').write_text('{}')\n"
         "sys.exit(1)",
     )
-    result = invoke(tmp_path, "launch", "--timeout", "8", env=env)
+    result = invoke(tmp_path, "launch", timeout=8, env=env)
     assert result.returncode == 1
     assert "Incomplete installation in wine" in result.stderr
 
@@ -266,7 +345,7 @@ def test_launch_reports_a_desktop_that_failed_before_vroid(tmp_path: Path) -> No
     old = time.time() - 60
     os.utime(desktop / "app-exit.json", (old, old))
     env = fake_framewisp(tmp_path, "print('sway exited', file=sys.stderr)\nsys.exit(1)")
-    result = invoke(tmp_path, "launch", "--timeout", "8", env=env)
+    result = invoke(tmp_path, "launch", timeout=8, env=env)
     assert result.returncode == 1
     assert "sway exited" in result.stderr
     assert "previous run" not in result.stderr
@@ -356,9 +435,9 @@ def test_stop_refuses_to_discard_work_unless_forced(tmp_path: Path, cause: str) 
     env = running_desktop(tmp_path)
     refused = invoke(tmp_path, "stop", env=env)
     assert refused.returncode == 1
-    assert "--force" in refused.stderr
+    assert '"force": true' in refused.stderr
     assert "stop" not in (tmp_path / "framewisp.log").read_text().split()
-    forced = invoke(tmp_path, "stop", "--force", env=env)
+    forced = invoke(tmp_path, "stop", force=True, env=env)
     assert forced.returncode == 0, forced.stderr
     assert json.loads(forced.stdout)["stopped"] is True
     assert (tmp_path / "framewisp.log").read_text().split()[-1] == "stop"
@@ -368,34 +447,78 @@ def test_stop_refuses_to_discard_work_unless_forced(tmp_path: Path, cause: str) 
 def test_request_roundtrip(tmp_path: Path, ok: bool) -> None:
     # R-CLI-1, R-CLI-2, R-RPC-5, R-RPC-6
     rpc = bridge(tmp_path)
+    template = {"Whole Body": {"Head Size": -0.25}}
+    undo = {"method": "apply", "Face": {}, "Body": {"Whole Body": {"Head Size": 0}}}
     peer, received = answer(
         rpc,
         lambda _: {
             "ok": ok,
-            "result": {"value": -0.25} if ok else None,
+            "result": {"changed": 1, "undo": undo} if ok else None,
             "error": None if ok else "engine refused",
         },
     )
-    result = invoke(tmp_path, "set", "Body", "Whole Body", "Head Size", "-0.25")
+    result = invoke(tmp_path, "apply", Body=template)
     peer.join()
     assert len(received) == 1
     request = received[0]
     assert request["boot"] == "test-boot"
-    assert (request["section"], request["category"], request["parameter"]) == (
-        "Body",
-        "Whole Body",
-        "Head Size",
-    )
-    assert request["value"] == -0.25
+    assert request["method"] == "apply"
+    assert (request["Face"], request["Body"]) == ({}, template)
     assert (rpc / "results" / f"{request['id']}.json").exists()
     if ok:
         assert result.returncode == 0
-        assert json.loads(result.stdout) == {"value": -0.25}
+        assert json.loads(result.stdout) == {"changed": 1, "undo": undo}
         assert result.stderr == ""
     else:
         assert result.returncode == 1
         assert result.stdout == ""
         assert "engine refused" in result.stderr
+
+
+def test_dump_output_is_valid_apply_input(tmp_path: Path) -> None:
+    rpc = bridge(tmp_path)
+    dump = {
+        "method": "apply",
+        "Face": {"Face Sets": {"Eye Size X": 0.1, "Nose Size": [0.25, -0.5]}},
+        "Body": {"Whole Body": {"Head Size": 0.125}},
+    }
+    peer, received = answer(
+        rpc,
+        lambda request: {
+            "ok": True,
+            "result": (
+                dump if request["method"] == "dump" else {"changed": 0, "undo": dump}
+            ),
+            "error": None,
+        },
+    )
+    dumped = invoke(tmp_path, "dump")
+    assert dumped.returncode == 0, dumped.stderr
+    assert json.loads(dumped.stdout) == dump
+    (tmp_path / "template.json").write_text(dumped.stdout)
+    applied = run_cli(tmp_path, "test", "@template.json")
+    peer.join()
+    assert applied.returncode == 0, applied.stderr
+    assert received[1] | {"id": "", "boot": "", "timeout_ms": 0} == dump | {
+        "id": "",
+        "boot": "",
+        "timeout_ms": 0,
+    }
+
+
+def test_a_result_that_breaks_the_schema_is_an_error(tmp_path: Path) -> None:
+    rpc = bridge(tmp_path)
+    peer, _ = answer(
+        rpc,
+        lambda _: {"ok": True, "result": {"saved": "x", "bytes": "1"}, "error": None},
+    )
+    (tmp_path / "saved.vroid").unlink(missing_ok=True)
+    result = invoke(tmp_path, "save", path="saved.vroid")
+    peer.join()
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "does not match the schema" in result.stderr
+    assert "bytes: Input should be a valid integer" in result.stderr
 
 
 def test_command_returns_after_the_bridge_removes_its_request(tmp_path: Path) -> None:
@@ -404,7 +527,7 @@ def test_command_returns_after_the_bridge_removes_its_request(tmp_path: Path) ->
     peer, _ = answer(
         rpc, lambda _: {"ok": True, "result": [], "error": None}, removal_delay=1
     )
-    result = invoke(tmp_path, "categories", "Body")
+    result = invoke(tmp_path, "categories", section="Body")
     assert result.returncode == 0, result.stderr
     assert not (rpc / "request.json").exists()
     peer.join()
@@ -413,11 +536,14 @@ def test_command_returns_after_the_bridge_removes_its_request(tmp_path: Path) ->
 def test_paths_are_sent_as_wine_paths(tmp_path: Path) -> None:
     rpc = bridge(tmp_path)
     (tmp_path / "source.vroid").write_bytes(b"project")
-    peer, received = answer(rpc, lambda _: {"ok": True, "result": {}, "error": None})
-    result = invoke(tmp_path, "open", "source.vroid")
+    peer, received = answer(
+        rpc, lambda r: {"ok": True, "result": {"opened": r["path"]}, "error": None}
+    )
+    result = invoke(tmp_path, "open", path="source.vroid")
     peer.join()
     assert result.returncode == 0, result.stderr
     assert received[0]["path"] == f"Z:{tmp_path / 'source.vroid'}"
+    assert json.loads(result.stdout) == {"opened": str(tmp_path / "source.vroid")}
 
 
 def test_status_of_a_new_session_is_one_json_value(tmp_path: Path) -> None:

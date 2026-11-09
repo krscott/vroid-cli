@@ -2,6 +2,7 @@
   lib,
   buildPythonApplication,
   setuptools,
+  pydantic,
   pytestCheckHook,
   bash,
   coreutils,
@@ -25,6 +26,7 @@ buildPythonApplication {
   };
   pyproject = true;
   build-system = [ setuptools ];
+  dependencies = [ pydantic ];
   nativeCheckInputs = [
     pytestCheckHook
     bash
