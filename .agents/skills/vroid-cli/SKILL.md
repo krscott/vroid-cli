@@ -38,13 +38,12 @@ field and result.
 ## Scope
 
 vroid-cli opens existing `.vroid` projects, reads and sets the numeric sliders
-in the Face and Body editors, and saves projects. It can't yet change colors,
-textures, hairstyles, outfits, accessories, or presets, create characters,
-render the character, or export VRM. To see the character, take a Framewisp
-screenshot of the private desktop that `status` reports as `desktop` (see
-First run); it shows the editor window. When a request needs anything
-vroid-cli can't do, do the parts it can and tell the user which parts you
-couldn't.
+in the Face and Body editors, renders the character to PNG from the front,
+three-quarter, side, or back, and saves projects. It can't yet change colors,
+textures, hairstyles, outfits, accessories, or presets, create characters, or
+export VRM. To see the character, use `render`, not screenshots of the editor
+window. When a request needs anything vroid-cli can't do, do the parts it can
+and tell the user which parts you couldn't.
 
 Face "Ear" parameters shape human ears at the sides of the head, not animal
 ears, which vroid-cli can't add yet.
