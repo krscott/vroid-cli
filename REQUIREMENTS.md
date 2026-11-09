@@ -206,8 +206,9 @@ investigate or ask; never invent a rationale.
 
 - **R-EDIT-7** [manual: `just gui-smoke` applies a template dumped before its
   edits after a restart and compares a new dump with it, including items and
-  accessories] Applying `dump`
-  output reproduces every dumped value exactly, in any app instance.
+  accessories] Applying `dump` output reproduces every dumped value exactly,
+  in any app instance, except non-built-in items, which have no identifier
+  (R-EDIT-10).
 
   Rationale: Agents save, diff, and reapply templates to reuse characters. A
   template that drops or rounds values changes a character silently.
