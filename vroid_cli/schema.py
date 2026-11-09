@@ -237,14 +237,19 @@ def parse(text: str) -> Request:
     try:
         return REQUEST.validate_json(text)
     except ValidationError as error:
-        raise ValueError(describe(error)) from None
+        raise ValueError(describe(error, tagged=True)) from None
 
 
-def describe(error: ValidationError) -> str:
-    """One line per error: the field's path, without the method tag, and the reason."""
+def describe(error: ValidationError, *, tagged: bool = False) -> str:
+    """One line per error: the field's path and the reason.
+
+    `tagged` marks a request error, whose path starts with the method tag.
+    """
     lines: list[str] = []
     for item in error.errors(include_url=False):
-        field = ".".join(map(str, item["loc"][1:])) or "request"
+        field = ".".join(map(str, item["loc"][tagged:])) or (
+            "request" if tagged else "result"
+        )
         lines.append(f"{field}: {item['msg'].removeprefix('Value error, ')}")
     return "\n".join(lines)
 

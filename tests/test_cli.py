@@ -506,12 +506,17 @@ def test_dump_output_is_valid_apply_input(tmp_path: Path) -> None:
 
 def test_a_result_that_breaks_the_schema_is_an_error(tmp_path: Path) -> None:
     rpc = bridge(tmp_path)
-    peer, _ = answer(rpc, lambda _: {"ok": True, "result": [1], "error": None})
-    result = invoke(tmp_path, "categories", section="Body")
+    peer, _ = answer(
+        rpc,
+        lambda _: {"ok": True, "result": {"saved": "x", "bytes": "1"}, "error": None},
+    )
+    (tmp_path / "saved.vroid").unlink(missing_ok=True)
+    result = invoke(tmp_path, "save", path="saved.vroid")
     peer.join()
     assert result.returncode == 1
     assert result.stdout == ""
     assert "does not match the schema" in result.stderr
+    assert "bytes: Input should be a valid integer" in result.stderr
 
 
 def test_command_returns_after_the_bridge_removes_its_request(tmp_path: Path) -> None:
