@@ -66,7 +66,7 @@ ears, which vroid-cli can't add yet.
   Its result's `undo` is an `apply` request that restores the previous values.
 - `categories`, `parameters`, `dump`, and `apply` change which section VRoid's
   editor shows, and all but `categories` change its category, even when they
-  change no value. For comparable screenshots, run the same `parameters`
+  change no value. For comparable editor screenshots, run the same `parameters`
   request before each one.
 - Categories share parameters: "Eye Size X" in Face Sets and in Eyeliner is
   one value. An `apply` request may name each label in only one category per
@@ -83,8 +83,8 @@ ears, which vroid-cli can't add yet.
   `side` show its left side. `frame: "head"` fits everything above the neck,
   so a front head view is a face close-up and a side head view shows ear
   shape. Views are orthographic, and body views at one `width` and `height`
-  share their scale, so compare them with a reference turnaround instead of
-  taking screenshots of the app. `width` and `height` default to 1024.
+  share their scale, so they compare directly with a reference turnaround.
+  `width` and `height` default to 1024.
 - Opening another project requires `save`, `stop`, and `launch` first.
 - `stop` refuses while there are unsaved changes or a pending request. Save
   or wait first; send `{"method": "stop", "force": true}` only when discarding
