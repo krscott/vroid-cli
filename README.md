@@ -145,11 +145,14 @@ Logs are in the session directory: `runner.log`, `player.log`,
 ```sh
 nix develop
 just build      # nix build
-just run ARGS   # nix run -- ARGS
 just test       # Python and bridge protocol tests
 just check      # formatting, lint, type checks, nix flake check
 just gui-smoke SESSION SOURCE.vroid
 ```
+
+In the dev shell, `vroid-cli` runs the working tree's Python. VRoid, the
+bridge, and Framewisp are the shell's builds; re-enter the shell (or
+`direnv reload`) after changing them.
 
 `just gui-smoke` needs graphics access. It runs the workflow above with a
 restart and checks the saved values and Framewisp's input log. See

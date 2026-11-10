@@ -25,6 +25,7 @@ a fresh check of every internal name below.
 | `nix/bepinex.nix` | BepInEx with Doorstop and .NET, and the Unity base libraries |
 | `nix/bridge.nix` | The bridge plugin alone |
 | `default.nix` | The `vroid-cli` package; its wrapper sets `VROID_CLI_SKILL` and `PATH` |
+| `scripts/dev/vroid-cli` | The dev shell's `vroid-cli`: runs the working tree with the shell's VRoid and Framewisp |
 | `.agents/skills/vroid-cli/` | Shared agent skill, printed with the JSON Schema by `vroid-cli --agent-skill` |
 
 The flake permits only the unfree `vroid-studio-app`, `vroid-studio-interop`,

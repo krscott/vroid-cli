@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Run this working tree's vroid-cli. The dev shell puts this directory on PATH.
+set -euo pipefail
+
+root=$(realpath -- "$(dirname -- "$(realpath -- "${BASH_SOURCE[0]}")")/../..")
+export VROID_CLI_SKILL=$root/.agents/skills/vroid-cli/SKILL.md
+# Isolated mode ignores inherited PYTHONPATH without removing it from the
+# environment that framewisp and VRoid inherit.
+exec python3 -I -c '
+import sys
+sys.path.insert(0, sys.argv.pop(1))
+from vroid_cli.__main__ import main
+raise SystemExit(main())
+' "$root" "$@"

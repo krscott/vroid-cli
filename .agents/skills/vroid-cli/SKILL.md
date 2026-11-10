@@ -11,10 +11,10 @@ keyboard input and needs no OCR, MCP server, or account login. The user can keep
 using their computer.
 
 Get it once with
-`nix shell github:krscott/vroid-cli github:krscott/vroid-cli#framewisp`, or
-use `vroid-cli` and `framewisp` inside the project's `nix develop` shell. Keep
-that build for the whole session. It supports VRoid Studio 2.16.0 on x86_64
-Linux.
+`nix shell github:krscott/vroid-cli github:krscott/vroid-cli#framewisp`, and
+keep that build for the whole session. Inside the vroid-cli project's
+`nix develop` shell, `vroid-cli` runs that working tree instead. It supports
+VRoid Studio 2.16.0 on x86_64 Linux.
 
 Every command is `vroid-cli SESSION REQUEST`. `REQUEST` is a JSON object,
 `@path` to read one from a file, or `-` to read stdin. The first `launch` of a
