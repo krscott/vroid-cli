@@ -27,6 +27,7 @@ vroid-cli alice '{"method": "parameters", "section": "Body", "category": "Whole 
 vroid-cli alice '{"method": "apply", "Body": {"Whole Body": {"Head Size": 0.125}}}'
 vroid-cli alice '{"method": "apply", "Hair": {"Front": {"Main Color": "#FF8C00"}}}'
 vroid-cli alice '{"method": "items", "section": "Outfit", "category": "Tops"}'
+vroid-cli alice '{"method": "thumbnails", "section": "Outfit", "category": "Tops", "path": "./tops.png"}'
 vroid-cli alice '{"method": "apply", "Outfit": {"Tops": {"item": "159"}}}'
 vroid-cli alice '{"method": "accessories"}'
 vroid-cli alice '{"method": "apply", "Accessories": [{"item": "CatEar", "Color": "#3A2A20"}]}'
@@ -45,7 +46,8 @@ field and result.
 vroid-cli opens existing `.vroid` projects, reads and sets the numeric sliders
 in the Face and Body editors and the colour fields in the Face, Hairstyle, and
 Body editors, selects VRoid's built-in items (hairstyle parts, face parts and
-presets, body presets, outfit items), adds, removes, and recolours built-in
+presets, body presets, outfit items), draws a category's built-in item
+thumbnails labelled with their identifiers, adds, removes, and recolours built-in
 accessories (glasses, cat and rabbit ears, cat, fox, and rabbit tails, hats),
 renders the character to PNG from the front, three-quarter, side, or back, and
 saves projects. It can't yet place or reshape accessories, change outfit
@@ -85,9 +87,13 @@ and tails are accessories.
   Lips "Color" when the selected lips have no colour, is refused. Remove it
   from a template made in another project.
 - Items have identifiers, not names: `items` lists a category's built-in
-  items and the one it wears, as `"item"` in a template category. Choose by
-  selecting and rendering. Selecting an item resets that category's values and
-  colours, so `apply` changes items first, then values. `"item": null` takes
+  items and the one it wears, as `"item"` in a template category. To choose
+  one, view `thumbnails` for the category: one `.png` of VRoid's own
+  thumbnail of each item, 10 per row in `items` order, labelled with its
+  identifier. It takes about 2 s, changes nothing, and shows items in VRoid's
+  default colours. Then select candidates and `render` them to compare.
+  Selecting an item resets that category's values and colours, so `apply`
+  changes items first, then values. `"item": null` takes
   off the item where `items` reports `removable`.
 - VRoid takes off conflicting items itself, such as the dress when a top is
   selected; a request naming both is refused. Sets (Face Sets, Eyes Sets,
@@ -109,7 +115,8 @@ and tails are accessories.
   its placement, even through `undo`. A pair of ears is one accessory; VRoid
   allows five.
 - `categories`, `parameters`, `items`, `accessories`, `dump`, and `apply`
-  change which section VRoid's editor shows, and `parameters`, `dump`, and
+  change which section VRoid's editor shows (`thumbnails` and `render` do
+  not), and `parameters`, `dump`, and
   `apply` change its category, even when they change no value. `accessories`
   and accessory edits also add the hidden accessories to the editor's list.
   For comparable editor screenshots, run the same `parameters` request before

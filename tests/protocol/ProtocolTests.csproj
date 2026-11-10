@@ -12,5 +12,6 @@
     <Compile Include="../../plugin/Colors.cs" />
     <Compile Include="../../plugin/Framing.cs" />
     <Compile Include="../../plugin/ItemIds.cs" />
+    <Compile Include="../../plugin/Sheet.cs" />
   </ItemGroup>
 </Project>

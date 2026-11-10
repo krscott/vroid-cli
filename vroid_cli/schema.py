@@ -308,6 +308,26 @@ class Render(Model):
         return new_file(resolved(value, ".png", "image"))
 
 
+class Thumbnails(Model):
+    """Draw VRoid's thumbnail of every built-in item in a category to a new
+    PNG in an existing directory.
+
+    Thumbnails show each item in VRoid's default colours, in `items` order,
+    10 to a row, each labelled with its identifier. Use them to choose items
+    without wearing each candidate.
+    """
+
+    method: Literal["thumbnails"]
+    section: Section
+    category: str
+    path: Path
+
+    @field_validator("path")
+    @classmethod
+    def new(cls, value: Path) -> Path:
+        return new_file(resolved(value, ".png", "image"))
+
+
 Request = Annotated[
     Launch
     | Status
@@ -320,11 +340,21 @@ Request = Annotated[
     | Dump
     | Apply
     | Save
-    | Render,
+    | Render
+    | Thumbnails,
     Field(discriminator="method"),
 ]
 BridgeRequest = (
-    Open | Categories | Parameters | Items | Accessories | Dump | Apply | Save | Render
+    Open
+    | Categories
+    | Parameters
+    | Items
+    | Accessories
+    | Dump
+    | Apply
+    | Save
+    | Render
+    | Thumbnails
 )
 REQUEST: TypeAdapter[Request] = TypeAdapter(Request)
 
@@ -413,6 +443,14 @@ class Rendered(Model):
     bytes: int
 
 
+class Thumbnailed(Rendered):
+    columns: int = Field(description="thumbnails per row")
+    items: list[str] = Field(
+        description="item identifiers in the order the image shows them, "
+        "left to right and then top to bottom"
+    )
+
+
 RESULTS: dict[str, TypeAdapter[Any]] = {
     "launch": TypeAdapter(SessionStatus),
     "status": TypeAdapter(SessionStatus),
@@ -426,6 +464,7 @@ RESULTS: dict[str, TypeAdapter[Any]] = {
     "apply": TypeAdapter(Applied),
     "save": TypeAdapter(Saved),
     "render": TypeAdapter(Rendered),
+    "thumbnails": TypeAdapter(Thumbnailed),
 }
 
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Drive a real session through edit, save, render, restart, reopen, and a
 # template round trip, checking R-EDIT-1, R-EDIT-3, R-EDIT-5, R-EDIT-6,
-# R-EDIT-7, R-EDIT-8, R-EDIT-9, R-VIEW-1, and R-VIEW-2.
+# R-EDIT-7, R-EDIT-8, R-EDIT-9, R-VIEW-1, R-VIEW-2, and R-VIEW-4.
 # Needs graphics access.
 set -euo pipefail
 shopt -s failglob
@@ -13,8 +13,9 @@ usage() {
         'Opens SOURCE in SESSION, dumps its template, edits one Body and two Face' \
         'parameters and four colours (orange hair, green eyes) in one request,' \
         'then selects other Hair Front and Outfit Tops items and adds cat and' \
-        'rabbit ears, saves a copy, renders each view, restarts, checks the' \
-        'saved values, and applies the original template. Editor screenshots' \
+        'rabbit ears, saves a copy, renders each view, draws the thumbnails of' \
+        'those two categories, restarts, checks the saved values, and applies' \
+        'the original template. Editor screenshots' \
         'before and after the edit land in the artifact directory. SESSION' \
         'must be stopped. Set VROID_CLI to choose the vroid-cli binary.'
 }
@@ -150,6 +151,31 @@ render() {
     jq -cn --arg view "$1" --arg frame "$2" --argjson width "$3" --argjson height "$4" --arg path "$5" \
         '{method: "render", view: $view, frame: $frame, width: $width, height: $height, path: $path}' |
         vroid -
+}
+
+# Draw a category's item thumbnails: SECTION CATEGORY PATH.
+thumbnails() {
+    jq -cn --arg section "$1" --arg category "$2" --arg path "$3" \
+        '{method: "thumbnails", section: $section, category: $category, path: $path}' |
+        vroid -
+}
+
+# Check a thumbnail sheet: PATH COUNT. A sheet holds rows of 10 cells of
+# 150x224 pixels with a 4-pixel gutter around each.
+check_sheet() {
+    python3 - "$@" <<'PY' || fatal "$1 is not a thumbnail sheet; see above"
+import struct
+import sys
+
+path, count = sys.argv[1], int(sys.argv[2])
+data = open(path, "rb").read(24)
+if data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
+    sys.exit(f"{path}: not a PNG")
+size = struct.unpack(">II", data[16:24])
+expected = (min(count, 10) * 154 + 4, (count + 9) // 10 * 228 + 4)
+if size != expected:
+    sys.exit(f"{path}: {size[0]}x{size[1]}, expected {expected[0]}x{expected[1]}")
+PY
 }
 
 # Check a rendered PNG: PATH FRAME WIDTH HEIGHT. Its size must match, it must
@@ -339,9 +365,11 @@ for edit in "${edits[@]}"; do
 done
 check_items 'after a refused apply'
 
-# Rendering keeps unsaved changes unsaved (R-VIEW-2).
+# Rendering and drawing thumbnails keep unsaved changes unsaved (R-VIEW-2).
 render front body 64 128 "$out/unsaved.png" >/dev/null
 [[ $(modified) == true ]] || fatal "rendering cleared the unsaved state"
+thumbnails Body 'Whole Body' "$out/unsaved-thumbnails.png" >/dev/null
+[[ $(modified) == true ]] || fatal "drawing thumbnails cleared the unsaved state"
 
 save=$(jq -cn --arg path "$edited" '{method: "save", path: $path}')
 vroid "$save" >/dev/null
@@ -373,13 +401,29 @@ if render front body 512 1024 "$image" >/dev/null 2>&1; then
     fatal "second render to $image succeeded"
 fi
 cmp -s "$image" "$out/render-front-body.copy" || fatal "a refused render changed $image"
-[[ $(modified) == false ]] || fatal "rendering marked the project modified"
+# Thumbnails show every built-in item of a category, in `items` order
+# (R-VIEW-4), and change nothing in the app either (R-VIEW-2).
+for item in "${items[@]}"; do
+    IFS='|' read -r section category <<<"$item"
+    image=$out/thumbnails-$section-$category.png
+    thumbnails "$section" "$category" "$image" >"$out/thumbnails-$section-$category.json"
+    jq -e --slurpfile listed <(items_of "$section" "$category") '.items == $listed[0].items and .columns == 10' \
+        "$out/thumbnails-$section-$category.json" >/dev/null ||
+        fatal "$section/$category thumbnails do not show its items; see $out/thumbnails-$section-$category.json"
+    check_sheet "$image" "$(jq '.items | length' "$out/thumbnails-$section-$category.json")"
+done
+cp "$image" "$out/thumbnails.copy"
+if thumbnails "$section" "$category" "$image" >/dev/null 2>&1; then
+    fatal "second thumbnails to $image succeeded"
+fi
+cmp -s "$image" "$out/thumbnails.copy" || fatal "refused thumbnails changed $image"
+[[ $(modified) == false ]] || fatal "rendering or drawing thumbnails marked the project modified"
 vroid '{"method": "dump"}' >"$out/after-render.json"
 cmp -s "$out/before-render.json" "$out/after-render.json" ||
-    fatal "dump changed while rendering; see $out/after-render.json"
+    fatal "dump changed while rendering or drawing thumbnails; see $out/after-render.json"
 settled_screenshot "$out/after-render.png"
 cmp -s "$out/before-render.png" "$out/after-render.png" ||
-    fatal "the editor's view changed while rendering; compare $out/before-render.png and $out/after-render.png"
+    fatal "the editor's view changed while rendering or drawing thumbnails; compare $out/before-render.png and $out/after-render.png"
 inputs_after=$(input_events)
 ((inputs_after == inputs_before)) || fatal "input log grew from $inputs_before to $inputs_after events"
 

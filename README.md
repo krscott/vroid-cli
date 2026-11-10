@@ -88,7 +88,15 @@ vroid-cli demo '{"method": "render", "path": "./side.png", "view": "side"}'
 vroid-cli demo '{"method": "render", "path": "./face.png", "view": "front", "frame": "head"}'
 ```
 
-Like `save`, it never overwrites a file.
+VRoid's built-in items have no names, only thumbnails. `thumbnails` draws
+VRoid's thumbnail of every built-in item in a category to one PNG, each
+labelled with the identifier `apply` takes, also without changing anything:
+
+```sh
+vroid-cli demo '{"method": "thumbnails", "section": "Outfit", "category": "Tops", "path": "./tops.png"}'
+```
+
+Like `save`, neither command overwrites a file.
 
 ### Agents
 
