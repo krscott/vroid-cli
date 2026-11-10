@@ -10,9 +10,9 @@ filesystem sandbox.
 
 The pinned combination is the only validated one: VRoid Studio 2.16.0 (Unity
 6000.0.62f1, IL2CPP, Windows x64) under Wine 11.21, BepInEx 6 IL2CPP be.788,
-and Framewisp `cf7b3ee` on x86_64 Linux. The flake exposes only
-`x86_64-linux`. Another VRoid version needs new Unity base libraries and a
-fresh check of every internal name below.
+and the Framewisp revision in `flake.lock` on x86_64 Linux. The flake exposes
+only `x86_64-linux`. Another VRoid version needs new Unity base libraries and
+a fresh check of every internal name below.
 
 ## Components
 
