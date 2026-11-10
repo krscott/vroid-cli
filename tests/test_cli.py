@@ -3,6 +3,7 @@
 import fcntl
 import json
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -633,7 +634,10 @@ def test_request_roundtrip(tmp_path: Path, outcome: str) -> None:
             return {"ok": False, "result": None, "error": "engine refused"}
         result = applied(rpc, packet, changed=1)
         if outcome == "failed":
-            return {"ok": False, "result": None, "error": "engine failed"}
+            error = (
+                "engine failed. Changed before the failure: Body/Whole Body/Head Size."
+            )
+            return {"ok": False, "result": None, "error": error}
         return result
 
     peer, received = answer(rpc, reply)
@@ -662,8 +666,7 @@ def test_request_roundtrip(tmp_path: Path, outcome: str) -> None:
         assert "engine refused" in result.stderr
         assert "undo" not in result.stderr
     else:
-        assert "engine failed" in result.stderr
-        assert f"apply @{undo}" in result.stderr
+        assert f"Head Size. To undo any change, apply @{undo}" in result.stderr
 
 
 # A template dumped before colours existed has no Hair section or colours.
@@ -798,6 +801,81 @@ def test_a_result_that_breaks_the_schema_is_an_error(tmp_path: Path) -> None:
     assert result.stdout == ""
     assert "does not match the schema" in result.stderr
     assert "bytes: Input should be a valid integer" in result.stderr
+
+
+def test_an_apply_without_a_result_names_its_undo_file(tmp_path: Path) -> None:
+    # R-EDIT-11: the app wrote the undo file, then dropped the request.
+    rpc = bridge(tmp_path)
+    received: list[dict[str, Any]] = []
+
+    def peer() -> None:
+        request = rpc / "request.json"
+        while not request.exists():
+            time.sleep(0.01)
+        packet = json.loads(request.read_text())
+        received.append(packet)
+        applied(rpc, packet, changed=1)
+        request.unlink()
+
+    thread = threading.Thread(target=peer, daemon=True)
+    thread.start()
+    result = invoke(tmp_path, "apply", Body={"Whole Body": {"Head Size": 0.5}})
+    thread.join()
+    undo = rpc.resolve() / "undo" / f"{received[0]['id']}.json"
+    assert result.returncode == 1
+    assert (
+        f"without a result; see {rpc.resolve()}. To undo any change, apply @{undo}"
+        in result.stderr
+    )
+
+
+def test_an_interrupted_apply_names_its_undo_file(tmp_path: Path) -> None:
+    # R-EDIT-11: the app keeps going, and may write the undo file later.
+    rpc = bridge(tmp_path)
+    environment = {k: v for k, v in os.environ.items() if k != "VROID_STATE_DIR"}
+    environment["PYTHONPATH"] = os.pathsep.join(
+        filter(None, [str(SOURCE), environment.get("PYTHONPATH")])
+    )
+    environment["VROID_STATE_DIR"] = str(tmp_path / "state")
+    request = rpc / "request.json"
+    process = subprocess.Popen(
+        [sys.executable, "-m", "vroid_cli", "test", APPLY % "0.5"],
+        cwd=tmp_path,
+        env=environment,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    deadline = time.monotonic() + 10
+    while not request.exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    undo = rpc.resolve() / "undo" / f"{json.loads(request.read_text())['id']}.json"
+    process.send_signal(signal.SIGINT)
+    stdout, stderr = process.communicate(timeout=10)
+    assert process.returncode == 1
+    assert stdout == ""
+    assert "Interrupted before the result; do not repeat the request" in stderr
+    assert f"if {undo} appears, apply it to undo any change" in stderr
+
+
+def test_an_undo_file_that_does_not_apply_is_an_error(tmp_path: Path) -> None:
+    # R-EDIT-11: a result names only an undo file that parses as apply.
+    rpc = bridge(tmp_path)
+
+    def reply(packet: dict[str, Any]) -> dict[str, Any]:
+        result = applied(rpc, packet, changed=1)
+        (rpc / "undo" / f"{packet['id']}.json").write_text('{"method": "dump"}')
+        return result
+
+    peer, received = answer(rpc, reply)
+    result = invoke(tmp_path, "apply", Body={"Whole Body": {"Head Size": 0.5}})
+    peer.join()
+    undo = rpc.resolve() / "undo" / f"{received[0]['id']}.json"
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "does not match the schema" in result.stderr
+    assert f"{undo} is not an apply request" in result.stderr
+    assert f"To undo any change, apply @{undo}" in result.stderr
 
 
 def test_command_returns_after_the_bridge_removes_its_request(tmp_path: Path) -> None:

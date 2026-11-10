@@ -74,7 +74,8 @@ place per request.
 
 Use one session name per agent or task; the first `launch` creates it.
 Session state lives in `.vroid/NAME/` at the Git worktree root (the current
-directory outside Git), or under `VROID_STATE_DIR`. The state directory ignores itself in Git.
+directory outside Git), or under `VROID_STATE_DIR`. The state directory
+ignores itself in Git.
 
 ### Views
 

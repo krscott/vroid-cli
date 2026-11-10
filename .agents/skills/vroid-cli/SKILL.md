@@ -101,9 +101,9 @@ and tails are accessories.
   its own Base Hair item, or none: Back `146` selects Base Hair `001`, `326`
   selects `Default`. Set Base Hair after Back, or in the same request, to keep
   another. `changed` counts only what the request names, but `undo` restores
-  these too. Sets (Face Sets, Eyes Sets,
-  Hairstyle Sets, Whole Sets) select the items of other categories, so name
-  either a set or those items. `dump` omits sets.
+  these too. Sets (Face Sets, Eyes Sets, Hairstyle Sets, Whole Sets) select
+  the items of other categories, so name either a set or those items. `dump`
+  omits sets.
 - `"custom"` is an item `items` does not list, such as a texture-edited
   outfit or a sample model's part. `apply` refuses to change any item in a
   section that wears one, since VRoid may replace it and `undo` cannot

@@ -198,14 +198,15 @@ temporary file renamed over its target, so readers never see partial files.
   it removes the request. Results are never deleted (R-RPC-6).
 - `undo/ID.json`: an `apply` request's undo template, written by the bridge
   before the first change (R-EDIT-11). Like results, undo files are never
-  deleted; nothing cleans them up.
+  deleted.
 
 A request command takes the lock, requires a fresh
 heartbeat with the same protocol (R-RPC-4), refuses if `request.json` exists
 (R-RPC-3), tags the request with the heartbeat's `boot`, and waits until the
 bridge removes the request, then reads the result. When the request's undo
-file exists, the result gains its path as `undo`, and every error, including a
-timeout, names it. Waiting for the removal
+file exists, the result gains its path as `undo`, which result validation
+checks parses as an `apply` request, and every error names it; a timed-out
+`apply` names it even before it appears. Waiting for the removal
 keeps the next command from seeing a finished request as pending. It never
 resends (R-RPC-5).
 
@@ -309,8 +310,8 @@ does not offer. It sets `modified` before the first change, so an interrupted
 edit still counts as unsaved. The result counts the changes and lists in
 `discarded` what `undo` cannot restore. The bridge writes the `undo` template
 to its file once the first pass succeeds, before any change, and rewrites it
-when the operation ends if something was discarded; a failed rewrite fails the
-request. When the request changes items, `undo` is a `dump` taken before the
+whenever it drops something discarded, so the file applies even after a crash;
+a failed rewrite fails the request. When the request changes items, `undo` is a `dump` taken before the
 change, since a new item can reset its category's values and VRoid changes
 other categories with it, such as the Base Hair that each Hair Back item
 brings, so it includes the accessories; otherwise it holds the
@@ -483,7 +484,8 @@ from the view, so every body view of a model at one image size shares its scale
 and ground line. The bounds include everything worn, so an item that makes the
 model taller or wider, such as an ahoge, a hat, or a long top, changes the
 scale; only renders of one character state compare directly. A head frame
-spans from the humanoid neck bone to the top of the bounds, centred on the head bone (`Animator.GetBoneTransform`). Its width
+spans from the humanoid neck bone to the top of the bounds, centred on the head
+bone (`Animator.GetBoneTransform`). Its width
 is the horizontal reach from the head bone, in any direction, of every renderer
 whose bounds are centred above the neck, such as the head, ears, hair, and
 hats, so head views share their scale too. The body, whose bounds include the

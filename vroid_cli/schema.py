@@ -398,7 +398,6 @@ class Applied(Model):
         description="non-built-in items and accessories this request replaced or "
         "removed, which `undo` cannot restore"
     )
-
     undo: str = Field(
         description="path of an apply request, written before the first change, "
         "that restores the previous items, accessories, and values, except what "
@@ -406,6 +405,18 @@ class Applied(Model):
         "section that still wears an item that is not built in needs "
         "discard_custom."
     )
+
+    @field_validator("undo")
+    @classmethod
+    def applies(cls, value: str) -> str:
+        # Agents read the file only when they need it, so check it now.
+        try:
+            text = Path(value).read_text()
+        except OSError as error:
+            raise ValueError(f"cannot read {value}: {error.strerror}") from None
+        if not isinstance(parse(text), Apply):
+            raise ValueError(f"{value} is not an apply request")
+        return value
 
 
 class Saved(Model):

@@ -124,12 +124,12 @@ rebuilt() {
 # Apply the undo file an apply result names, and check that a dump matches
 # the one taken before that apply (R-EDIT-11).
 undo() {
-    local undo
-    undo=$(jq -er .undo <<<"$1")
-    vroid "@$undo" >/dev/null
+    local file
+    file=$(jq -er .undo <<<"$1")
+    vroid "@$file" >/dev/null
     vroid '{"method": "dump"}' >"$out/undone.json"
     jq -e --slurpfile before "$2" '. == $before[0]' "$out/undone.json" >/dev/null ||
-        fatal "dump after applying $undo differs from $2; see $out/undone.json"
+        fatal "dump after applying $file differs from $2; see $out/undone.json"
 }
 
 modified() {

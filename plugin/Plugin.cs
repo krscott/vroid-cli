@@ -29,6 +29,8 @@ public sealed partial class Plugin : BasePlugin
     // request that restores them, kept in its undo file (R-EDIT-11).
     private static readonly List<string> Changed = new();
     private static object? undo;
+    // Whether the undo file may still name something discarded since.
+    private static bool undoStale;
     // Items that are not built in and that the current operation replaced or
     // removed, which its undo cannot restore (R-EDIT-10).
     private static readonly List<string> Discarded = new();
@@ -109,6 +111,7 @@ public sealed partial class Plugin : BasePlugin
                 Changed.Clear();
                 Discarded.Clear();
                 undo = null;
+                undoStale = false;
                 operation = Execute(current).GetEnumerator();
             }
             if (operation != null)
@@ -131,7 +134,6 @@ public sealed partial class Plugin : BasePlugin
                 {
                     message += $" Changed before the failure: {string.Join(", ", Changed)}.";
                     if (Discarded.Count > 0) message += $" Discarded, which undo cannot restore: {string.Join(", ", Discarded)}.";
-                    if (undo != null) message += " Its undo file restores them.";
                 }
                 Complete(false, message);
             }
@@ -194,15 +196,21 @@ public sealed partial class Plugin : BasePlugin
         var request = current!;
         EndOperation();
         current = null;
-        // Ending the operation drops discarded items from the undo template,
-        // whose file was written before the first change.
-        if (undo != null && Discarded.Count > 0 && !Try(() => rpc.WriteUndo(request, undo), "update the undo file"))
+        if (undoStale)
         {
-            payload = $"{(ok ? "apply ran." : payload)} Its undo file could not be updated and still names the discarded items "
-                + $"{string.Join(", ", Discarded)}; remove them from it before applying it.";
+            payload = $"{(ok ? "apply ran." : payload)} Its undo file could not be updated and may still name the discarded items "
+                + $"{string.Join(", ", Discarded)}; remove them from it before applying it";
             ok = false;
         }
         rpc.Finish(request, ok, payload);
+    }
+
+    // Rewrites the undo file after something was dropped from `undo`, so a
+    // crash leaves a file that still applies (R-EDIT-11).
+    private static void SaveUndo()
+    {
+        if (current != null && undo != null && !Try(() => rpc.WriteUndo(current, undo), "update the undo file"))
+            undoStale = true;
     }
 
     private static object Main => main ?? throw new InvalidOperationException("App is not ready");
@@ -493,7 +501,7 @@ public sealed partial class Plugin : BasePlugin
         if (work.Worn != null) restore["Accessories"] = AccessoryList(work.WornEntries);
         // Written before the first change, so a failed or interrupted apply
         // leaves it too (R-EDIT-11).
-        rpc.WriteUndo(current!, restore);
+        rpc.WriteUndo(request, restore);
         undo = restore;
         foreach (var step in ChangeItems(work, restore)) yield return step;
         foreach (var step in ChangeAccessories(work, restore)) yield return step;
