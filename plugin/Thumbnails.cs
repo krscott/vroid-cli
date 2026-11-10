@@ -142,7 +142,11 @@ public sealed partial class Plugin
                 var task = Reflect.Call(Reflect.Get(slot.Items[index].Option, "Preview") ?? throw Differs($"the thumbnail of {item}"), "Create")!;
                 while (Reflect.Get(task, "IsCompleted") is not true) yield return true;
                 if (Reflect.Get(task, "IsFaulted") is true)
-                    throw new InvalidOperationException($"VRoid could not load the thumbnail of {item}: {Reflect.Get(Reflect.Get(task, "Exception"), "Message")}");
+                {
+                    // An AggregateException, whose own message names no cause.
+                    var error = Reflect.Get(task, "Exception");
+                    throw new InvalidOperationException($"VRoid could not load the thumbnail of {item}: {Reflect.Get(Reflect.Get(error, "InnerException") ?? error, "Message")}");
+                }
                 var texture = Reflect.Get(task, "Result") ?? throw new InvalidOperationException($"VRoid loaded no thumbnail for {item}");
                 sheet.Place(index, reader.Read(texture, item));
             }

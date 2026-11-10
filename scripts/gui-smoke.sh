@@ -378,14 +378,14 @@ fi
 
 # Rendering shows the whole character (R-VIEW-1) and changes nothing in the
 # app: values, unsaved state, and the editor's view stay the same (R-VIEW-2).
-# The editor shows the Outfit section while thumbnails are drawn for Outfit and
-# for another section, which must not stay shown.
+# The editor shows the Body section while thumbnails are drawn for the Hair and
+# Outfit sections; only restoring the section brings Body back.
 for item in "${items[@]}"; do
     IFS='|' read -r section category <<<"$item"
     items_of "$section" "$category" >"$out/listed-$section-$category.json"
 done
 vroid '{"method": "dump"}' >"$out/before-render.json"
-items_of Outfit Tops >/dev/null
+items_of Body 'Whole Body' >/dev/null
 settled_screenshot "$out/before-render.png"
 renders=(
     'front|body|512|1024'
