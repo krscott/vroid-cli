@@ -160,10 +160,16 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = adapter.validate_python(raw)
     except ValidationError as error:
+        undo = cast(dict[str, Any], raw).get("undo") if isinstance(raw, dict) else None
         print(
             f"vroid-cli: {request.method} ran, but its result does not match the "
             f"schema; inspect the session before another edit:\n"
-            f"{schema.describe(error)}",
+            f"{schema.describe(error)}"
+            + (
+                f"\nIts undo file is {undo}; check it before applying it"
+                if isinstance(undo, str)
+                else ""
+            ),
             file=sys.stderr,
         )
         return 1

@@ -286,7 +286,8 @@ class Render(Model):
     """Render the open character to a new PNG in an existing directory.
 
     The image is orthographic on a plain background. Body views of one
-    character at one size share their scale and ground line.
+    character state at one size share their scale and ground line; items that
+    make the character taller or wider change them.
     """
 
     method: Literal["render"]
@@ -420,17 +421,32 @@ class Applied(Model):
     changed: int = Field(
         description="number of items, accessories, and values that changed. Each "
         "element of a repeated label's array counts separately; values already "
-        "equal to the request don't count."
-    )
-    undo: Apply = Field(
-        description="restores the previous items, accessories, and values, "
-        "except what `discarded` names. Undoing an item change in a section "
-        "that still wears an item that is not built in needs discard_custom."
+        "equal to the request, and VRoid's own changes to other categories, "
+        "don't count."
     )
     discarded: list[str] = Field(
         description="non-built-in items and accessories this request replaced or "
         "removed, which `undo` cannot restore"
     )
+    undo: str = Field(
+        description="path of an apply request, written before the first change, "
+        "that restores the previous items, accessories, and values, except what "
+        "`discarded` names; apply it with `@PATH`. Undoing an item change in a "
+        "section that still wears an item that is not built in needs "
+        "discard_custom."
+    )
+
+    @field_validator("undo")
+    @classmethod
+    def applies(cls, value: str) -> str:
+        # Agents read the file only when they need it, so check it now.
+        try:
+            text = Path(value).read_text()
+        except OSError as error:
+            raise ValueError(f"cannot read {value}: {error.strerror}") from None
+        if not isinstance(parse(text), Apply):
+            raise ValueError(f"{value} is not an apply request")
+        return value
 
 
 class Saved(Model):

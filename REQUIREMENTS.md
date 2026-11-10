@@ -244,6 +244,17 @@ investigate or ask; never invent a rationale.
   means to discard one says so, and saves a copy of the project first if it may
   want the item back.
 
+- **R-EDIT-11** [manual: `just gui-smoke` applies the undo file of a value
+  `apply` and of an item and accessory `apply`, and compares `dump` with one
+  taken before each] Before `apply` changes anything, it writes a template to a
+  new file that restores everything the request changes, including what VRoid
+  changes with an item, except what its result names in `discarded`
+  (R-EDIT-10). Its result, and its error after a change, name the file.
+
+  Rationale: Agents try edits and back out the ones that don't match a
+  reference. The file survives a failed or interrupted `apply`, and keeping the
+  template out of the result keeps the result short enough to read.
+
 ## Views (VIEW)
 
 - **R-VIEW-1** [manual: `just gui-smoke` renders each view after an `apply`

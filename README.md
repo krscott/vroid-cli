@@ -60,8 +60,9 @@ vroid-cli demo '{"method": "dump"}' > template.json
 vroid-cli other @template.json
 ```
 
-`apply` checks every item and value before changing any, and its result
-includes an `undo` request that restores the previous ones. A category's
+`apply` checks every item and value before changing any. Before the first
+change it writes an `undo` file, an `apply` request that restores the previous
+ones; its result names the file. A category's
 `"item"` names one of VRoid's built-in items, listed by `items`, or `"custom"`
 for one that is not built in; `accessories` lists accessories the same way. A label that repeats within a
 category, such as "Nose Size" in Face Sets, maps to an array of its values.
@@ -71,17 +72,19 @@ one category per section. Colours are `"#RRGGBB"` as VRoid's editor shows them;
 shared colours, such as skin in Face and Body, may also be set in only one
 place per request.
 
-Use one session name per agent or task. Session state lives in `.vroid/NAME/`
-at the Git worktree root (the current directory outside Git), or under
-`VROID_STATE_DIR`. The state directory ignores itself in Git.
+Use one session name per agent or task; the first `launch` creates it.
+Session state lives in `.vroid/NAME/` at the Git worktree root (the current
+directory outside Git), or under `VROID_STATE_DIR`. The state directory
+ignores itself in Git.
 
 ### Views
 
 `render` writes a PNG of the open character on a plain background, without
 changing the project or the editor's view. It shows the front, three-quarter,
 side, or back of the whole character, or of its head with `"frame": "head"`.
-Views are orthographic, and body views at one size share their scale, like a
-turnaround sheet:
+Views are orthographic, and body views of one character state at one size share
+their scale, like a turnaround sheet. An item that makes the character taller
+or wider changes it:
 
 ```sh
 vroid-cli demo '{"method": "render", "path": "./side.png", "view": "side"}'

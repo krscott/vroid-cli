@@ -5,11 +5,11 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 # Change together with Bridge.Protocol whenever the file protocol or the
 # request methods change incompatibly.
-PROTOCOL = 4
+PROTOCOL = 5
 # The bridge writes a heartbeat about once a second from Unity's main thread.
 HEARTBEAT_STALE_MS = 5000
 # The bridge stops waiting on an operation after this long...
@@ -82,7 +82,9 @@ def wine_path(path: Path) -> str:
 def submit(rpc: Path, *, boot: str, method: str, args: dict[str, Any]) -> Any:
     """Send one request and wait for its result. Never resends (R-RPC-5).
 
-    The caller must hold the session's controller lock.
+    A result or error whose request wrote an undo file names it, and a
+    result adds it as `undo` (R-EDIT-11). The caller must hold the session's
+    controller lock.
     """
     request_path = rpc / "request.json"
     if request_path.exists():
@@ -96,23 +98,46 @@ def submit(rpc: Path, *, boot: str, method: str, args: dict[str, Any]) -> Any:
         "method": method,
         "timeout_ms": ENGINE_TIMEOUT_MS,
     }
-    write_json_atomic(request_path, request)
     response = rpc / "results" / f"{request['id']}.json"
+    undo = rpc / "undo" / f"{request['id']}.json"
+
+    def restore(reason: str) -> str:
+        if not undo.exists():
+            return reason
+        return f"{reason.rstrip('.')}. To undo any change, apply @{undo}"
+
     wait_s = ENGINE_TIMEOUT_MS / 1000 + RESPONSE_MARGIN_S
     deadline = time.monotonic() + wait_s
+
+    def unfinished(why: str) -> RuntimeError:
+        reason = (
+            f"{why}; do not repeat the request. Its result will appear at "
+            f"{response}; restarting the session marks it as having an unknown "
+            "outcome"
+        )
+        if method == "apply" and not undo.exists():
+            # The app may still write the undo file and change things later.
+            reason += f"; if {undo} appears, apply it to undo any change"
+        return RuntimeError(restore(reason))
+
+    write_json_atomic(request_path, request)
     # The bridge writes the result before removing the request, so the next
     # command never finds this request still in place.
-    while request_path.exists():
-        if time.monotonic() > deadline:
-            raise RuntimeError(
-                f"No result after {wait_s:.0f}s; do not repeat the request. Its "
-                f"result will appear at {response}; restarting the session marks "
-                "it as having an unknown outcome"
-            )
-        time.sleep(0.05)
+    try:
+        while request_path.exists():
+            if time.monotonic() > deadline:
+                raise unfinished(f"No result after {wait_s:.0f}s")
+            time.sleep(0.05)
+    except KeyboardInterrupt:
+        raise unfinished("Interrupted before the result") from None
     if not response.exists():
-        raise RuntimeError(f"The app discarded the request without a result; see {rpc}")
+        raise RuntimeError(
+            restore(f"The app discarded the request without a result; see {rpc}")
+        )
     payload: dict[str, Any] = json.loads(response.read_text())
     if not payload["ok"]:
-        raise BridgeError(method, str(payload["error"]))
-    return payload["result"]
+        raise BridgeError(method, restore(str(payload["error"])))
+    result: Any = payload["result"]
+    if undo.exists() and isinstance(result, dict):
+        return cast(dict[str, Any], result) | {"undo": str(undo)}
+    return result

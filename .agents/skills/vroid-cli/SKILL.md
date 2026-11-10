@@ -17,7 +17,9 @@ that build for the whole session. It supports VRoid Studio 2.16.0 on x86_64
 Linux.
 
 Every command is `vroid-cli SESSION REQUEST`. `REQUEST` is a JSON object,
-`@path` to read one from a file, or `-` to read stdin:
+`@path` to read one from a file, or `-` to read stdin. The first `launch` of a
+new name creates the session; to delete one, `stop` it and remove its
+directory (Recovery, below):
 
 ```sh
 vroid-cli alice '{"method": "launch"}'
@@ -76,7 +78,11 @@ and tails are accessories.
 - `apply` accepts finite values within each parameter's `min..max`, and
   colours as `"#RRGGBB"` where `parameters` lists a colour. It checks every
   value before changing any; one bad value refuses the whole request. Its
-  result's `undo` is an `apply` request that restores the previous values.
+  result is `changed`, `discarded`, and `undo`, the path of a file written
+  before the first change that holds an `apply` request restoring the
+  previous values. Undo with `vroid-cli NAME @PATH`. When `apply` fails after
+  changing something, its error names the same file. Undo files stay in the
+  session; copy one to keep it after the session is deleted.
 - Colours are the hex VRoid's editor shows, without alpha. Hair's "Main Color"
   and "Highlight Color" (under Front, Back, and the other hair parts) are one
   pair for all hair; Base Hair has its own "Main Color".
@@ -92,13 +98,17 @@ and tails are accessories.
   thumbnail of each item, 10 per row in `items` order, labelled with its
   identifier. It takes about 2 s, changes nothing, and shows items in VRoid's
   default colours. Then select candidates and `render` them to compare.
-  Selecting an item resets that category's values and colours, so `apply`
-  changes items first, then values. `"item": null` takes
+  Selecting an item keeps every colour, but resets Face Irises and Eyebrows
+  values, so `apply` changes items first, then values. `"item": null` takes
   off the item where `items` reports `removable`.
 - VRoid takes off conflicting items itself, such as the dress when a top is
-  selected; a request naming both is refused. Sets (Face Sets, Eyes Sets,
-  Hairstyle Sets, Whole Sets) select the items of other categories, so name
-  either a set or those items. `dump` omits sets.
+  selected; a request naming both is refused. Each Hair Back item also brings
+  its own Base Hair item, or none: Back `146` selects Base Hair `001`, `326`
+  selects `Default`. Set Base Hair after Back, or in the same request, to keep
+  another. `changed` counts only what the request names, but `undo` restores
+  these too. Sets (Face Sets, Eyes Sets, Hairstyle Sets, Whole Sets) select
+  the items of other categories, so name either a set or those items. `dump`
+  omits sets.
 - `"custom"` is an item `items` does not list, such as a texture-edited
   outfit or a sample model's part. `apply` refuses to change any item in a
   section that wears one, since VRoid may replace it and `undo` cannot
@@ -137,8 +147,11 @@ and tails are accessories.
   `view` is `front`, `three_quarter`, `side`, or `back`; `three_quarter` and
   `side` show its left side. `frame: "head"` fits everything above the neck,
   so a front head view is a face close-up and a side head view shows ear
-  shape. Views are orthographic, and body views at one `width` and `height`
-  share their scale, so they compare directly with a reference turnaround.
+  shape. Views are orthographic, and body views of one character state at one
+  `width` and `height` share their scale, so they compare directly with a
+  reference turnaround. The body frame fits everything worn, so an item that
+  makes the character taller or wider, such as an ahoge, a hat, or a long top,
+  changes the scale and can move the ground line.
   `width` and `height` default to 1024.
 - Opening another project requires `save`, `stop`, and `launch` first.
 - `stop` refuses while there are unsaved changes or a pending request. Save
@@ -159,7 +172,9 @@ escalation.
 ## Recovery
 
 `status` reports `app_running`, `ready`, `pending_request`, and the bridge's
-last heartbeat, including `modified` for unsaved changes. Session state lives in
+last heartbeat, including `modified` for unsaved changes and `rebuilt`, the
+number of model rebuilds since the app started; only differences between two
+readings mean anything. Session state lives in
 `.vroid/NAME/` at the Git worktree root (the current directory outside Git), or
 under `VROID_STATE_DIR`. On failure, read `runner.log`, `player.log`,
 `bepinex/LogOutput.log`, and `bepinex/preloader.log` there.

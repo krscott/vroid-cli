@@ -25,10 +25,12 @@ public sealed partial class Plugin : BasePlugin
     private static Request? current;
     private static IEnumerator<bool>? operation;
     private static object? result;
-    // Values the current operation changed, and the request that restores
-    // them, reported if it fails.
+    // Values the current operation changed, reported if it fails, and the
+    // request that restores them, kept in its undo file (R-EDIT-11).
     private static readonly List<string> Changed = new();
     private static object? undo;
+    // Whether the undo file may still name a custom accessory removed since.
+    private static bool undoStale;
     // Items that are not built in and that the current operation replaced or
     // removed, which its undo cannot restore (R-EDIT-10).
     private static readonly List<string> Discarded = new();
@@ -109,6 +111,7 @@ public sealed partial class Plugin : BasePlugin
                 Changed.Clear();
                 Discarded.Clear();
                 undo = null;
+                undoStale = false;
                 operation = Execute(current).GetEnumerator();
             }
             if (operation != null)
@@ -123,15 +126,14 @@ public sealed partial class Plugin : BasePlugin
         {
             if (current != null)
             {
-                // Ends the operation first, so its cleanup, such as dropping discarded
-                // items from the undo, runs before the message is written.
+                // Ends the operation first, so its cleanup, which records what was
+                // discarded and rewrites the undo file, runs before the message is written.
                 EndOperation();
                 var message = (error.InnerException ?? error).Message;
                 if (Changed.Count > 0)
                 {
                     message += $" Changed before the failure: {string.Join(", ", Changed)}.";
                     if (Discarded.Count > 0) message += $" Discarded, which undo cannot restore: {string.Join(", ", Discarded)}.";
-                    if (undo != null) message += $" Apply this to restore them: {JsonSerializer.Serialize(undo)}";
                 }
                 Complete(false, message);
             }
@@ -194,7 +196,23 @@ public sealed partial class Plugin : BasePlugin
         var request = current!;
         EndOperation();
         current = null;
+        if (undoStale)
+        {
+            var gone = Discarded.Where(path => path.StartsWith("Accessories/"));
+            payload = $"{(ok ? "apply ran." : payload)} Its undo file could not be updated and may still list the removed accessories "
+                + $"{string.Join(", ", gone)}; remove them from it before applying it";
+            ok = false;
+        }
         rpc.Finish(request, ok, payload);
+    }
+
+    // Rewrites the undo file after a custom accessory was dropped from `undo`,
+    // so a crash leaves a file that still applies (R-EDIT-11).
+    private static void SaveUndo()
+    {
+        // The latest write holds the whole template, so only its outcome counts.
+        if (current != null && undo != null)
+            undoStale = !Try(() => rpc.WriteUndo(current, undo), "update the undo file");
     }
 
     private static object Main => main ?? throw new InvalidOperationException("App is not ready");
@@ -473,18 +491,30 @@ public sealed partial class Plugin : BasePlugin
         errors.AddRange(Colors.Conflicts(colors));
         if (errors.Count > 0) throw new ArgumentException(string.Join("; ", errors) + ". Nothing changed");
         var restore = new Dictionary<string, object>();
-        // A new item resets its category's values and colours, and VRoid changes other
+        // A new item can reset its category's values, and VRoid changes other
         // categories' items with it, so the undo is a dump of everything.
         if (Sections.Any(work.ItemsChange))
+        {
             foreach (var step in Dump(restore)) yield return step;
+            // Undo cannot restore an item that is not built in, and "custom" only
+            // keeps one still worn, so leaving it out changes nothing while it is
+            // worn and keeps the undo applying once it is gone.
+            foreach (var section in Sections)
+                foreach (var values in ((Dictionary<string, object>)restore[section]).Values.Cast<Dictionary<string, object?>>())
+                    if (values.TryGetValue("item", out var item) && item as string == ItemIds.Custom)
+                        values.Remove("item");
+        }
         else
         {
             restore["method"] = "apply";
             foreach (var section in Sections) restore[section] = previous[section];
         }
         if (work.Worn != null) restore["Accessories"] = AccessoryList(work.WornEntries);
+        // Written before the first change, so a failed or interrupted apply
+        // leaves it too (R-EDIT-11).
+        rpc.WriteUndo(request, restore);
         undo = restore;
-        foreach (var step in ChangeItems(work, restore)) yield return step;
+        foreach (var step in ChangeItems(work)) yield return step;
         foreach (var step in ChangeAccessories(work, restore)) yield return step;
         var changed = work.Changed;
         foreach (var target in Targets(edits, errors, (_, _) => false))
@@ -524,7 +554,7 @@ public sealed partial class Plugin : BasePlugin
             }
         }
         if (errors.Count > 0) throw new InvalidOperationException(string.Join("; ", errors));
-        result = new { changed, undo, discarded = Discarded };
+        result = new { changed, discarded = Discarded };
     }
 
     private static bool Same(object? a, object? b) => a is float[] x && b is float[] y ? x.SequenceEqual(y) : Equals(a, b);
