@@ -25,8 +25,8 @@ public sealed partial class Plugin : BasePlugin
     private static Request? current;
     private static IEnumerator<bool>? operation;
     private static object? result;
-    // Values the current operation changed, and the request that restores
-    // them, reported if it fails.
+    // Values the current operation changed, reported if it fails, and the
+    // request that restores them, kept in its undo file (R-EDIT-11).
     private static readonly List<string> Changed = new();
     private static object? undo;
     // Items that are not built in and that the current operation replaced or
@@ -131,7 +131,7 @@ public sealed partial class Plugin : BasePlugin
                 {
                     message += $" Changed before the failure: {string.Join(", ", Changed)}.";
                     if (Discarded.Count > 0) message += $" Discarded, which undo cannot restore: {string.Join(", ", Discarded)}.";
-                    if (undo != null) message += $" Apply this to restore them: {JsonSerializer.Serialize(undo)}";
+                    if (undo != null) message += " Its undo file restores them.";
                 }
                 Complete(false, message);
             }
@@ -194,6 +194,14 @@ public sealed partial class Plugin : BasePlugin
         var request = current!;
         EndOperation();
         current = null;
+        // Ending the operation drops discarded items from the undo template,
+        // whose file was written before the first change.
+        if (undo != null && Discarded.Count > 0 && !Try(() => rpc.WriteUndo(request, undo), "update the undo file"))
+        {
+            payload = $"{(ok ? "apply ran." : payload)} Its undo file could not be updated and still names the discarded items "
+                + $"{string.Join(", ", Discarded)}; remove them from it before applying it.";
+            ok = false;
+        }
         rpc.Finish(request, ok, payload);
     }
 
@@ -473,7 +481,7 @@ public sealed partial class Plugin : BasePlugin
         errors.AddRange(Colors.Conflicts(colors));
         if (errors.Count > 0) throw new ArgumentException(string.Join("; ", errors) + ". Nothing changed");
         var restore = new Dictionary<string, object>();
-        // A new item resets its category's values and colours, and VRoid changes other
+        // A new item can reset its category's values, and VRoid changes other
         // categories' items with it, so the undo is a dump of everything.
         if (Sections.Any(work.ItemsChange))
             foreach (var step in Dump(restore)) yield return step;
@@ -483,6 +491,9 @@ public sealed partial class Plugin : BasePlugin
             foreach (var section in Sections) restore[section] = previous[section];
         }
         if (work.Worn != null) restore["Accessories"] = AccessoryList(work.WornEntries);
+        // Written before the first change, so a failed or interrupted apply
+        // leaves it too (R-EDIT-11).
+        rpc.WriteUndo(current!, restore);
         undo = restore;
         foreach (var step in ChangeItems(work, restore)) yield return step;
         foreach (var step in ChangeAccessories(work, restore)) yield return step;
@@ -524,7 +535,7 @@ public sealed partial class Plugin : BasePlugin
             }
         }
         if (errors.Count > 0) throw new InvalidOperationException(string.Join("; ", errors));
-        result = new { changed, undo, discarded = Discarded };
+        result = new { changed, discarded = Discarded };
     }
 
     private static bool Same(object? a, object? b) => a is float[] x && b is float[] y ? x.SequenceEqual(y) : Equals(a, b);

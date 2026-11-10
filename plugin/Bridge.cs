@@ -13,7 +13,7 @@ public sealed record Request(string Id, string Boot, string Method, int TimeoutM
 public sealed class RpcDirectory
 {
     /// Change together with PROTOCOL in vroid_cli/rpc.py.
-    public const int Protocol = 4;
+    public const int Protocol = 5;
 
     private readonly string root;
     private readonly Func<object> status;
@@ -31,6 +31,7 @@ public sealed class RpcDirectory
         this.log = log;
         Boot = boot;
         Directory.CreateDirectory(Path.Combine(root, "results"));
+        Directory.CreateDirectory(Path.Combine(root, "undo"));
     }
 
     private string RequestPath => Path.Combine(root, "request.json");
@@ -112,6 +113,11 @@ public sealed class RpcDirectory
         unpublished = null;
         return null;
     }
+
+    /// Writes or replaces the request's undo template. Undo files are kept,
+    /// like results.
+    public void WriteUndo(Request request, object template) =>
+        Write(Path.Combine(root, "undo", request.Id + ".json"), template);
 
     public void WriteStatus() => Write(Path.Combine(root, "status.json"), status());
 

@@ -5,11 +5,11 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 # Change together with Bridge.Protocol whenever the file protocol or the
 # request methods change incompatibly.
-PROTOCOL = 4
+PROTOCOL = 5
 # The bridge writes a heartbeat about once a second from Unity's main thread.
 HEARTBEAT_STALE_MS = 5000
 # The bridge stops waiting on an operation after this long...
@@ -82,7 +82,8 @@ def wine_path(path: Path) -> str:
 def submit(rpc: Path, *, boot: str, method: str, args: dict[str, Any]) -> Any:
     """Send one request and wait for its result. Never resends (R-RPC-5).
 
-    The caller must hold the session's controller lock.
+    A result or error whose request wrote an undo file names it as `undo`
+    (R-EDIT-11). The caller must hold the session's controller lock.
     """
     request_path = rpc / "request.json"
     if request_path.exists():
@@ -98,6 +99,11 @@ def submit(rpc: Path, *, boot: str, method: str, args: dict[str, Any]) -> Any:
     }
     write_json_atomic(request_path, request)
     response = rpc / "results" / f"{request['id']}.json"
+    undo = rpc / "undo" / f"{request['id']}.json"
+
+    def restore() -> str:
+        return f". To undo what changed, apply @{undo}" if undo.exists() else ""
+
     wait_s = ENGINE_TIMEOUT_MS / 1000 + RESPONSE_MARGIN_S
     deadline = time.monotonic() + wait_s
     # The bridge writes the result before removing the request, so the next
@@ -107,12 +113,17 @@ def submit(rpc: Path, *, boot: str, method: str, args: dict[str, Any]) -> Any:
             raise RuntimeError(
                 f"No result after {wait_s:.0f}s; do not repeat the request. Its "
                 f"result will appear at {response}; restarting the session marks "
-                "it as having an unknown outcome"
+                f"it as having an unknown outcome{restore()}"
             )
         time.sleep(0.05)
     if not response.exists():
-        raise RuntimeError(f"The app discarded the request without a result; see {rpc}")
+        raise RuntimeError(
+            f"The app discarded the request without a result; see {rpc}{restore()}"
+        )
     payload: dict[str, Any] = json.loads(response.read_text())
     if not payload["ok"]:
-        raise BridgeError(method, str(payload["error"]))
-    return payload["result"]
+        raise BridgeError(method, f"{payload['error']}{restore()}")
+    result: Any = payload["result"]
+    if undo.exists() and isinstance(result, dict):
+        return cast(dict[str, Any], result) | {"undo": str(undo)}
+    return result

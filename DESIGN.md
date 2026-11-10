@@ -196,11 +196,16 @@ temporary file renamed over its target, so readers never see partial files.
   `timeout_ms`. Paths are Wine paths (`Z:/...`).
 - `results/ID.json`: `{"ok", "result", "error"}`, written by the bridge before
   it removes the request. Results are never deleted (R-RPC-6).
+- `undo/ID.json`: an `apply` request's undo template, written by the bridge
+  before the first change (R-EDIT-11). Like results, undo files are never
+  deleted; nothing cleans them up.
 
 A request command takes the lock, requires a fresh
 heartbeat with the same protocol (R-RPC-4), refuses if `request.json` exists
 (R-RPC-3), tags the request with the heartbeat's `boot`, and waits until the
-bridge removes the request, then reads the result. Waiting for the removal
+bridge removes the request, then reads the result. When the request's undo
+file exists, the result gains its path as `undo`, and every error, including a
+timeout, names it. Waiting for the removal
 keeps the next command from seeing a finished request as pending. It never
 resends (R-RPC-5).
 
@@ -296,20 +301,24 @@ compare the value as float32, as VRoid stores it, so a dumped bound such as
 (R-EDIT-3, R-EDIT-10). A colour that is unavailable for a category's current
 item is not refused when the request changes that category's item, since the
 new item may offer it. The second pass changes items, then accessories,
-because a new item resets its category's values and colours, then
+because a new item can reset its category's values (Irises and Eyebrows in
+2.16.0; colours survive), then
 revisits the categories and sets each value that differs, waiting for each
 rebuild. It stops at the first new refusal, such as a colour the new item
 does not offer. It sets `modified` before the first change, so an interrupted
-edit still counts as unsaved. The result counts the changes, holds an `undo`
-template, and lists in `discarded` what `undo` cannot restore. When the
-request changes items, `undo` is a `dump` taken before the change, since a
-new item resets its category's values and colours and VRoid changes other
-categories with it, so it includes the accessories; otherwise it holds the
+edit still counts as unsaved. The result counts the changes and lists in
+`discarded` what `undo` cannot restore. The bridge writes the `undo` template
+to its file once the first pass succeeds, before any change, and rewrites it
+when the operation ends if something was discarded; a failed rewrite fails the
+request. When the request changes items, `undo` is a `dump` taken before the
+change, since a new item can reset its category's values and VRoid changes
+other categories with it, such as the Base Hair that each Hair Back item
+brings, so it includes the accessories; otherwise it holds the
 previous values of what the request names, and the previous accessories when
 the request lists them. A custom accessory leaves `undo` once it is removed.
 If the second pass fails, the bridge ends the operation, which drops what was
-discarded from `undo`, then reports what already changed with the `undo`
-request. Each item waits for its section to settle, so reapplying a whole
+discarded from `undo`, then reports what already changed, and the CLI adds the
+undo file. Each item waits for its section to settle, so reapplying a whole
 template takes tens of seconds, within the request timeout.
 
 ### Items and accessories
@@ -471,8 +480,10 @@ the front, three-quarter, side, and back views; the negative turns show the
 model's left side. A body frame fits the renderers' world bounds with a 5%
 margin: their height, and their horizontal radius rather than the width seen
 from the view, so every body view of a model at one image size shares its scale
-and ground line. A head frame spans from the humanoid neck bone to the top of
-the bounds, centred on the head bone (`Animator.GetBoneTransform`). Its width
+and ground line. The bounds include everything worn, so an item that makes the
+model taller or wider, such as an ahoge, a hat, or a long top, changes the
+scale; only renders of one character state compare directly. A head frame
+spans from the humanoid neck bone to the top of the bounds, centred on the head bone (`Animator.GetBoneTransform`). Its width
 is the horizontal reach from the head bone, in any direction, of every renderer
 whose bounds are centred above the neck, such as the head, ears, hair, and
 hats, so head views share their scale too. The body, whose bounds include the

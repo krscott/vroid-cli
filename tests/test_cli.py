@@ -156,6 +156,21 @@ def answer(
     return thread, received
 
 
+def applied(
+    rpc: Path,
+    packet: dict[str, Any],
+    *,
+    changed: int,
+    discarded: list[str] | None = None,
+) -> dict[str, Any]:
+    """Answer an apply as the bridge does, after writing its undo file first."""
+    undo = rpc / "undo" / f"{packet['id']}.json"
+    undo.parent.mkdir(exist_ok=True)
+    undo.write_text('{"method": "apply"}')
+    result = {"changed": changed, "discarded": discarded or []}
+    return {"ok": True, "result": result, "error": None}
+
+
 APPLY = '{"method": "apply", "Body": {"Whole Body": {"Head Size": %s}}}'
 
 
@@ -189,15 +204,7 @@ def test_colour_labels_may_repeat_across_categories(tmp_path: Path) -> None:
     # which colours are shared.
     rpc = bridge(tmp_path)
     face = {"Eyebrows": {"Color": "#8f5836"}, "Eyelashes": {"Color": "#6E5B4D"}}
-    undo = {"method": "apply", "Face": face, "Hair": {}, "Body": {}}
-    peer, received = answer(
-        rpc,
-        lambda _: {
-            "ok": True,
-            "result": {"changed": 2, "undo": undo, "discarded": []},
-            "error": None,
-        },
-    )
+    peer, received = answer(rpc, lambda packet: applied(rpc, packet, changed=2))
     result = invoke(tmp_path, "apply", Face=face)
     peer.join()
     assert result.returncode == 0, result.stderr
@@ -615,25 +622,21 @@ def test_stop_refuses_to_discard_work_unless_forced(tmp_path: Path, cause: str) 
     assert (tmp_path / "framewisp.log").read_text().split()[-1] == "stop"
 
 
-@pytest.mark.parametrize("ok", [True, False])
-def test_request_roundtrip(tmp_path: Path, ok: bool) -> None:
-    # R-CLI-1, R-CLI-2, R-RPC-5, R-RPC-6
+@pytest.mark.parametrize("outcome", ["applied", "refused", "failed"])
+def test_request_roundtrip(tmp_path: Path, outcome: str) -> None:
+    # R-CLI-1, R-CLI-2, R-RPC-5, R-RPC-6, R-EDIT-11
     rpc = bridge(tmp_path)
     template = {"Whole Body": {"Head Size": -0.25}}
-    undo = {
-        "method": "apply",
-        "Face": {},
-        "Hair": {},
-        "Body": {"Whole Body": {"Head Size": 0}},
-    }
-    peer, received = answer(
-        rpc,
-        lambda _: {
-            "ok": ok,
-            "result": {"changed": 1, "undo": undo, "discarded": []} if ok else None,
-            "error": None if ok else "engine refused",
-        },
-    )
+
+    def reply(packet: dict[str, Any]) -> dict[str, Any]:
+        if outcome == "refused":
+            return {"ok": False, "result": None, "error": "engine refused"}
+        result = applied(rpc, packet, changed=1)
+        if outcome == "failed":
+            return {"ok": False, "result": None, "error": "engine failed"}
+        return result
+
+    peer, received = answer(rpc, reply)
     result = invoke(tmp_path, "apply", Body=template)
     peer.join()
     assert len(received) == 1
@@ -642,18 +645,25 @@ def test_request_roundtrip(tmp_path: Path, ok: bool) -> None:
     assert request["method"] == "apply"
     assert (request["Face"], request["Hair"], request["Body"]) == ({}, {}, template)
     assert (rpc / "results" / f"{request['id']}.json").exists()
-    if ok:
+    undo = rpc.resolve() / "undo" / f"{request['id']}.json"
+    if outcome == "applied":
         assert result.returncode == 0
+        # A short result that names the undo file instead of holding it.
         assert json.loads(result.stdout) == {
             "changed": 1,
-            "undo": undo | {"Outfit": {}},
             "discarded": [],
+            "undo": str(undo),
         }
         assert result.stderr == ""
-    else:
-        assert result.returncode == 1
-        assert result.stdout == ""
+        return
+    assert result.returncode == 1
+    assert result.stdout == ""
+    if outcome == "refused":
         assert "engine refused" in result.stderr
+        assert "undo" not in result.stderr
+    else:
+        assert "engine failed" in result.stderr
+        assert f"apply @{undo}" in result.stderr
 
 
 # A template dumped before colours existed has no Hair section or colours.
@@ -694,15 +704,15 @@ def test_dump_output_is_valid_apply_input(tmp_path: Path, dump: dict[str, Any]) 
     rpc = bridge(tmp_path)
     peer, received = answer(
         rpc,
-        lambda request: {
-            "ok": True,
-            "result": (
-                dump
-                if request["method"] == "dump"
-                else {"changed": 0, "undo": dump, "discarded": []}
-            ),
-            "error": None,
-        },
+        lambda request: (
+            {
+                "ok": True,
+                "result": dump,
+                "error": None,
+            }
+            if request["method"] == "dump"
+            else applied(rpc, request, changed=0)
+        ),
     )
     dumped = invoke(tmp_path, "dump")
     assert dumped.returncode == 0, dumped.stderr
@@ -711,9 +721,9 @@ def test_dump_output_is_valid_apply_input(tmp_path: Path, dump: dict[str, Any]) 
     assert json.loads(dumped.stdout) == sections | dump
     # Templates dumped before colours or items existed still apply unchanged.
     (tmp_path / "template.json").write_text(json.dumps(dump))
-    applied = run_cli(tmp_path, "test", "@template.json")
+    reapplied = run_cli(tmp_path, "test", "@template.json")
     peer.join()
-    assert applied.returncode == 0, applied.stderr
+    assert reapplied.returncode == 0, reapplied.stderr
     assert received[1] | {"id": "", "boot": "", "timeout_ms": 0} == sections | dump | {
         "id": "",
         "boot": "",
@@ -724,14 +734,9 @@ def test_dump_output_is_valid_apply_input(tmp_path: Path, dump: dict[str, Any]) 
 def test_apply_sends_discard_custom_only_when_set(tmp_path: Path) -> None:
     # R-EDIT-10: the opt-in reaches the bridge, and the result names what it discarded.
     rpc = bridge(tmp_path)
-    undo = {"method": "apply", "Hair": {"Back": {"item": "146"}}}
     peer, received = answer(
         rpc,
-        lambda _: {
-            "ok": True,
-            "result": {"changed": 2, "undo": undo, "discarded": ["Hair/Overall Hair"]},
-            "error": None,
-        },
+        lambda packet: applied(rpc, packet, changed=2, discarded=["Hair/Overall Hair"]),
     )
     hair = {"Overall Hair": {"item": "215"}}
     plain = invoke(tmp_path, "apply", Hair=hair)
@@ -741,8 +746,6 @@ def test_apply_sends_discard_custom_only_when_set(tmp_path: Path) -> None:
     assert "discard_custom" not in received[0]
     assert received[1]["discard_custom"] is True
     assert json.loads(forced.stdout)["discarded"] == ["Hair/Overall Hair"]
-    # The undo template never discards anything itself.
-    assert "discard_custom" not in json.loads(forced.stdout)["undo"]
 
 
 def test_items_and_accessories_are_listed(tmp_path: Path) -> None:

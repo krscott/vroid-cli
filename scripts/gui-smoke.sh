@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Drive a real session through edit, save, render, restart, reopen, and a
 # template round trip, checking R-EDIT-1, R-EDIT-3, R-EDIT-5, R-EDIT-6,
-# R-EDIT-7, R-EDIT-8, R-EDIT-9, R-VIEW-1, and R-VIEW-2.
+# R-EDIT-7, R-EDIT-8, R-EDIT-9, R-EDIT-11, R-VIEW-1, and R-VIEW-2.
 # Needs graphics access.
 set -euo pipefail
 shopt -s failglob
@@ -13,10 +13,11 @@ usage() {
         'Opens SOURCE in SESSION, dumps its template, edits one Body and two Face' \
         'parameters and four colours (orange hair, green eyes) in one request,' \
         'then selects other Hair Front and Outfit Tops items and adds cat and' \
-        'rabbit ears, saves a copy, renders each view, restarts, checks the' \
-        'saved values, and applies the original template. Editor screenshots' \
-        'before and after the edit land in the artifact directory. SESSION' \
-        'must be stopped. Set VROID_CLI to choose the vroid-cli binary.'
+        'rabbit ears, undoing and redoing both edits, saves a copy, renders' \
+        'each view, restarts, checks the saved values, and applies the original' \
+        'template. Editor screenshots before and after the edit land in the' \
+        'artifact directory. SESSION must be stopped. Set VROID_CLI to choose' \
+        'the vroid-cli binary.'
 }
 
 fatal_usage() {
@@ -118,6 +119,17 @@ launch() {
 
 rebuilt() {
     vroid '{"method": "status"}' | jq .bridge.rebuilt
+}
+
+# Apply the undo file an apply result names, and check that a dump matches
+# the one taken before that apply (R-EDIT-11).
+undo() {
+    local undo
+    undo=$(jq -er .undo <<<"$1")
+    vroid "@$undo" >/dev/null
+    vroid '{"method": "dump"}' >"$out/undone.json"
+    jq -e --slurpfile before "$2" '. == $before[0]' "$out/undone.json" >/dev/null ||
+        fatal "dump after applying $undo differs from $2; see $out/undone.json"
 }
 
 modified() {
@@ -260,6 +272,8 @@ for colour in "${colours[@]}"; do
 done
 # Skin is one colour shown in several categories; the refusal below sets it twice.
 skin=$(value_of Body 'Whole Body' Color)
+result=$(vroid "$request")
+undo "$result" "$out/original.json"
 before=$(rebuilt)
 vroid "$request" | jq -e --argjson count "${#edits[@]}" '.changed == $count' >/dev/null ||
     fatal "apply did not change ${#edits[@]} values"
@@ -281,6 +295,9 @@ for item in "${items[@]}"; do
     expected_item[$item]=$(pick_item "$section" "$category")
     request=$(with_value "$section" "$category" item "${expected_item[$item]}" <<<"$request")
 done
+vroid '{"method": "dump"}' >"$out/before-items.json"
+result=$(vroid "$request")
+undo "$result" "$out/before-items.json"
 before=$(rebuilt)
 changed=$(vroid "$request" | jq .changed)
 ((changed >= ${#items[@]} + 2)) || fatal "apply changed $changed items and accessories"

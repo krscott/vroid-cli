@@ -148,6 +148,23 @@ Test("a result that cannot be serialized is recorded as an error", directory =>
     Check(result.GetProperty("error").GetString()!.Contains("operation ran"), "error does not say it ran");
 });
 
+// R-EDIT-11, R-RPC-6
+Test("an undo file is replaced in place and kept after the result", directory =>
+{
+    var rpc = Rpc(directory, "current");
+    var id = NewId();
+    Send(directory, id, "current");
+    var request = rpc.Take()!;
+    var path = Path.Combine(directory, "undo", id + ".json");
+    rpc.WriteUndo(request, new { method = "apply", Hair = new { Back = new { item = "custom" } } });
+    rpc.WriteUndo(request, new { method = "apply", Hair = new { Back = new { } } });
+    rpc.Finish(request, true, new { changed = 1 });
+    var undo = JsonDocument.Parse(File.ReadAllText(path)).RootElement;
+    Check(undo.GetProperty("method").GetString() == "apply", "undo is not an apply request");
+    Check(!undo.GetProperty("Hair").GetProperty("Back").TryGetProperty("item", out _), "undo was not replaced");
+    Check(Directory.GetFiles(Path.Combine(directory, "undo")).Length == 1, "undo left a temporary file");
+});
+
 Test("a request whose id is not a CLI id writes nothing outside results", directory =>
 {
     var rpc = Rpc(directory, "current");
