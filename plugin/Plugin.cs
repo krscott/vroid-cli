@@ -29,7 +29,7 @@ public sealed partial class Plugin : BasePlugin
     // request that restores them, kept in its undo file (R-EDIT-11).
     private static readonly List<string> Changed = new();
     private static object? undo;
-    // Whether the undo file may still name something discarded since.
+    // Whether the undo file may still name a custom accessory removed since.
     private static bool undoStale;
     // Items that are not built in and that the current operation replaced or
     // removed, which its undo cannot restore (R-EDIT-10).
@@ -205,12 +205,13 @@ public sealed partial class Plugin : BasePlugin
         rpc.Finish(request, ok, payload);
     }
 
-    // Rewrites the undo file after something was dropped from `undo`, so a
-    // crash leaves a file that still applies (R-EDIT-11).
+    // Rewrites the undo file after a custom accessory was dropped from `undo`,
+    // so a crash leaves a file that still applies (R-EDIT-11).
     private static void SaveUndo()
     {
-        if (current != null && undo != null && !Try(() => rpc.WriteUndo(current, undo), "update the undo file"))
-            undoStale = true;
+        // The latest write holds the whole template, so only its outcome counts.
+        if (current != null && undo != null)
+            undoStale = !Try(() => rpc.WriteUndo(current, undo), "update the undo file");
     }
 
     private static object Main => main ?? throw new InvalidOperationException("App is not ready");
@@ -492,7 +493,16 @@ public sealed partial class Plugin : BasePlugin
         // A new item can reset its category's values, and VRoid changes other
         // categories' items with it, so the undo is a dump of everything.
         if (Sections.Any(work.ItemsChange))
+        {
             foreach (var step in Dump(restore)) yield return step;
+            // Undo cannot restore an item that is not built in, and "custom" only
+            // keeps one still worn, so leaving it out changes nothing while it is
+            // worn and keeps the undo applying once it is gone.
+            foreach (var section in Sections)
+                foreach (var values in ((Dictionary<string, object>)restore[section]).Values.Cast<Dictionary<string, object?>>())
+                    if (values.TryGetValue("item", out var item) && item as string == ItemIds.Custom)
+                        values.Remove("item");
+        }
         else
         {
             restore["method"] = "apply";
@@ -503,7 +513,7 @@ public sealed partial class Plugin : BasePlugin
         // leaves it too (R-EDIT-11).
         rpc.WriteUndo(request, restore);
         undo = restore;
-        foreach (var step in ChangeItems(work, restore)) yield return step;
+        foreach (var step in ChangeItems(work)) yield return step;
         foreach (var step in ChangeAccessories(work, restore)) yield return step;
         var changed = work.Changed;
         foreach (var target in Targets(edits, errors, (_, _) => false))

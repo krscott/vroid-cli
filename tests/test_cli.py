@@ -875,7 +875,7 @@ def test_an_undo_file_that_does_not_apply_is_an_error(tmp_path: Path) -> None:
     assert result.stdout == ""
     assert "does not match the schema" in result.stderr
     assert f"{undo} is not an apply request" in result.stderr
-    assert f"To undo any change, apply @{undo}" in result.stderr
+    assert f"Its undo file is {undo}; check it before applying it" in result.stderr
 
 
 def test_command_returns_after_the_bridge_removes_its_request(tmp_path: Path) -> None:

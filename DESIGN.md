@@ -309,18 +309,18 @@ rebuild. It stops at the first new refusal, such as a colour the new item
 does not offer. It sets `modified` before the first change, so an interrupted
 edit still counts as unsaved. The result counts the changes and lists in
 `discarded` what `undo` cannot restore. The bridge writes the `undo` template
-to its file once the first pass succeeds, before any change, and rewrites it
-whenever it drops something discarded, so the file applies even after a crash;
-a failed rewrite fails the request. When the request changes items, `undo` is a `dump` taken before the
-change, since a new item can reset its category's values and VRoid changes
-other categories with it, such as the Base Hair that each Hair Back item
-brings, so it includes the accessories; otherwise it holds the
-previous values of what the request names, and the previous accessories when
-the request lists them. A custom accessory leaves `undo` once it is removed.
-If the second pass fails, the bridge ends the operation, which drops what was
-discarded from `undo`, then reports what already changed, and the CLI adds the
-undo file. Each item waits for its section to settle, so reapplying a whole
-template takes tens of seconds, within the request timeout.
+to its file once the first pass succeeds, before any change. When the request
+changes items, `undo` is a `dump` taken before the change, without items that
+are not built in, since a new item can reset its category's values and VRoid
+changes other categories with it, such as the Base Hair that each Hair Back
+item brings, so it includes the accessories; otherwise it holds the previous
+values of what the request names, and the previous accessories when the
+request lists them. A custom accessory leaves `undo` once it is removed, and
+the bridge then rewrites the file, so it applies even after a crash; a failed
+rewrite fails the request. If the second pass fails, the bridge ends the
+operation, then reports what already changed and what was discarded, and the
+CLI adds the undo file. Each item waits for its section to settle, so
+reapplying a whole template takes tens of seconds, within the request timeout.
 
 ### Items and accessories
 
@@ -374,8 +374,9 @@ section that wears an item that is not built in (R-EDIT-10). With it, the
 change goes ahead, and `discarded` names each such
 item, found by comparing every category with before once a section's
 selections end, including when one fails.
-`undo` omits those items but keeps their categories' values, some shared with
-other categories, and restores every other category, including those VRoid
+`undo` omits every item that is not built in, since `"custom"` would only keep
+one still worn, but keeps their categories' values, some shared with other
+categories, and restores every other category, including those VRoid
 changed itself, such as a dress taken off for a top. Its own item changes in
 a section that still wears an item that is not built in need
 `discard_custom` too.

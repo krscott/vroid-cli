@@ -349,26 +349,16 @@ public sealed partial class Plugin
     private const string AccessoryColor = "Color";
 
     // Reports each worn item that is not built in and is now gone, including
-    // ones VRoid took off itself, and drops it from `undo` and its file, since
-    // undo cannot restore it; `undo` keeps the category's values, some of them
-    // shared.
-    private static void Discard(Outfitting work, string section, Dictionary<string, object> undo)
+    // ones VRoid took off itself. `undo` never names such items.
+    private static void Discard(Outfitting work, string section)
     {
-        var any = false;
         foreach (var slot in work.Slots[section].Where(slot => work.Before[slot.Path] == ItemIds.Custom && State(slot) != ItemIds.Custom))
-        {
             if (!Discarded.Contains(slot.Path)) Discarded.Add(slot.Path);
-            // The undo is a dump whenever the request changes items.
-            if (undo[section] is Dictionary<string, object> categories && categories.TryGetValue(slot.Name, out var values))
-                any |= (values as Dictionary<string, object?>)?.Remove("item") == true;
-        }
-        if (any) SaveUndo();
     }
 
     // Wears the requested items in app order, so a set comes before the items
-    // it selects, then checks each one reads back. `undo` is a dump from
-    // before the change.
-    private static IEnumerable<bool> ChangeItems(Outfitting work, Dictionary<string, object> undo)
+    // it selects, then checks each one reads back.
+    private static IEnumerable<bool> ChangeItems(Outfitting work)
     {
         foreach (var section in Sections.Where(work.Slots.ContainsKey))
         {
@@ -388,10 +378,10 @@ public sealed partial class Plugin
             }
             finally
             {
-                // Runs before a failure's message is written, so its undo applies.
+                // Runs before a failure's message is written, so it names what was discarded.
                 try
                 {
-                    Discard(work, section, undo);
+                    Discard(work, section);
                 }
                 catch (Exception error)
                 {

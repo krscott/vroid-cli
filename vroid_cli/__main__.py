@@ -162,7 +162,11 @@ def main(argv: list[str] | None = None) -> int:
             f"vroid-cli: {request.method} ran, but its result does not match the "
             f"schema; inspect the session before another edit:\n"
             f"{schema.describe(error)}"
-            + (f"\nTo undo any change, apply @{undo}" if isinstance(undo, str) else ""),
+            + (
+                f"\nIts undo file is {undo}; check it before applying it"
+                if isinstance(undo, str)
+                else ""
+            ),
             file=sys.stderr,
         )
         return 1
