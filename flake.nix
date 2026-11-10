@@ -62,9 +62,12 @@
       };
 
       devShells.${system}.default = pkgs.mkShell {
+        # Keep Python apps out of `packages`: their setup hook pins this
+        # shell's builds in PYTHONPATH, ahead of newer store commands' sites.
         packages = with pkgs; [
-          vroid-cli
-          framewisp-gles2
+          (writeShellScriptBin "framewisp" ''exec ${lib.getExe framewisp-gles2} "$@"'')
+          vroid-studio
+          git
           python
           pyright
           dotnet-sdk
@@ -75,6 +78,9 @@
           shellcheck
           bash
         ];
+        shellHook = ''
+          PATH=$(git rev-parse --show-toplevel)/scripts/dev:$PATH
+        '';
       };
 
       checks.${system} = {

@@ -35,6 +35,10 @@ buildPythonApplication {
     git
   ];
   pythonImportsCheck = [ "vroid_cli" ];
+  # Ignore caller Python imports; Nix fixup still adds our packaged sites.
+  postInstall = ''
+    sed -i '1s/$/ -I/' "$out/bin/vroid-cli"
+  '';
   makeWrapperArgs = [
     "--set"
     "VROID_CLI_SKILL"
