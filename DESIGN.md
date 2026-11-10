@@ -458,26 +458,26 @@ so the bridge parses hex itself.
 
 An option's `Preview` is a
 `VRoid.UI.TextureSource.TransferableGroupThumbnailTextureSource` for the
-option's resource. Its `Create()` returns a task that loads a prebaked
-300x400 `Texture2D` from the asset storage, usually within a frame, without
-touching the model, so `thumbnails` changes nothing in the app (R-VIEW-2).
-VRoid's capture-based `ThumbnailProvider` serves custom items only. Every
-call returns a new readable texture that nothing frees, so the bridge
-destroys each one once it is copied. `thumbnails` finds the category as
-`items` does, which switches the editor's section, and sets the edit root's
-`EditMode` back when it ends, whether or not it succeeds. It waits for each
-task between frames, and fails if one faults or
-returns null. It blits each texture with bilinear filtering into a 150x200
-`RenderTexture`, reads that into a reused RGB24 `Texture2D`, and copies the
-raw bytes into a `Sheet` (`plugin/Sheet.cs`, which `tests/protocol` also
-builds). The sheet lays cells out in rows of 10 in `items` order, separated
-by a 4-pixel white gutter, and draws each identifier below its thumbnail
-with an embedded 5x9 bitmap font at twice its size, so no Unity font, canvas,
-or UI is involved. The font covers exactly the characters an identifier may
-hold; a label longer than 12 characters fails as a VRoid difference. One
-RGB24 texture loads the sheet's bytes for `EncodeToPNG`. A category of 82
-items takes under 2 s. The PNG is published like `render`'s, below
-(R-VIEW-3).
+option's resource. Its `Create()` returns a task that loads a prebaked 300x400
+`Texture2D` from the asset storage, usually within a frame, without touching
+the model, so `thumbnails` changes nothing in the app (R-VIEW-2). VRoid's
+capture-based `ThumbnailProvider` serves custom items only. Every call returns
+a new readable texture that nothing frees, so the bridge destroys each one once
+it is copied. `thumbnails` finds the category as `items` does, which switches
+the editor's section, and sets the edit root's `EditMode` back when it ends,
+whether or not it succeeds. It waits for each task between frames, and fails if
+one faults or returns null, or if a thumbnail is not 300x400. It blits each
+texture with bilinear filtering into a 150x200 `RenderTexture`, restoring the
+active render texture that `Blit` changes, reads that into a reused RGB24
+`Texture2D`, and copies the raw bytes into a `Sheet` (`plugin/Sheet.cs`, which
+`tests/protocol` also builds). The sheet lays cells out in rows of 10 in
+`items` order, separated by a 4-pixel white gutter, and draws each identifier
+below its thumbnail with an embedded 5x9 bitmap font at twice its size, so no
+Unity font, canvas, or UI is involved. The font covers exactly the characters
+an identifier may hold; a label longer than 12 characters fails as a VRoid
+difference. One RGB24 texture loads the sheet's bytes for `EncodeToPNG`. A
+category of 82 items takes about 2 s. The PNG is published like `render`'s,
+below (R-VIEW-3).
 
 ### Rendering
 

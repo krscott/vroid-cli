@@ -669,20 +669,8 @@ public sealed partial class Plugin : BasePlugin
                 break;
             }
             case "thumbnails":
-            {
-                // Finding the category switches the editor's section; it is
-                // switched back so the editor's view stays as it was (R-VIEW-2).
-                var mode = Reflect.Get(Root, "EditMode") ?? throw Differs("the editor's section");
-                try
-                {
-                    foreach (var step in Thumbnails(request)) yield return step;
-                }
-                finally
-                {
-                    Reflect.Call(Root, "set_EditMode", mode);
-                }
+                foreach (var step in Thumbnails(request)) yield return step;
                 break;
-            }
             case "accessories":
             {
                 foreach (var step in EnterAccessories()) yield return step;
