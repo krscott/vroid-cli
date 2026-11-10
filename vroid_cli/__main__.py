@@ -31,7 +31,7 @@ def usage(reason: str) -> NoReturn:
 def agent_skill() -> str:
     skill = os.environ.get("VROID_CLI_SKILL")
     if not skill:
-        usage("VROID_CLI_SKILL is unset; run the packaged vroid-cli")
+        usage("VROID_CLI_SKILL is unset; run the vroid-cli command")
     return (
         f"{Path(skill).read_text().rstrip()}\n\n## JSON Schema\n\n"
         "Requests and results, generated from the validating models:\n\n"

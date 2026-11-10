@@ -7,10 +7,6 @@ default:
 build:
     nix build -L
 
-# Run the packaged CLI.
-run *args:
-    nix run -L . -- "$@"
-
 # Run the Python and bridge protocol tests from the working tree.
 test:
     python -m pytest -q
@@ -72,7 +68,7 @@ _format mode *files:
                     isort --quiet "$file"
                 fi
             ;;
-            *.sh|.githooks/*|*/.githooks/*)
+            *.sh|scripts/dev/*|.githooks/*|*/.githooks/*)
                 if [[ "$mode" == check ]]; then
                     shfmt -d -i 4 "$file"
                 else
@@ -89,7 +85,7 @@ lint:
     while IFS= read -r -d '' file; do
         [[ -f "$file" ]] || continue
         case "$file" in
-            *.sh|.githooks/*) shellcheck "$file" ;;
+            *.sh|scripts/dev/*|.githooks/*) shellcheck "$file" ;;
         esac
     done < <(git ls-files -z)
     python -m mypy .

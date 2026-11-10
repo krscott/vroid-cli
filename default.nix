@@ -19,7 +19,7 @@ buildPythonApplication {
       ./pyproject.toml
       ./vroid_cli
       ./tests
-      ./scripts
+      ./scripts/vroid-studio.sh
       # tests/test_cli.py checks the bridge's load message, which launch reads.
       ./plugin/Plugin.cs
       ./.agents/skills/vroid-cli/SKILL.md

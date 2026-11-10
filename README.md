@@ -145,7 +145,6 @@ Logs are in the session directory: `runner.log`, `player.log`,
 ```sh
 nix develop
 just build      # nix build
-just run ARGS   # nix run -- ARGS
 just test       # Python and bridge protocol tests
 just check      # formatting, lint, type checks, nix flake check
 just gui-smoke SESSION SOURCE.vroid
