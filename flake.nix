@@ -4,7 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     framewisp = {
-      url = "github:krscott/framewisp/cf7b3ee39e330cfa095411273c9b565b10dae7b1";
+      url = "github:krscott/framewisp/main";
       flake = false;
     };
   };

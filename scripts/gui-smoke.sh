@@ -52,7 +52,10 @@ vroid() {
 
 state=$(vroid '{"method": "status"}')
 [[ $(jq .app_running <<<"$state") == false ]] || fatal "Stop session $session first"
-out=$(mktemp -d "$(jq -r .directory <<<"$state")/smoke.XXXXXX")
+# A new session's directory appears only when it first launches.
+directory=$(jq -r .directory <<<"$state")
+mkdir -p -- "$directory"
+out=$(mktemp -d "$directory/smoke.XXXXXX")
 edited=$out/edited.vroid
 printf 'gui-smoke: artifacts in %s\n' "$out" >&2
 

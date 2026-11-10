@@ -17,6 +17,8 @@ Read `REQUIREMENTS.md` and `DESIGN.md` before changing behaviour.
   the launcher writes, is validated only against the pinned VRoid 2.16.0.
   Changing the VRoid, BepInEx, or Unity library pins needs a new live check
   with `just gui-smoke`.
+- Framewisp tracks its `main` branch; update it with
+  `nix flake update framewisp`. Each bump needs `just gui-smoke`.
 - `just test` and `nix flake check` need no graphics. `just gui-smoke` needs
   graphics and Unix sockets; run it outside agent sandboxes.
 - The Scope section of `.agents/skills/vroid-cli/SKILL.md` is the one list of
