@@ -268,16 +268,28 @@ investigate or ask; never invent a rationale.
   the feet, and cannot show the side or back.
 
 - **R-VIEW-2** [manual: `just gui-smoke` checks that `dump`, `modified`, and
-  the Framewisp input log are unchanged by rendering] Rendering changes nothing
-  in the app: the project, its unsaved state, and the editor's view stay as
-  they were, and it sends no pointer or keyboard input.
+  the Framewisp input log are unchanged by rendering and by drawing
+  thumbnails] Rendering and drawing thumbnails change nothing in the app: the
+  project, its unsaved state, and the editor's view stay as they were, and
+  they send no pointer or keyboard input.
 
   Rationale: Agents render between edits to check them. A render that changed
   the character, marked it unsaved, or moved the user's view would make an
   inspection look like an edit.
 
-- **R-VIEW-3** [test] `render` refuses an existing destination and leaves it
-  unchanged. The destination never holds a partial image.
+- **R-VIEW-3** [test] `render` and `thumbnails` refuse an existing destination
+  and leave it unchanged. The destination never holds a partial image.
 
   Rationale: The destination may be an earlier image an agent is comparing
   against, and a reader that finds the file must be able to use it.
+
+- **R-VIEW-4** [manual: `just gui-smoke` draws the thumbnails of a Hair and an
+  Outfit category and checks the image size and that `items` lists in the
+  result exactly the category's `items`; compare a few cells with VRoid's item
+  picker in a Framewisp screenshot] `thumbnails` writes one PNG that shows
+  VRoid's own thumbnail of every built-in item in a category, each labelled
+  with its identifier.
+
+  Rationale: VRoid has no item names, only thumbnails. Without them, an agent
+  finds an item matching a reference only by wearing and rendering each
+  candidate, which took about 45 minutes for 450 items in an eval.

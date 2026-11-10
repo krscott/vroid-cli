@@ -53,6 +53,23 @@ public sealed partial class Plugin
         yield return categories!.Select((category, index) => SlotOf(section, category, index)).OfType<Slot>().ToArray();
     }
 
+    // The category the request names, which must wear items.
+    private static IEnumerable<Slot?> NamedSlot(Request request)
+    {
+        Slot[]? slots = null;
+        foreach (var step in Slots(request.Text("section")))
+        {
+            if (step == null) yield return null;
+            else slots = step;
+        }
+        var name = request.Text("category");
+        var found = slots!.Where(slot => slot.Name == name).ToArray();
+        if (found.Length != 1)
+            throw new ArgumentException(found.Length == 0 ? $"{request.Text("section")}/{name}: no category of this name wears items; list them with categories"
+                : $"{request.Text("section")}/{name}: {found.Length} categories have this name");
+        yield return found[0];
+    }
+
     // The worn built-in item's identifier, "custom" for an item that is not
     // built in, or null.
     private static string? State(Slot slot)

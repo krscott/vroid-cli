@@ -70,34 +70,37 @@ def with_path(result: Any, key: str, path: Path) -> Any:
 NO_HARD_LINKS = {errno.EPERM, errno.EOPNOTSUPP, errno.ENOTSUP, errno.EXDEV}
 
 
-def render(session: sessions.Session, request: schema.Render) -> Any:
+def publish_image(
+    session: sessions.Session, request: schema.Render | schema.Thumbnails
+) -> Any:
     """Have the bridge write a hidden file beside the destination, then link it.
 
     The link is atomic and never replaces an existing file (R-VIEW-3). The
     hidden file is removed whatever happens; one left by a crash is named
     `.vroid-render-*.png`.
     """
+    method = request.method
     temporary = request.path.with_name(f".vroid-render-{uuid.uuid4().hex}.png")
     args = bridge_args(request) | {"path": rpc.wine_path(temporary)}
     try:
         try:
-            result = sessions.request(session, method="render", args=args)
+            result = sessions.request(session, method=method, args=args)
         except rpc.BridgeError as error:
-            if error.error != "Unknown method: render":
+            if error.error != f"Unknown method: {method}":
                 raise
             raise RuntimeError(
-                f"{error}. The running bridge predates render; save, stop, and "
+                f"{error}. The running bridge predates {method}; save, stop, and "
                 "launch the session to update it"
             ) from None
         try:
             os.link(temporary, request.path)
         except FileExistsError:
             raise RuntimeError(
-                f"refusing to overwrite {request.path}, created while rendering"
+                f"refusing to overwrite {request.path}, created while drawing it"
             ) from None
         except OSError as error:
             hint = (
-                ". Render into a directory on a filesystem that supports hard links"
+                ". Write images to a filesystem that supports hard links"
                 if error.errno in NO_HARD_LINKS
                 else ""
             )
@@ -124,8 +127,8 @@ def run(session: sessions.Session, request: schema.Request) -> Any:
             )
             key = "opened" if isinstance(request, schema.Open) else "saved"
             return with_path(result, key, request.path)
-        case schema.Render():
-            return render(session, request)
+        case schema.Render() | schema.Thumbnails():
+            return publish_image(session, request)
         case _:
             return sessions.request(
                 session, method=request.method, args=bridge_args(request)

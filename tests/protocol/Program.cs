@@ -1,6 +1,7 @@
 // Exercises plugin/Bridge.cs, the app side of the file protocol, the colour
 // rules in plugin/Colors.cs, the camera placement in plugin/Framing.cs, and
-// item identifiers and accessory matching in plugin/ItemIds.cs, without Unity.
+// item identifiers and accessory matching in plugin/ItemIds.cs, and the
+// thumbnail sheet in plugin/Sheet.cs, without Unity.
 using System.Text.Json;
 using VroidBridge;
 
@@ -420,6 +421,74 @@ Test("accessories keep matching items in order and add or remove the rest", _ =>
     Check(same.Removed.Count == 0 && same.Added.Count == 0 && same.Kept.SequenceEqual(new[] { (0, 0), (1, 1) }), "an unchanged list changes");
     // Dumps list built-in accessories by item, then the others, keeping app order within an item.
     Check(AccessoryPlan.DumpOrder(new[] { "custom", "FoxTail", "CatEar", "CatEar" }).SequenceEqual(new[] { 2, 3, 1, 0 }), "dump order");
+});
+
+// R-VIEW-4
+Test("the sheet font draws every identifier character distinctly", _ =>
+{
+    var allowed = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_";
+    Check(Sheet.Font.Keys.OrderBy(c => c).SequenceEqual(allowed.OrderBy(c => c)), "the font does not match ItemIds' characters");
+    // Every character the font covers is valid in an identifier.
+    Check(ItemIds.Preset($"pixiv/VRoid/Hair/N00/{allowed}/x.transferablegroup") == allowed, "the font covers characters ItemIds refuses");
+    foreach (var (c, glyph) in Sheet.Font)
+    {
+        var rows = glyph.Split(' ');
+        Check(rows.Length is >= 7 and <= 9 && rows.All(row => row.Length == 5 && row.All(dot => dot is '.' or '#')), $"malformed glyph {c}");
+        Check(glyph.Contains('#'), $"blank glyph {c}");
+    }
+    var shapes = Sheet.Font.Values.Select(glyph => glyph.PadRight(53, '.')).ToList();
+    Check(shapes.Distinct().Count() == shapes.Count, "two glyphs look the same");
+});
+
+// R-VIEW-4
+Test("the sheet lays thumbnails out in labelled rows of ten", _ =>
+{
+    var labels = Enumerable.Range(0, 82).Select(i => i.ToString("000")).ToArray();
+    var sheet = new Sheet(labels);
+    Check((sheet.Width, sheet.Height) == (1544, 2056), $"82 items: {sheet.Width}x{sheet.Height}");
+    Check(sheet.Pixels.Length == sheet.Width * sheet.Height * 3, "pixel buffer size");
+    var small = new Sheet(new[] { "Default", "Preset_F" });
+    Check((small.Width, small.Height) == (312, 232), $"2 items: {small.Width}x{small.Height}");
+
+    // Pixels run bottom row first; this reads them top first.
+    byte Red(Sheet image, int x, int top) => image.Pixels[((image.Height - 1 - top) * image.Width + x) * 3];
+    var thumbnail = new byte[Sheet.ThumbWidth * Sheet.ThumbHeight * 3];
+    // The source's bottom row is dark, the rest mid-grey.
+    for (var i = 0; i < thumbnail.Length; i++) thumbnail[i] = i < Sheet.ThumbWidth * 3 ? (byte)10 : (byte)128;
+    sheet.Place(11, thumbnail);
+    // Cell 11 is the second in the second row: x = 4 + 154, top = 4 + 228.
+    Check(Red(sheet, 158, 232) == 128 && Red(sheet, 307, 232) == 128, "thumbnail top row misplaced");
+    Check(Red(sheet, 158, 431) == 10, "thumbnail bottom row misplaced");
+    Check(Red(sheet, 157, 232) == 255 && Red(sheet, 158, 231) == 255 && Red(sheet, 308, 232) == 255, "thumbnail spills into the gutter");
+    Check(Red(sheet, 4, 4) == 255, "an empty cell is not white");
+
+    bool Inked(Sheet image, int index)
+    {
+        var (x, top) = (4 + index % 10 * 154, 4 + index / 10 * 228 + Sheet.ThumbHeight);
+        for (var row = top; row < top + 24; row++)
+            for (var column = x; column < x + Sheet.ThumbWidth; column++)
+                if (Red(image, column, row) < 128) return true;
+        return false;
+    }
+    Check(Inked(sheet, 0) && Inked(sheet, 81), "a label is missing");
+
+    // The longest label stays inside its cell, with its first and last glyphs drawn.
+    var longest = new Sheet(new[] { new string('W', Sheet.MaxLabel) });
+    var ink = Enumerable.Range(0, longest.Width).Where(x =>
+        Enumerable.Range(4 + Sheet.ThumbHeight, 24).Any(top => Red(longest, x, top) < 128)).ToArray();
+    Check(ink.Length > 0 && ink.Min() >= 4 && ink.Max() < 4 + Sheet.ThumbWidth, "the longest label leaves its cell");
+    Check(ink.Min() < 4 + 10 && ink.Max() >= 4 + Sheet.ThumbWidth - 10, "the longest label is not centred across its cell");
+    foreach (var bad in new[] { new string('W', Sheet.MaxLabel + 1), "a-b", "" })
+    {
+        try
+        {
+            var drawn = new Sheet(new[] { bad });
+            Check(false, $"drew label {bad}");
+        }
+        catch (ArgumentException)
+        {
+        }
+    }
 });
 
 return failures == 0 ? 0 : 1;
