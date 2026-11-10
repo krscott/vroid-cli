@@ -315,9 +315,10 @@ are not built in, since a new item can reset its category's values and VRoid
 changes other categories with it, such as the Base Hair that each Hair Back
 item brings, so it includes the accessories; otherwise it holds the previous
 values of what the request names, and the previous accessories when the
-request lists them. A custom accessory leaves `undo` once it is removed, and
-the bridge then rewrites the file, so it applies even after a crash; a failed
-rewrite fails the request. If the second pass fails, the bridge ends the
+request lists them. A custom accessory leaves `undo` once its removal is
+confirmed, and the bridge then rewrites the file; a failed rewrite fails the
+request. A crash during that removal can leave it in the file, which apply
+then refuses. If the second pass fails, the bridge ends the
 operation, then reports what already changed and what was discarded, and the
 CLI adds the undo file. Each item waits for its section to settle, so
 reapplying a whole template takes tens of seconds, within the request timeout.

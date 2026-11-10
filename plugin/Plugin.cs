@@ -126,8 +126,8 @@ public sealed partial class Plugin : BasePlugin
         {
             if (current != null)
             {
-                // Ends the operation first, so its cleanup, such as dropping discarded
-                // items from the undo, runs before the message is written.
+                // Ends the operation first, so its cleanup, which records what was
+                // discarded and rewrites the undo file, runs before the message is written.
                 EndOperation();
                 var message = (error.InnerException ?? error).Message;
                 if (Changed.Count > 0)
@@ -198,8 +198,9 @@ public sealed partial class Plugin : BasePlugin
         current = null;
         if (undoStale)
         {
-            payload = $"{(ok ? "apply ran." : payload)} Its undo file could not be updated and may still name the discarded items "
-                + $"{string.Join(", ", Discarded)}; remove them from it before applying it";
+            var gone = Discarded.Where(path => path.StartsWith("Accessories/"));
+            payload = $"{(ok ? "apply ran." : payload)} Its undo file could not be updated and may still list the removed accessories "
+                + $"{string.Join(", ", gone)}; remove them from it before applying it";
             ok = false;
         }
         rpc.Finish(request, ok, payload);
