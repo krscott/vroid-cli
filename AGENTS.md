@@ -15,10 +15,9 @@ Read `REQUIREMENTS.md` and `DESIGN.md` before changing behaviour.
   prefixes, or session state (`.vroid/`).
 - Every internal VRoid name the bridge uses, and every VRoid preference key
   the launcher writes, is validated only against the pinned VRoid 2.16.0.
-  Changing the VRoid, BepInEx, or Unity library pins needs a new live check
-  with `just gui-smoke`.
-- Framewisp tracks its `main` branch; update it with
-  `nix flake update framewisp`. Each bump needs `just gui-smoke`.
+  Changing the VRoid, BepInEx, Unity library, or Framewisp pins needs a new
+  live check with `just gui-smoke`. Framewisp tracks `main`; bump it with
+  `nix flake update framewisp`, not by editing its URL.
 - `just test` and `nix flake check` need no graphics. `just gui-smoke` needs
   graphics and Unix sockets; run it outside agent sandboxes.
 - The Scope section of `.agents/skills/vroid-cli/SKILL.md` is the one list of

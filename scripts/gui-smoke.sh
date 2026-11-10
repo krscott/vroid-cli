@@ -52,12 +52,6 @@ vroid() {
 
 state=$(vroid '{"method": "status"}')
 [[ $(jq .app_running <<<"$state") == false ]] || fatal "Stop session $session first"
-# A new session's directory appears only when it first launches.
-directory=$(jq -r .directory <<<"$state")
-mkdir -p -- "$directory"
-out=$(mktemp -d "$directory/smoke.XXXXXX")
-edited=$out/edited.vroid
-printf 'gui-smoke: artifacts in %s\n' "$out" >&2
 
 # Add one value to the apply request on stdin.
 with_value() {
@@ -273,6 +267,10 @@ items=('Hair|Front' 'Outfit|Tops')
 ears='[{"item": "CatEar", "Color": "#3A2A20"}, {"item": "RabbitEar", "Color": "#F0F0F0"}]'
 
 launch
+# The first launch creates a new session's directory.
+out=$(mktemp -d "$(jq -r .directory <<<"$state")/smoke.XXXXXX")
+edited=$out/edited.vroid
+printf 'gui-smoke: artifacts in %s\n' "$out" >&2
 inputs_before=$(input_events)
 jq -cn --arg path "$source" '{method: "open", path: $path}' | vroid - >/dev/null
 vroid '{"method": "dump"}' >"$out/original.json"
