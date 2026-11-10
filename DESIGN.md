@@ -267,6 +267,7 @@ Operations:
 | `apply` | Items, then accessories, below; then `parameters` for each named category, and parameter `set_CombinedValue` or `set_Value`, or a colour's setter, per changed value | One rebuild finished per changed item, accessory, and value (R-EDIT-6) |
 | `save` | Edit root `_mainActionHandler.SaveSync(path, true)` | Call returned true and the file is nonempty |
 | `render` | A temporary Unity camera renders `ModelOrigin`, below | PNG written to a new file |
+| `thumbnails` | The category's options' `Preview.Create()`, below | PNG written to a new file |
 
 `open` refuses once a project is open; changing projects needs a restart.
 Successful `open` and `save` clear `modified`.
@@ -323,7 +324,8 @@ A built-in item, in the requirements and here, is one a category's selector
 offers, which `items` lists. An item's identifier is that path's
 second-to-last part (`159`, `Default`, `Preset_F`), unique within each
 category in 2.16.0; the bridge fails if one repeats. The path, and so the identifier, does not change between sessions
-and restarts (R-EDIT-9). VRoid has no item names, only thumbnails.
+and restarts (R-EDIT-9). VRoid has no item names, only thumbnails, which
+`thumbnails` draws (R-VIEW-4).
 
 A category reads as the identifier of its option whose `IsSelected` is true.
 Otherwise its `TemporaryCustomItem.WearingCustomItemSavableTransferableGroup`
@@ -452,6 +454,33 @@ grid. After each write and its rebuild, the bridge reads the hex back and
 fails if it differs. VRoid's `TryParseColorHex` throws on bad input,
 so the bridge parses hex itself.
 
+### Thumbnails
+
+An option's `Preview` is a
+`VRoid.UI.TextureSource.TransferableGroupThumbnailTextureSource` for the
+option's resource. Its `Create()` returns a task that loads a prebaked 300x400
+`Texture2D` from the asset storage, usually within a frame, without touching
+the model, so `thumbnails` changes nothing in the app (R-VIEW-2). VRoid's
+capture-based `ThumbnailProvider` serves custom items only. Every call returns
+a new readable texture that nothing frees, so the bridge destroys each one once
+it is copied. `thumbnails` finds the category as `items` does, which switches
+the editor's section, and sets the edit root's `EditMode` back when it ends,
+whether or not it succeeds. It waits for each task between frames, and fails if
+one faults or returns null, or if a thumbnail is not 300x400. It blits each
+texture with bilinear filtering into a 150x200 `RenderTexture`, restoring the
+active render texture that `Blit` changes, reads that into a reused RGB24
+`Texture2D`, and copies the raw bytes into a `Sheet` (`plugin/Sheet.cs`, which
+`tests/protocol` also builds). The sheet lays cells out in rows of 10 in
+`items` order, separated by a 4-pixel white gutter, and draws each identifier
+below its thumbnail with an embedded 5x9 bitmap font at twice its size, so no
+Unity font, canvas, or UI is involved. The font covers exactly the characters
+an identifier may hold; a label longer than 12 characters fails as a VRoid
+difference. One RGB24 texture loads the sheet's bytes for `EncodeToPNG`. A
+category of 82 items takes about 2 s. The PNG is published like `render`'s,
+below (R-VIEW-3).
+
+### Rendering
+
 `render` reads the model's enabled renderers under `ModelOrigin` on every
 request, so it follows rebuilds. VRoid's photo booth is a separate screen with
 its own pose, and its thumbnail code poses the model and hides meshes while it
@@ -479,25 +508,25 @@ hats, so head views share their scale too. The body, whose bounds include the
 arms, does not widen it, and neither does long hair centred below the neck. The
 camera stands outside the bounds, so no part of the model is clipped.
 
-The bridge writes the PNG to the path it is given with `FileMode.CreateNew` and
-deletes the file if the write fails. The CLI gives it a hidden
-`.vroid-render-HEX.png` beside the destination, publishes it with `os.link`,
-which is atomic and fails if the destination exists, and removes the hidden
-file in a `finally`, so a destination is never replaced or partly written
-(R-VIEW-3). A CLI that stops waiting before the bridge answers, because it was
-killed, interrupted, or timed out, can leave one. A bridge that predates
-`render` answers `Unknown method: render`; the CLI adds that the session needs
-a stop and launch to update it.
+The bridge writes the PNG of `render` or `thumbnails` to the path it is given
+with `FileMode.CreateNew` and deletes the file if the write fails. The CLI
+gives it a hidden `.vroid-render-HEX.png` beside the destination, publishes it
+with `os.link`, which is atomic and fails if the destination exists, and
+removes the hidden file in a `finally`, so a destination is never replaced or
+partly written (R-VIEW-3). A CLI that stops waiting before the bridge answers,
+because it was killed, interrupted, or timed out, can leave one. A bridge that
+predates the method answers `Unknown method: METHOD`; the CLI adds that the
+session needs a stop and launch to update it.
 
 IL2CPP reflection must convert native objects to their most derived proxy type.
 `Reflect.Concrete` maps `System.*` class names to `Il2CppSystem.*` proxies and
 closes generic proxies, such as `ImmutableArray<T>`, over the runtime type's
 arguments. `Reflect.Items` iterates by `Count`/`Length` and `get_Item`, else by
-enumerator. `plugin/Render.cs` alone calls instance members of Unity engine
-objects through C# `dynamic`, using the loader's bundled `Microsoft.CSharp`,
-so its engine calls read like Unity code; static members, which `dynamic`
-cannot reach on types found at runtime, and every VRoid type go through
-`Reflect`.
+enumerator. `plugin/Render.cs` and `plugin/Thumbnails.cs` alone call instance
+members of Unity engine objects through C# `dynamic`, using the loader's
+bundled `Microsoft.CSharp`, so their engine calls read like Unity code; static
+members, which `dynamic` cannot reach on types found at runtime, and every
+VRoid type go through `Reflect`.
 
 ## Command line
 
@@ -509,13 +538,13 @@ stdin. Every method is a request, so saved requests work in any session.
 misspelled fields (R-CLI-3). Its JSON parser keeps the last of repeated keys,
 so the CLI rejects repeated keys first. Validation refuses non-finite values
 and colours that are not `#RRGGBB` in either case (R-EDIT-2) and checks
-`.vroid` and `.png` suffixes, an existing `open` source, and a new `save` or
-`render` destination in an existing directory (R-EDIT-4, R-VIEW-3), all before
-touching session state. Paths resolve against the current directory, and
-`open`, `save`, and `render` report the resolved path rather than the bridge's
-Wine path. The bridge rechecks the destination before saving. Validation errors
-print one `FIELD: REASON` line each. Output is indented JSON, so saved
-templates diff line by line.
+`.vroid` and `.png` suffixes, an existing `open` source, and a new `save`,
+`render`, or `thumbnails` destination in an existing directory (R-EDIT-4,
+R-VIEW-3), all before touching session state. Paths resolve against the current
+directory, and `open`, `save`, `render`, and `thumbnails` report the resolved
+path rather than the bridge's Wine path. The bridge rechecks the destination
+before saving. Validation errors print one `FIELD: REASON` line each. Output is
+indented JSON, so saved templates diff line by line.
 
 Every result, including the bridge's, is validated against its result model
 before printing, so `--agent-skill` (or `--help`), which prints the skill and
@@ -534,15 +563,18 @@ errors (R-CLI-2).
 - `tests/test_launcher.py`: the launcher against a stand-in Wine and a
   read-only stand-in store.
 - `tests/protocol`: the bridge's file protocol, colour rules, camera
-  placement, item identifiers, and accessory matching under the .NET SDK.
+  placement, item identifiers, accessory matching, and thumbnail sheet layout
+  and font under the .NET SDK.
 
 `scripts/gui-smoke.sh`, run by `just gui-smoke`, drives a real session through
-open, dump, numeric and colour edits, item and accessory edits, including
-two accessories of one kind, refusal, save, rendering every view, restart,
-reopen with a read-back of every edited number, colour, item, and accessory
-(R-EDIT-1) and of each category's item
-identifiers (R-EDIT-9), and reapplying the first dump, and checks the Framewisp input log and that
-BepInEx's log names the ready bridge's boot. It saves editor screenshots
-before and after the edits. It decodes each render with the Python standard
-library to check its size and framing, and compares `dump` and an editor
-screenshot before and after rendering. It needs graphics access.
+open, dump, numeric and colour edits, item and accessory edits, including two
+accessories of one kind, refusal, save, rendering every view, drawing the
+thumbnails of the edited item categories, restart, reopen with a read-back of
+every edited number, colour, item, and accessory (R-EDIT-1) and of each
+category's item identifiers (R-EDIT-9), and reapplying the first dump, and
+checks the Framewisp input log and that BepInEx's log names the ready bridge's
+boot. It saves editor screenshots before and after the edits. It decodes each
+render with the Python standard library to check its size and framing, checks
+each thumbnail sheet's size and items, and compares `dump` and an editor
+screenshot before and after rendering and drawing thumbnails. It needs graphics
+access.

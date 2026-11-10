@@ -659,21 +659,18 @@ public sealed partial class Plugin : BasePlugin
             }
             case "items":
             {
-                Slot[]? slots = null;
-                foreach (var step in Slots(request.Text("section")))
+                Slot? slot = null;
+                foreach (var step in NamedSlot(request))
                 {
                     if (step == null) yield return true;
-                    else slots = step;
+                    else slot = step;
                 }
-                var name = request.Text("category");
-                var found = slots!.Where(slot => slot.Name == name).ToArray();
-                if (found.Length != 1)
-                    throw new ArgumentException(found.Length == 0 ? $"{request.Text("section")}/{name}: no category of this name wears items; list them with categories"
-                        : $"{request.Text("section")}/{name}: {found.Length} categories have this name");
-                var slot = found[0];
-                result = new { selected = State(slot), removable = slot.Removable, set = slot.IsSet, items = slot.Items.Select(item => item.Id).ToArray() };
+                result = new { selected = State(slot!), removable = slot!.Removable, set = slot.IsSet, items = slot.Items.Select(item => item.Id).ToArray() };
                 break;
             }
+            case "thumbnails":
+                foreach (var step in Thumbnails(request)) yield return step;
+                break;
             case "accessories":
             {
                 foreach (var step in EnterAccessories()) yield return step;

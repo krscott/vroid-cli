@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Drive a real session through edit, save, render, restart, reopen, and a
 # template round trip, checking R-EDIT-1, R-EDIT-3, R-EDIT-5, R-EDIT-6,
-# R-EDIT-7, R-EDIT-8, R-EDIT-9, R-VIEW-1, and R-VIEW-2.
+# R-EDIT-7, R-EDIT-8, R-EDIT-9, R-VIEW-1, R-VIEW-2, and R-VIEW-4.
 # Needs graphics access.
 set -euo pipefail
 shopt -s failglob
@@ -13,8 +13,9 @@ usage() {
         'Opens SOURCE in SESSION, dumps its template, edits one Body and two Face' \
         'parameters and four colours (orange hair, green eyes) in one request,' \
         'then selects other Hair Front and Outfit Tops items and adds cat and' \
-        'rabbit ears, saves a copy, renders each view, restarts, checks the' \
-        'saved values, and applies the original template. Editor screenshots' \
+        'rabbit ears, saves a copy, renders each view, draws the thumbnails of' \
+        'those two categories, restarts, checks the saved values, and applies' \
+        'the original template. Editor screenshots' \
         'before and after the edit land in the artifact directory. SESSION' \
         'must be stopped. Set VROID_CLI to choose the vroid-cli binary.'
 }
@@ -152,18 +153,29 @@ render() {
         vroid -
 }
 
-# Check a rendered PNG: PATH FRAME WIDTH HEIGHT. Its size must match, it must
-# show the character, and the edges that frame the character must be
-# background: every edge for a body; for a head, whose frame cuts through the
-# neck and may show the shoulders, the top and the upper three quarters of each
-# side, which hold the ears.
-check_image() {
-    python3 - "$@" <<'PY' || fatal "$1 is not a framed render; see above"
+# Draw a category's item thumbnails: SECTION CATEGORY PATH.
+thumbnails() {
+    jq -cn --arg section "$1" --arg category "$2" --arg path "$3" \
+        '{method: "thumbnails", section: $section, category: $category, path: $path}' |
+        vroid -
+}
+
+# Check a PNG: render PATH FRAME WIDTH HEIGHT, or sheet PATH COUNT.
+#
+# A render's size must match, it must show the character, and the edges that
+# frame the character must be background: every edge for a body; for a head,
+# whose frame cuts through the neck and may show the shoulders, the top and the
+# upper three quarters of each side, which hold the ears.
+#
+# A thumbnail sheet's size must fit COUNT items, and no thumbnail may be one
+# flat colour.
+check_png() {
+    python3 - "$@" <<'PY' || fatal "$2 is not a valid $1; see above"
 import struct
 import sys
 import zlib
 
-path, frame, width, height = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+check, path = sys.argv[1], sys.argv[2]
 data = open(path, "rb").read()
 if data[:8] != b"\x89PNG\r\n\x1a\n":
     sys.exit(f"{path}: not a PNG")
@@ -173,6 +185,13 @@ while at < len(data):
     chunks[kind] = chunks.get(kind, b"") + data[at + 8 : at + 8 + length]
     at += 12 + length
 w, h, depth, colour, _, _, interlace = struct.unpack(">IIBBBBB", chunks[b"IHDR"])
+if check == "render":
+    frame, width, height = sys.argv[3], int(sys.argv[4]), int(sys.argv[5])
+else:
+    # Rows of 10 cells of 150x224 pixels, a 200-pixel thumbnail above its
+    # label, with a 4-pixel gutter around each.
+    count = int(sys.argv[3])
+    width, height = min(count, 10) * 154 + 4, (count + 9) // 10 * 228 + 4
 if (w, h) != (width, height):
     sys.exit(f"{path}: {w}x{h}, expected {width}x{height}")
 if depth != 8 or colour not in (2, 6) or interlace:
@@ -197,6 +216,12 @@ for y in range(h):
             line[x] = (line[x] + (left if pa <= pb and pa <= pc else up if pb <= pc else corner)) & 255
     rows.append([bytes(line[x : x + 3]) for x in range(0, stride, step)])
     previous = line
+if check == "sheet":
+    for index in range(count):
+        x, top = 4 + index % 10 * 154, 4 + index // 10 * 228
+        if len({pixel for row in rows[top : top + 200] for pixel in row[x : x + 150]}) < 2:
+            sys.exit(f"{path}: thumbnail {index} is blank")
+    sys.exit()
 background = rows[0][0]
 sides = rows[: h * 3 // 4] if frame == "head" else rows
 edges = {"top": rows[0], "left": [r[0] for r in sides], "right": [r[-1] for r in sides]}
@@ -339,9 +364,11 @@ for edit in "${edits[@]}"; do
 done
 check_items 'after a refused apply'
 
-# Rendering keeps unsaved changes unsaved (R-VIEW-2).
+# Rendering and drawing thumbnails keep unsaved changes unsaved (R-VIEW-2).
 render front body 64 128 "$out/unsaved.png" >/dev/null
 [[ $(modified) == true ]] || fatal "rendering cleared the unsaved state"
+thumbnails Body 'Whole Body' "$out/unsaved-thumbnails.png" >/dev/null
+[[ $(modified) == true ]] || fatal "drawing thumbnails cleared the unsaved state"
 
 save=$(jq -cn --arg path "$edited" '{method: "save", path: $path}')
 vroid "$save" >/dev/null
@@ -351,7 +378,14 @@ fi
 
 # Rendering shows the whole character (R-VIEW-1) and changes nothing in the
 # app: values, unsaved state, and the editor's view stay the same (R-VIEW-2).
+# The editor shows the Body section while thumbnails are drawn for the Hair and
+# Outfit sections; only restoring the section brings Body back.
+for item in "${items[@]}"; do
+    IFS='|' read -r section category <<<"$item"
+    items_of "$section" "$category" >"$out/listed-$section-$category.json"
+done
 vroid '{"method": "dump"}' >"$out/before-render.json"
+items_of Body 'Whole Body' >/dev/null
 settled_screenshot "$out/before-render.png"
 renders=(
     'front|body|512|1024'
@@ -365,7 +399,7 @@ for item in "${renders[@]}"; do
     IFS='|' read -r view frame width height <<<"$item"
     image=$out/render-$view-$frame.png
     render "$view" "$frame" "$width" "$height" "$image" >/dev/null
-    check_image "$image" "$frame" "$width" "$height"
+    check_png render "$image" "$frame" "$width" "$height"
 done
 image=$out/render-front-body.png
 cp "$image" "$out/render-front-body.copy"
@@ -373,13 +407,29 @@ if render front body 512 1024 "$image" >/dev/null 2>&1; then
     fatal "second render to $image succeeded"
 fi
 cmp -s "$image" "$out/render-front-body.copy" || fatal "a refused render changed $image"
-[[ $(modified) == false ]] || fatal "rendering marked the project modified"
-vroid '{"method": "dump"}' >"$out/after-render.json"
-cmp -s "$out/before-render.json" "$out/after-render.json" ||
-    fatal "dump changed while rendering; see $out/after-render.json"
+# Thumbnails show every built-in item of a category, in `items` order
+# (R-VIEW-4), and change nothing in the app either (R-VIEW-2).
+for item in "${items[@]}"; do
+    IFS='|' read -r section category <<<"$item"
+    image=$out/thumbnails-$section-$category.png
+    thumbnails "$section" "$category" "$image" >"$out/thumbnails-$section-$category.json"
+    jq -e --slurpfile listed "$out/listed-$section-$category.json" '.items == $listed[0].items and .columns == 10' \
+        "$out/thumbnails-$section-$category.json" >/dev/null ||
+        fatal "$section/$category thumbnails do not show its items; see $out/thumbnails-$section-$category.json"
+    check_png sheet "$image" "$(jq '.items | length' "$out/thumbnails-$section-$category.json")"
+done
+cp "$image" "$out/thumbnails.copy"
+if thumbnails "$section" "$category" "$image" >/dev/null 2>&1; then
+    fatal "second thumbnails to $image succeeded"
+fi
+cmp -s "$image" "$out/thumbnails.copy" || fatal "refused thumbnails changed $image"
+[[ $(modified) == false ]] || fatal "rendering or drawing thumbnails marked the project modified"
 settled_screenshot "$out/after-render.png"
 cmp -s "$out/before-render.png" "$out/after-render.png" ||
-    fatal "the editor's view changed while rendering; compare $out/before-render.png and $out/after-render.png"
+    fatal "the editor's view changed while rendering or drawing thumbnails; compare $out/before-render.png and $out/after-render.png"
+vroid '{"method": "dump"}' >"$out/after-render.json"
+cmp -s "$out/before-render.json" "$out/after-render.json" ||
+    fatal "dump changed while rendering or drawing thumbnails; see $out/after-render.json"
 inputs_after=$(input_events)
 ((inputs_after == inputs_before)) || fatal "input log grew from $inputs_before to $inputs_after events"
 
