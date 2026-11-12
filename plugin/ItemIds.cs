@@ -134,13 +134,13 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
     /// group is worn; it adds one on its default bone, and a duplicate copies the
     /// item and bone. So the accessories of one group sit on their default bone,
     /// except copies of one item on one other bone. Built-in accessories of one
-    /// item are interchangeable: a wanted one that names its bone keeps a worn one
-    /// that `same` says already matches it, then one on its wanted bone, then for one that names
-    /// no bone one on the default bone, then any. When a kept one cannot move,
-    /// every one of that kind is
-    /// removed and added again: one first, moved while alone, then copies of it
-    /// and new ones. "custom" matches any worn accessory that is not built in, in
-    /// order, and moves only while alone in its group.
+    /// item are interchangeable: a wanted one that names its bone keeps a worn
+    /// one that `same` says already matches it, then one on its wanted bone; one
+    /// that names no bone keeps one on the default bone, then any. When a kept
+    /// one cannot move, every one of that kind is removed and added again: one
+    /// first, moved while alone, then copies of it and new ones. "custom" matches
+    /// any worn accessory that is not built in, in order, and moves only while
+    /// alone in its group.
     public static AccessoryPlan Of(IReadOnlyList<WornAccessory> worn, IReadOnlyList<WantedAccessory> wanted,
         Func<int, int, bool>? same = null)
     {

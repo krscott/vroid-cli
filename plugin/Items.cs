@@ -446,6 +446,8 @@ public sealed partial class Plugin
             var spec = work.Wanted[i];
             var path = $"Accessories[{i}]";
             var matched = from.TryGetValue(i, out var j) ? worn[j] : null;
+            // An unmatched "custom" is refused above; its values have nothing to check against.
+            if (matched == null && spec.Item == ItemIds.Custom) continue;
             // A kept accessory may stay on a bone the table lacks, such as a custom one's.
             if (spec.HasBone && spec.Bone != null && !bones.Contains(spec.Bone) && matched?.Pose.Bone != spec.Bone)
                 errors.Add($"{path}/bone: unknown bone {spec.Bone}; list them with accessories");
