@@ -83,7 +83,9 @@ and tails are accessories.
   is worn: select it, list its `parameters`, then set its colours.
 - `apply` accepts finite values within each parameter's `min..max`, and
   colours as `"#RRGGBB"` where `parameters` lists a colour. It checks every
-  value before changing any; one bad value refuses the whole request. Its
+  value before changing any, and one bad value refuses the whole request,
+  except a new item's colours and an added accessory's shape sliders, which
+  it checks once they are worn; a refusal there stops `apply` after changes. Its
   result is `changed`, `discarded`, and `undo`, the path of a file written
   before the first change that holds an `apply` request restoring the
   previous values. Undo with `vroid-cli NAME @PATH`. When `apply` fails after
