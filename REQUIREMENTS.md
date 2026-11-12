@@ -15,12 +15,19 @@ it; name non-obvious constraints when useful. Backfill existing rationales only
 when relevant to the task, without a project-wide sweep. If the reason is unknown,
 investigate or ask; never invent a rationale.
 
+For new or substantively changed `[manual]` requirements, add a separate
+indented `Manual test:` paragraph with concrete steps and expected results.
+It says how to verify the behaviour; `Rationale:` says why it matters. Apply
+this format when adding or editing requirements too; do not migrate or
+backfill unrelated requirements.
+
 - The ID is stable. Never renumber or reuse an ID. To drop a requirement,
   change its tag to `[retired]` and delete its text and rationale; the ID
   stays taken.
 - `[test]`: a test that `just test` or `nix flake check` runs covers it. Each
   covering test carries the ID in a comment.
-- `[manual: how]`: no automated test yet. The text says how an agent checks it.
+- `[manual]`: no automated test yet. A `Manual test:` paragraph says how an
+  agent checks it.
 - `[retired]`: no longer required. Kept so the ID stays taken.
 
 ## Sessions (SES)
