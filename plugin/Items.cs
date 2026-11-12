@@ -436,16 +436,12 @@ public sealed partial class Plugin
         if (worn.Length - plan.Removed.Count + plan.Added.Count > max)
             errors.Add($"Accessories: VRoid allows at most {max} accessories");
         errors.AddRange(plan.Errors);
-        // The worn accessory whose labels each wanted one has: the one it keeps, or
-        // the one a rebuild replaces.
-        var from = plan.Kept.ToDictionary(pair => pair.Wanted, pair => pair.Worn);
-        foreach (var addition in plan.Added)
-            if (addition.Was is { } was) from[addition.Wanted] = was;
         for (var i = 0; i < work.Wanted.Count; i++)
         {
             var spec = work.Wanted[i];
             var path = $"Accessories[{i}]";
-            var matched = from.TryGetValue(i, out var j) ? worn[j] : null;
+            // The worn accessory whose labels it has: the one it keeps or replaces.
+            var matched = plan.Matched[i] is { } j ? worn[j] : null;
             // An unmatched "custom" is refused above; its values have nothing to check against.
             if (matched == null && spec.Item == ItemIds.Custom) continue;
             // A kept accessory may stay on a bone the table lacks, such as a custom one's.

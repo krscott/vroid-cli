@@ -484,6 +484,9 @@ Test("apply refuses bones VRoid cannot combine and placements that distort", _ =
 {
     var two = AccessoryPlan.Of(Array.Empty<WornAccessory>(), new[] { On("CatEar", Chest), On("CatEar", Neck) });
     Check(two.Errors.Single().Contains($"only as copies of one, but these put CatEar on {Chest}, CatEar on {Neck}"), Show(two));
+    // Kept ones are still matched, so their values are checked too.
+    var refused = AccessoryPlan.Of(new[] { Worn("CatEar", Neck), Worn("RabbitEar", Head) }, new[] { On("CatEar", Neck), On("RabbitEar", Chest) });
+    Check(refused.Errors.Count == 1 && refused.Matched.SequenceEqual(new int?[] { 0, 1 }), Show(refused));
     // A copy is of one item, so two items of a kind cannot both move.
     var mixed = AccessoryPlan.Of(Array.Empty<WornAccessory>(), new[] { On("CatEar", Chest), On("RabbitEar", Chest) });
     Check(mixed.Errors.Count == 1, Show(mixed));

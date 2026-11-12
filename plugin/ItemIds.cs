@@ -126,9 +126,10 @@ public sealed record Addition(int Wanted, int? CopyOf, bool SetBone, int? Was, s
 /// a wanted index, and `Rebone` moves kept ones to their wanted bone. `Removed`
 /// lists worn indices to remove, `Added` the accessories to add in order.
 /// `Rebuilt` is the worn indices removed only to add them again, which do not
-/// count as changes. `Errors` holds what VRoid cannot do.
+/// count as changes. `Matched` is the worn accessory each wanted one keeps or
+/// replaces, even where `Errors` holds what VRoid cannot do.
 public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int Worn, string? Bone)> Rebone,
-    List<int> Removed, List<Addition> Added, HashSet<int> Rebuilt, List<string> Errors)
+    List<int> Removed, List<Addition> Added, HashSet<int> Rebuilt, int?[] Matched, List<string> Errors)
 {
     /// VRoid changes an accessory's bone only while no other accessory of its
     /// group is worn; it adds one on its default bone, and a duplicate copies the
@@ -144,9 +145,9 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
     public static AccessoryPlan Of(IReadOnlyList<WornAccessory> worn, IReadOnlyList<WantedAccessory> wanted,
         Func<int, int, bool>? same = null)
     {
-        var plan = new AccessoryPlan(new(), new(), new(), new(), new(), new());
-        var used = new bool[worn.Count];
         var matched = new int?[wanted.Count];
+        var plan = new AccessoryPlan(new(), new(), new(), new(), new(), matched, new());
+        var used = new bool[worn.Count];
         void Pair(int i, int j)
         {
             used[j] = true;
