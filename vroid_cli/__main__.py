@@ -83,15 +83,7 @@ def publish_image(
     temporary = request.path.with_name(f".vroid-render-{uuid.uuid4().hex}.png")
     args = bridge_args(request) | {"path": rpc.wine_path(temporary)}
     try:
-        try:
-            result = sessions.request(session, method=method, args=args)
-        except rpc.BridgeError as error:
-            if error.error != f"Unknown method: {method}":
-                raise
-            raise RuntimeError(
-                f"{error}. The running bridge predates {method}; save, stop, and "
-                "launch the session to update it"
-            ) from None
+        result = sessions.request(session, method=method, args=args)
         try:
             os.link(temporary, request.path)
         except FileExistsError:

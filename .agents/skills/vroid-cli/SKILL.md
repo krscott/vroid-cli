@@ -31,6 +31,7 @@ vroid-cli alice '{"method": "apply", "Hair": {"Front": {"Main Color": "#FF8C00"}
 vroid-cli alice '{"method": "items", "section": "Outfit", "category": "Tops"}'
 vroid-cli alice '{"method": "thumbnails", "section": "Outfit", "category": "Tops", "path": "./tops.png"}'
 vroid-cli alice '{"method": "apply", "Outfit": {"Tops": {"item": "159"}}}'
+vroid-cli alice '{"method": "apply", "Outfit": {"Tops": {"Base Color": ["#B22222", "#FFFFFF"]}}}'
 vroid-cli alice '{"method": "accessories"}'
 vroid-cli alice '{"method": "apply", "Accessories": [{"item": "CatEar", "Color": "#3A2A20"}]}'
 vroid-cli alice '{"method": "dump"}' > alice.json
@@ -47,17 +48,18 @@ field and result.
 
 vroid-cli opens existing `.vroid` projects, reads and sets the numeric sliders
 in the Face and Body editors and the colour fields in the Face, Hairstyle, and
-Body editors, selects VRoid's built-in items (hairstyle parts, face parts and
-presets, body presets, outfit items), draws a category's built-in item
-thumbnails labelled with their identifiers, adds, removes, and recolours built-in
-accessories (glasses, cat and rabbit ears, cat, fox, and rabbit tails, hats),
-renders the character to PNG from the front, three-quarter, side, or back, and
-saves projects. It can't yet place or reshape accessories, change outfit
-colours or textures, import or create custom items, create characters, or
-export VRM. To see the character, use `render`, not screenshots of the editor
-window. Edits go through `vroid-cli`, never Framewisp input. When a request
-needs anything vroid-cli can't do, do the parts it can and tell the user which
-parts you couldn't.
+Body editors, sets the base and shade colours of built-in outfit items, selects
+VRoid's built-in items (hairstyle parts, face parts and presets, body presets,
+outfit items), draws a category's built-in item thumbnails labelled with their
+identifiers, adds, removes, and recolours built-in accessories (glasses, cat
+and rabbit ears, cat, fox, and rabbit tails, hats), renders the character to
+PNG from the front, three-quarter, side, or back, and saves projects. It can't
+yet place or reshape accessories, change outfit textures or the colours of
+custom items, import or create custom items, create characters, or export VRM.
+To see the character, use `render`, not screenshots of the editor window. Edits
+go through `vroid-cli`, never Framewisp input. When a request needs anything
+vroid-cli can't do, do the parts it can and tell the user which parts you
+couldn't.
 
 Face "Ear" parameters shape human ears at the sides of the head. Animal ears
 and tails are accessories.
@@ -74,7 +76,10 @@ and tails are accessories.
 - Use category and parameter names exactly as `categories` and `parameters`
   return them. A label that appears more than once in a category, like "Nose
   Size" in Face Sets, takes an array with one value per occurrence, in
-  `parameters` order.
+  `parameters` order. Outfit items have a "Base Color" and "Shade Color" per
+  part, so an item with several parts takes an array of colours; `render` to
+  see which part each one colours. A new item's parts are known only once it
+  is worn: select it, list its `parameters`, then set its colours.
 - `apply` accepts finite values within each parameter's `min..max`, and
   colours as `"#RRGGBB"` where `parameters` lists a colour. It checks every
   value before changing any; one bad value refuses the whole request. Its
@@ -98,8 +103,10 @@ and tails are accessories.
   thumbnail of each item, 10 per row in `items` order, labelled with its
   identifier. It takes about 2 s, changes nothing, and shows items in VRoid's
   default colours. Then select candidates and `render` them to compare.
-  Selecting an item keeps every colour, but resets Face Irises and Eyebrows
-  values, so `apply` changes items first, then values. `"item": null` takes
+  Selecting an item keeps every colour except the Outfit item's own, which
+  start at the item's defaults, and resets Face Irises and Eyebrows values,
+  so `apply` changes items first, then values. Setting an outfit colour keeps
+  the item built in. `"item": null` takes
   off the item where `items` reports `removable`.
 - VRoid takes off conflicting items itself, such as the dress when a top is
   selected; a request naming both is refused. Each Hair Back item also brings

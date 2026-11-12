@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Drive a real session through edit, save, render, restart, reopen, and a
 # template round trip, checking R-EDIT-1, R-EDIT-3, R-EDIT-5, R-EDIT-6,
-# R-EDIT-7, R-EDIT-8, R-EDIT-9, R-EDIT-11, R-VIEW-1, R-VIEW-2, and R-VIEW-4.
+# R-EDIT-7, R-EDIT-8, R-EDIT-9, R-EDIT-11, R-EDIT-12, R-VIEW-1, R-VIEW-2, and
+# R-VIEW-4.
 # Needs graphics access.
 set -euo pipefail
 shopt -s failglob
@@ -13,7 +14,8 @@ usage() {
         'Opens SOURCE in SESSION, dumps its template, edits one Body and two Face' \
         'parameters and four colours (orange hair, green eyes) in one request,' \
         'then selects other Hair Front and Outfit Tops items and adds cat and' \
-        'rabbit ears, undoing and redoing both edits, saves a copy, renders' \
+        'rabbit ears, undoing and redoing both edits, recolours the new top,' \
+        'undoing that and a later change of top, saves a copy, renders' \
         'each view, draws the thumbnails of those two categories, restarts,' \
         'checks the saved values, and applies the original template. Editor' \
         'screenshots before and after the edit land in the artifact directory.' \
@@ -341,9 +343,59 @@ check_items() {
 }
 check_items 'after apply'
 
+# Outfit colours: a distinct Base Color and Shade Color for each part of the
+# new top, which stays the same built-in item (R-EDIT-12) and reads back as set
+# (R-EDIT-8).
+outfit_colours=$(jq -cn '{method: "parameters", section: "Outfit", category: "Tops"}' | vroid - |
+    jq -c 'def distinct($label; $pick):
+            [.[] | select(.label == $label) | .value | ascii_upcase] as $now
+            | [range($now | length) | if $now[.] == $pick[.] then "#000080" else $pick[.] end]
+            | if length == 1 then .[0] else . end;
+        {"Base Color": distinct("Base Color"; ["#B22222", "#1E90FF", "#228B22", "#9932CC", "#DAA520", "#008080"]),
+         "Shade Color": distinct("Shade Color"; ["#5A1111", "#0F4880", "#114411", "#4C1966", "#6D5210", "#004040"])}')
+jq -e '.["Base Color"] != [] and .["Shade Color"] != []' <<<"$outfit_colours" >/dev/null ||
+    fatal "Outfit/Tops ${expected_item['Outfit|Tops']} lacks Base Color or Shade Color"
+check_outfit() {
+    jq -cn '{method: "parameters", section: "Outfit", category: "Tops"}' | vroid - |
+        jq -e --argjson want "$outfit_colours" '. as $listed | all($want | keys[]; . as $label
+            | ([$want[$label]] | flatten) == [$listed[] | select(.label == $label) | .value | ascii_upcase])' >/dev/null ||
+        fatal "Outfit/Tops colours do not read $outfit_colours $1"
+}
+request=$(jq -c --argjson colours "$outfit_colours" '.Outfit.Tops = $colours' <<<'{"method": "apply"}')
+vroid '{"method": "dump"}' >"$out/before-outfit.json"
+result=$(vroid "$request")
+undo "$result" "$out/before-outfit.json"
+vroid "$request" | jq -e --argjson want "$outfit_colours" '.changed == ([$want[]] | flatten | length)' >/dev/null ||
+    fatal "apply did not change every part's colours"
+check_outfit 'after apply'
+check_items 'after setting outfit colours'
+# Taking the top off changes no other category's item, so a colour for the
+# empty Dresses category is refused before the top comes off (R-EDIT-3).
+if vroid '{"method": "apply", "Outfit": {"Tops": {"item": null}, "Dresses": {"Base Color": "#123456"}}}' \
+    >/dev/null 2>"$out/untop.err"; then
+    fatal "apply of a colour for the empty Dresses category succeeded"
+fi
+grep -qF 'Nothing changed' "$out/untop.err" || fatal "taking the top off was not refused up front: $(<"$out/untop.err")"
+check_items 'after a refused change of top'
+# Another top's colours are checked once it is worn (R-EDIT-3): too many of them
+# fail after the change of top, and the undo file the error names restores the
+# top and the colours set above (R-EDIT-11).
+vroid '{"method": "dump"}' >"$out/before-retop.json"
+if with_value Outfit Tops item "$(pick_item Outfit Tops)" <<<'{"method": "apply"}' |
+    with_value Outfit Tops 'Base Color' '["#123456", "#123456", "#123456", "#123456", "#123456", "#123456"]' |
+    vroid - >/dev/null 2>"$out/retop.err"; then
+    fatal "apply with too many colours for the new top succeeded"
+fi
+grep -qF 'Outfit/Tops/Base Color: ' "$out/retop.err" || fatal "the refused top colours were not reported: $(<"$out/retop.err")"
+undone=$(sed -n 's/.*To undo any change, apply @\(.*\.json\)$/\1/p' "$out/retop.err")
+[[ -n $undone ]] || fatal "the error names no undo file: $(<"$out/retop.err")"
+undo "$(jq -cn --arg undo "$undone" '{undo: $undo}')" "$out/before-retop.json"
+check_outfit 'after undoing a change of top'
+
 # A value above its maximum, an unknown parameter, an unknown category, a number
-# for a colour, a shared colour set twice, and a colour that writes several
-# refuse the whole request, and each is reported.
+# for a colour, a shared colour set twice, a colour that writes several, and
+# too many colours for an outfit item the request leaves alone refuse the whole
+# request, and each is reported.
 IFS='|' read -r section category label <<<"${edits[0]}"
 IFS='|' read -r other_section other_category other_label <<<"${edits[1]}"
 # Pipeline stages run at once, so each request they need runs first.
@@ -362,7 +414,8 @@ refused=$(with_value "$section" "$category" "$label" "$(jq -n --argjson max "$ma
     with_value Face Irises 'Both Eyes' '"#123456"' |
     with_value Hair Back item '"NoSuchItem"' |
     with_value Outfit Dresses item "$dress" |
-    with_value Outfit Tops item "$top")
+    with_value Outfit Tops item "$top" |
+    with_value Outfit Shoes 'Base Color' '["#123456", "#123456", "#123456", "#123456", "#123456", "#123456"]')
 if vroid "$refused" >/dev/null 2>"$out/bounds.err"; then
     fatal "apply above the maximum succeeded"
 fi
@@ -372,6 +425,8 @@ for reason in 'is outside' 'No Such Parameter: unknown parameter' 'No Such Categ
     'VRoid cannot wear these together' 'Nothing changed'; do
     grep -qF "$reason" "$out/bounds.err" || fatal "refusal lacks '$reason': $(<"$out/bounds.err")"
 done
+grep -qE 'Outfit/Shoes/Base Color: (give one colour|[0-9]+ colours have this label)' "$out/bounds.err" ||
+    fatal "refusal lacks the Shoes colour count: $(<"$out/bounds.err")"
 actual=$(value_of Body 'Whole Body' Color)
 same "$actual" "$skin" || fatal "skin changed to $actual after a refused apply"
 for edit in "${edits[@]}"; do
@@ -472,6 +527,7 @@ for edit in "${edits[@]}"; do
     same "$actual" "${expected[$edit]}" || fatal "$label reopened as $actual, saved ${expected[$edit]}"
 done
 check_items 'after reopening'
+check_outfit 'after reopening'
 # Item identifiers name the same items after a restart (R-EDIT-9).
 for item in "${items[@]}"; do
     IFS='|' read -r section category <<<"$item"
@@ -488,6 +544,8 @@ for colour in "${colours[@]}"; do
         '.[$s][$c][$l] == $v' "$out/edited.json" >/dev/null ||
         fatal "$out/edited.json lacks $section/$category/$label ${expected[$edit]}"
 done
+jq -e --argjson want "$outfit_colours" '.Outfit.Tops as $tops | all($want | keys[]; $tops[.] == $want[.])' "$out/edited.json" >/dev/null ||
+    fatal "$out/edited.json lacks the Outfit/Tops colours $outfit_colours"
 front='Hair|Front|Main Color'
 actual=$(value_of Hair Back 'Main Color')
 same "$actual" "${expected[$front]}" || fatal "Hair/Back Main Color is $actual, not Front's"

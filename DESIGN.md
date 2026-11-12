@@ -284,8 +284,9 @@ category names to labels to values, and `Accessories` lists accessories,
 below. A value is a number, or a colour as `#RRGGBB`. A category's reserved
 label `item` holds its item, below; `dump` fails if a category has a value
 labelled `item` (none does in 2.16.0). Labels repeat within some categories (Face Sets
-and Nose each have two "Nose Size" parameters), so a repeated label maps to an
-array of its values in app order. Categories also share parameters: within a
+and Nose each have two "Nose Size" parameters, and an outfit item has a "Base
+Color" per part), so a repeated label maps to an array of its values in app
+order. Categories also share parameters: within a
 section, the same label in another category is the same value (Face Sets,
 Eyes Sets, and Eyeliner all hold "Eye Size X"); recheck this with any VRoid
 pin change. `dump` therefore lists each label under the first category in app
@@ -296,34 +297,36 @@ in a section share a name (none do in 2.16.0). The `Apply` model refuses a
 label in two categories of a section, since the later value would silently
 win.
 
-`apply` runs in two passes. The first resolves every item, accessory,
-category name, and value, checking each item as below and each value's
-label count, live bounds, and kind, and collects every refusal. Bounds
-compare the value as float32, as VRoid stores it, so a dumped bound such as
-0.7 stays in range. Any refusal fails the request before anything changes
-(R-EDIT-3, R-EDIT-10). A colour that is unavailable for a category's current
-item is not refused when the request changes that category's item, since the
-new item may offer it. The second pass changes items, then accessories,
-because a new item can reset its category's values (Irises and Eyebrows in
-2.16.0; colours survive), then
-revisits the categories and sets each value that differs, waiting for each
-rebuild. It stops at the first new refusal, such as a colour the new item
-does not offer. It sets `modified` before the first change, so an interrupted
-edit still counts as unsaved. The result counts the changes and lists in
-`discarded` what `undo` cannot restore. The bridge writes the `undo` template
-to its file once the first pass succeeds, before any change. When the request
-changes items, `undo` is a `dump` taken before the change, without items that
-are not built in, since a new item can reset its category's values and VRoid
-changes other categories with it, such as the Base Hair that each Hair Back
-item brings, so it includes the accessories; otherwise it holds the previous
-values of what the request names, and the previous accessories when the
-request lists them. A custom accessory leaves `undo` once its removal is
-confirmed, and the bridge then rewrites the file; a failed rewrite fails the
-request. A crash during that removal can leave it in the file, which apply
-then refuses. If the second pass fails, the bridge ends the
-operation, then reports what already changed and what was discarded, and the
-CLI adds the undo file. Each item waits for its section to settle, so
-reapplying a whole template takes tens of seconds, within the request timeout.
+`apply` runs in two passes. The first resolves every item, accessory, category
+name, and value, checking each item as below and each value's label count,
+live bounds, and kind, and collects every refusal. Bounds compare the value as
+float32, as VRoid stores it, so a dumped bound such as 0.7 stays in range. Any
+refusal fails the request before anything changes (R-EDIT-3, R-EDIT-10). When
+the request may change a category's item (its own pick, a conflicting item
+VRoid takes it off for, or a set in the section), the first pass skips the
+colours the next item may offer differently: every Outfit colour, since each
+item brings its own parts, and elsewhere colours unavailable for the current
+item. The second pass changes items, then accessories, because a new item can
+reset its category's values (Irises and Eyebrows, and an Outfit item's
+colours, in 2.16.0; other colours survive), then revisits the categories and
+sets each value that differs, waiting for each rebuild. It stops at the first
+new refusal, such as a colour the new item does not offer. It sets `modified`
+before the first change, so an interrupted edit still counts as unsaved. The
+result counts the changes and lists in `discarded` what `undo` cannot restore.
+The bridge writes the `undo` template to its file once the first pass
+succeeds, before any change. When the request changes items, `undo` is a
+`dump` taken before the change, without items that are not built in, since a
+new item can reset its category's values and VRoid changes other categories
+with it, such as the Base Hair that each Hair Back item brings, so it includes
+the accessories; otherwise it holds the previous values of what the request
+names, and the previous accessories when the request lists them. A custom
+accessory leaves `undo` once its removal is confirmed, and the bridge then
+rewrites the file; a failed rewrite fails the request. A crash during that
+removal can leave it in the file, which apply then refuses. If the second pass
+fails, the bridge ends the operation, then reports what already changed and
+what was discarded, and the CLI adds the undo file. Each item waits for its
+section to settle, so reapplying a whole template takes tens of seconds,
+within the request timeout.
 
 ### Items and accessories
 
@@ -426,9 +429,8 @@ one loses its placement, which `undo` restores as the default. `plugin/ItemIds.c
 
 ### Colours
 
-A colour is a field in a category's editor panel. Outfits have none: their
-colours live in the texture editor, which saves custom items. Accessories'
-colours are above.
+A colour is a field in a category's editor panel, or for outfits in the
+texture editor. Accessories' colours are above.
 
 - Face, Hair, and Body categories: the selector's `CategoryColorSelection`
   holds `_colorSelections[]`, each with `IsAvailable` and
@@ -441,6 +443,25 @@ colours are above.
   `HairMaterialTemplateEmissionColor` ("Highlight Color"). One pair covers all
   hair; Base Hair has its own field above. Hairstyle Sets' aggregate colour is
   not exposed.
+- Outfit categories: VRoid's editor shows outfit colours only in its texture
+  editor, whose edits save custom items. The bridge runs the texture editor's
+  own query, `GetClothingQuery(TransferableGroupType).Execute` on the engine
+  context's `ActiveModel`, which changes nothing. Its `ClothingTemplate`
+  sections are the worn item's parts in app order. Each part's `ColorGroup`
+  holds `CommonColor`s, labelled by `VRoidStudio.UICulture.Translator` from
+  their translation key: in 2.16.0, "Base Color" and "Shade Color" in every
+  part that has colours; `Texture` sections are skipped, and any other kind
+  fails as a VRoid difference. `Context.GetColorParameter` reads a colour. A
+  write creates the texture editor's `CommonColorViewModel` for the colour
+  without opening its screen and sets its `Color`, which takes one rebuild.
+  It keeps the item's preset resource and leaves it unmarked as updated, so
+  the item stays built in (R-EDIT-12). The bridge never runs the texture
+  editor's advanced edit (`BeginClothingAdvancedEditCommand`), which prepares
+  textures for painting.
+  A custom item's colours are refused, since they do not reproduce in another
+  project. Each colour's keys are its part's transferable and its position,
+  so outfit colours are never shared. Selecting an Outfit item resets its
+  colours to the item's defaults.
 
 Some colours are shared. A sub-selection's accessor writes the model keys in
 `_keysToSet`: Face Eyelids, Nose, and Skin and Body Whole Body each write all
@@ -452,7 +473,9 @@ reads only one of its colours, so it is neither listed nor settable; `apply`
 names the fields to set instead. `plugin/Colors.cs`, which `tests/protocol`
 also builds, holds the remaining rules. Fields with equal keys are one colour:
 `dump` lists it under the first category in app order, and fails if a later
-copy differs or if two listed fields still overlap, so every dump applies.
+copy differs or if two listed fields still overlap, so every dump applies. It
+also fails if a colour with a repeated label is listed elsewhere, since `apply`
+sets such a label as a whole array.
 `apply` refuses fields with overlapping keys in one request (R-EDIT-3), since
 the later write would win.
 
@@ -530,9 +553,7 @@ gives it a hidden `.vroid-render-HEX.png` beside the destination, publishes it
 with `os.link`, which is atomic and fails if the destination exists, and
 removes the hidden file in a `finally`, so a destination is never replaced or
 partly written (R-VIEW-3). A CLI that stops waiting before the bridge answers,
-because it was killed, interrupted, or timed out, can leave one. A bridge that
-predates the method answers `Unknown method: METHOD`; the CLI adds that the
-session needs a stop and launch to update it.
+because it was killed, interrupted, or timed out, can leave one.
 
 IL2CPP reflection must convert native objects to their most derived proxy type.
 `Reflect.Concrete` maps `System.*` class names to `Il2CppSystem.*` proxies and
@@ -584,7 +605,8 @@ errors (R-CLI-2).
 
 `scripts/gui-smoke.sh`, run by `just gui-smoke`, drives a real session through
 open, dump, numeric and colour edits, item and accessory edits, including two
-accessories of one kind, refusal, save, rendering every view, drawing the
+accessories of one kind, outfit colour edits that keep the item built in
+(R-EDIT-12), refusal, save, rendering every view, drawing the
 thumbnails of the edited item categories, restart, reopen with a read-back of
 every edited number, colour, item, and accessory (R-EDIT-1) and of each
 category's item identifiers (R-EDIT-9), and reapplying the first dump, and

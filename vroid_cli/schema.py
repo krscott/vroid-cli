@@ -42,12 +42,12 @@ def one_error(value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
                 f'{value!r} is neither a number nor a colour as "#RRGGBB"'
             ) from None
         raise ValueError(
-            "expected a finite number, an array of them for a repeated label, "
-            'or a colour as "#RRGGBB"'
+            'expected a finite number or a colour as "#RRGGBB", or for a '
+            "repeated label an array of numbers or of colours"
         ) from None
 
 
-Value = Annotated[float | list[float] | Color, WrapValidator(one_error)]
+Value = Annotated[float | list[float] | Color | list[Color], WrapValidator(one_error)]
 # Marks an item that is not one of VRoid's built-in items.
 CUSTOM = "custom"
 ItemId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_]+$")]
@@ -94,10 +94,11 @@ Template = Annotated[
     dict[str, CategoryTemplate],
     Field(
         description="category name -> label -> value: a number, or a colour "
-        'as "#RRGGBB", and the optional "item". A numeric label that occurs '
-        "more than once in a category takes an array of its values in app "
-        "order. Categories share numeric parameters by label, so each numeric "
-        "label may appear in only one category. Some colours are shared too, "
+        'as "#RRGGBB", and the optional "item". A label that occurs more than '
+        "once in a category, such as an outfit's per-part colours, takes an "
+        "array of its values in app order. Categories share numeric "
+        "parameters by label, so each numeric label may appear in only one "
+        "category. Some colours are shared too, "
         "such as skin; set each in one place."
     ),
 ]
@@ -175,7 +176,7 @@ class Open(Model):
 
 
 class Categories(Model):
-    """List a section's categories. Outfit categories hold only items."""
+    """List a section's categories."""
 
     method: Literal["categories"]
     section: Section
@@ -257,7 +258,9 @@ class Apply(Model):
             for category, values in categories.items():
                 extra: dict[str, Any] = values.model_extra or {}
                 for label, value in extra.items():
-                    if isinstance(value, str):
+                    if isinstance(value, str) or (
+                        isinstance(value, list) and value and isinstance(value[0], str)
+                    ):
                         continue
                     if (other := first.setdefault(label, category)) != category:
                         raise ValueError(

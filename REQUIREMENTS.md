@@ -15,12 +15,19 @@ it; name non-obvious constraints when useful. Backfill existing rationales only
 when relevant to the task, without a project-wide sweep. If the reason is unknown,
 investigate or ask; never invent a rationale.
 
+For new or substantively changed `[manual]` requirements, add a separate
+indented `Manual test:` paragraph with concrete steps and expected results.
+It says how to verify the behaviour; `Rationale:` says why it matters. Apply
+this format when adding or editing requirements too; do not migrate or
+backfill unrelated requirements.
+
 - The ID is stable. Never renumber or reuse an ID. To drop a requirement,
   change its tag to `[retired]` and delete its text and rationale; the ID
   stays taken.
 - `[test]`: a test that `just test` or `nix flake check` runs covers it. Each
   covering test carries the ID in a comment.
-- `[manual: how]`: no automated test yet. The text says how an agent checks it.
+- `[manual]`: no automated test yet. A `Manual test:` paragraph says how an
+  agent checks it.
 - `[retired]`: no longer required. Kept so the ID stays taken.
 
 ## Sessions (SES)
@@ -154,13 +161,15 @@ investigate or ask; never invent a rationale.
 
 ## Editing (EDIT)
 
-- **R-EDIT-1** [manual: run `just gui-smoke SESSION SOURCE.vroid` with an
-  editable project; it saves at least one value of each kind `apply` can set,
-  including an item in a Hair and an Outfit category and an accessory] Every
-  value `apply` can set reads back unchanged after a save, a full restart
-  and a reopen.
+- **R-EDIT-1** [manual] Every value `apply` can set reads back unchanged after
+  a save, a full restart and a reopen.
 
   Rationale: Saved projects are the deliverable of an editing session.
+
+  Manual test: Run `just gui-smoke SESSION SOURCE.vroid` with an editable
+  project. It saves at least one value of each kind `apply` can set, including
+  an item in a Hair and an Outfit category, an Outfit colour, and an
+  accessory, and passes only if each reads back unchanged.
 
 - **R-EDIT-2** [test] `apply` rejects a value that is not finite, or a colour
   that is not `#RRGGBB`, before contacting the app.
@@ -169,21 +178,28 @@ investigate or ask; never invent a rationale.
   A malformed colour has no single meaning; guessing one, such as shorthand or
   alpha, would change the character silently.
 
-- **R-EDIT-3** [manual: `just gui-smoke` applies one valid value, one above its
-  maximum, an unknown parameter, an unknown category, a number for a colour,
-  one shared colour in two categories, an unknown item, and a dress with a top,
-  then checks the error and that the values are unchanged] `apply` refuses a
-  request in which any value is outside its parameter's bounds or of the wrong
-  kind, names a category, parameter or item that is unknown or ambiguous, gives
-  the wrong number of values for a label, sets one shared colour more than
-  once, or selects items that VRoid cannot wear together, and changes nothing.
+- **R-EDIT-3** [manual] `apply` refuses a request in which any value is
+  outside its parameter's bounds or of the wrong kind, names a category,
+  parameter or item that is unknown or ambiguous, gives the wrong number of
+  values for a label, sets one shared colour more than once, or selects items
+  that VRoid cannot wear together, and changes nothing. A colour of a category
+  whose item the request changes, directly or through VRoid, is checked once
+  the new item is worn instead; a refusal then stops `apply`, and its undo
+  file restores what changed (R-EDIT-11).
 
   Rationale: VRoid's own controls never produce out-of-range values, so the
   app's behaviour for them is unknown. A partly applied template leaves a
   character that matches neither the old nor the new version. A shared colour
   set twice in one request would take whichever value came last. VRoid
   silently takes off an item that conflicts with a newly selected one, such as
-  a top when a dress is selected, so the template would not read back.
+  a top when a dress is selected, so the template would not read back. An
+  item's colours are known only once it is worn: a new outfit item brings its
+  own parts and colours, and a new Face item can make a colour unavailable.
+
+  Manual test: `just gui-smoke` applies one valid value, one above its
+  maximum, an unknown parameter, an unknown category, a number for a colour,
+  one shared colour in two categories, an unknown item, and a dress with a
+  top, then checks the error and that the values are unchanged.
 
 - **R-EDIT-4** [test] `save` refuses an existing destination and leaves it
   unchanged.
@@ -254,6 +270,18 @@ investigate or ask; never invent a rationale.
   Rationale: Agents try edits and back out the ones that don't match a
   reference. The file survives a failed or interrupted `apply`, and keeping the
   template out of the result keeps the result short enough to read.
+
+- **R-EDIT-12** [manual] Setting the colour of a built-in outfit item keeps it
+  the same built-in item.
+
+  Rationale: An item that became custom would lose its identifier, so
+  templates and undo files could not restore it, and later item changes in its
+  section would need `discard_custom` (R-EDIT-10). VRoid's texture editor
+  saves edits as custom items, so this guarantee is easy to lose.
+
+  Manual test: `just gui-smoke` sets an Outfit colour, then checks that
+  `items` names the same built-in item after the edit and after a save, a full
+  restart and a reopen.
 
 ## Views (VIEW)
 
