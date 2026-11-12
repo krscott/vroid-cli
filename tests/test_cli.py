@@ -1048,32 +1048,16 @@ def test_images_never_replace_a_destination_created_meanwhile(
 
 
 @pytest.mark.parametrize("method", IMAGES)
-@pytest.mark.parametrize("unknown", [True, False])
-def test_failed_images_leave_no_file(
-    tmp_path: Path, method: str, unknown: bool
-) -> None:
+def test_failed_images_leave_no_file(tmp_path: Path, method: str) -> None:
     # R-VIEW-3
-    error = f"Unknown method: {method}" if unknown else "Open a project first"
+    error = "Open a project first"
     rpc = bridge(tmp_path)
     peer, _ = answer(rpc, writes_image(b"\x89PNG partial", error=error))
     result = invoke(tmp_path, method, path="image.png", **IMAGES[method])
     peer.join()
     assert result.returncode == 1
     assert error in result.stderr
-    assert (f"predates {method}" in result.stderr) == unknown
     assert render_files(tmp_path) == []
-
-
-def test_only_image_methods_suggest_updating_the_bridge(tmp_path: Path) -> None:
-    rpc = bridge(tmp_path)
-    peer, _ = answer(
-        rpc, lambda _: {"ok": False, "result": None, "error": "Unknown method: dump"}
-    )
-    result = invoke(tmp_path, "dump")
-    peer.join()
-    assert result.returncode == 1
-    assert "Unknown method: dump" in result.stderr
-    assert "predates" not in result.stderr
 
 
 @pytest.mark.parametrize("method", IMAGES)

@@ -530,9 +530,7 @@ gives it a hidden `.vroid-render-HEX.png` beside the destination, publishes it
 with `os.link`, which is atomic and fails if the destination exists, and
 removes the hidden file in a `finally`, so a destination is never replaced or
 partly written (R-VIEW-3). A CLI that stops waiting before the bridge answers,
-because it was killed, interrupted, or timed out, can leave one. A bridge that
-predates the method answers `Unknown method: METHOD`; the CLI adds that the
-session needs a stop and launch to update it.
+because it was killed, interrupted, or timed out, can leave one.
 
 IL2CPP reflection must convert native objects to their most derived proxy type.
 `Reflect.Concrete` maps `System.*` class names to `Il2CppSystem.*` proxies and
