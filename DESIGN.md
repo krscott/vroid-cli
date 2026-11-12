@@ -284,8 +284,9 @@ category names to labels to values, and `Accessories` lists accessories,
 below. A value is a number, or a colour as `#RRGGBB`. A category's reserved
 label `item` holds its item, below; `dump` fails if a category has a value
 labelled `item` (none does in 2.16.0). Labels repeat within some categories (Face Sets
-and Nose each have two "Nose Size" parameters), so a repeated label maps to an
-array of its values in app order. Categories also share parameters: within a
+and Nose each have two "Nose Size" parameters, and an outfit item has a "Base
+Color" per part), so a repeated label maps to an array of its values in app
+order. Categories also share parameters: within a
 section, the same label in another category is the same value (Face Sets,
 Eyes Sets, and Eyeliner all hold "Eye Size X"); recheck this with any VRoid
 pin change. `dump` therefore lists each label under the first category in app
@@ -303,9 +304,12 @@ compare the value as float32, as VRoid stores it, so a dumped bound such as
 0.7 stays in range. Any refusal fails the request before anything changes
 (R-EDIT-3, R-EDIT-10). A colour that is unavailable for a category's current
 item is not refused when the request changes that category's item, since the
-new item may offer it. The second pass changes items, then accessories,
-because a new item can reset its category's values (Irises and Eyebrows in
-2.16.0; colours survive), then
+new item may offer it. When the request changes any Outfit item, Outfit
+colours are checked only in the second pass: each item brings its own parts,
+and a set or conflict can change other categories' items. The second pass
+changes items, then accessories, because a new item can reset its category's
+values (Irises and Eyebrows, and an Outfit item's colours, in 2.16.0; other
+colours survive), then
 revisits the categories and sets each value that differs, waiting for each
 rebuild. It stops at the first new refusal, such as a colour the new item
 does not offer. It sets `modified` before the first change, so an interrupted
@@ -426,9 +430,8 @@ one loses its placement, which `undo` restores as the default. `plugin/ItemIds.c
 
 ### Colours
 
-A colour is a field in a category's editor panel. Outfits have none: their
-colours live in the texture editor, which saves custom items. Accessories'
-colours are above.
+A colour is a field in a category's editor panel, or for outfits in the
+texture editor. Accessories' colours are above.
 
 - Face, Hair, and Body categories: the selector's `CategoryColorSelection`
   holds `_colorSelections[]`, each with `IsAvailable` and
@@ -441,6 +444,25 @@ colours are above.
   `HairMaterialTemplateEmissionColor` ("Highlight Color"). One pair covers all
   hair; Base Hair has its own field above. Hairstyle Sets' aggregate colour is
   not exposed.
+- Outfit categories: VRoid's editor shows outfit colours only in its texture
+  editor, whose edits save custom items. The bridge runs the texture editor's
+  own query, `GetClothingQuery(TransferableGroupType).Execute` on the engine
+  context's `ActiveModel`, which changes nothing. Its `ClothingTemplate`
+  sections are the worn item's parts in app order. Each part's `ColorGroup`
+  holds `CommonColor`s, labelled by `VRoidStudio.UICulture.Translator` from
+  their translation key: in 2.16.0, "Base Color" and "Shade Color" in every
+  part that has colours; `Texture` sections are skipped, and any other kind
+  fails as a VRoid difference. `Context.GetColorParameter` reads a colour. A
+  write creates the texture editor's `CommonColorViewModel` for the colour
+  without opening its screen and sets its `Color`, which takes one rebuild.
+  It keeps the item's preset resource and leaves it unmarked as updated, so
+  the item stays built in (R-EDIT-12). The bridge never runs the texture
+  editor's advanced edit (`BeginClothingAdvancedEditCommand`), which prepares
+  textures for painting.
+  A custom item's colours are refused, since they do not reproduce in another
+  project. Each colour's keys are its part's transferable and its position,
+  so outfit colours are never shared. Selecting an Outfit item resets its
+  colours to the item's defaults.
 
 Some colours are shared. A sub-selection's accessor writes the model keys in
 `_keysToSet`: Face Eyelids, Nose, and Skin and Body Whole Body each write all
@@ -452,7 +474,9 @@ reads only one of its colours, so it is neither listed nor settable; `apply`
 names the fields to set instead. `plugin/Colors.cs`, which `tests/protocol`
 also builds, holds the remaining rules. Fields with equal keys are one colour:
 `dump` lists it under the first category in app order, and fails if a later
-copy differs or if two listed fields still overlap, so every dump applies.
+copy differs or if two listed fields still overlap, so every dump applies. It
+also fails if a colour with a repeated label is listed elsewhere, since `apply`
+sets such a label as a whole array.
 `apply` refuses fields with overlapping keys in one request (R-EDIT-3), since
 the later write would win.
 
@@ -582,7 +606,8 @@ errors (R-CLI-2).
 
 `scripts/gui-smoke.sh`, run by `just gui-smoke`, drives a real session through
 open, dump, numeric and colour edits, item and accessory edits, including two
-accessories of one kind, refusal, save, rendering every view, drawing the
+accessories of one kind, outfit colour edits that keep the item built in
+(R-EDIT-12), refusal, save, rendering every view, drawing the
 thumbnails of the edited item categories, restart, reopen with a read-back of
 every edited number, colour, item, and accessory (R-EDIT-1) and of each
 category's item identifiers (R-EDIT-9), and reapplying the first dump, and

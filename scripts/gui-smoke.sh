@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Drive a real session through edit, save, render, restart, reopen, and a
 # template round trip, checking R-EDIT-1, R-EDIT-3, R-EDIT-5, R-EDIT-6,
-# R-EDIT-7, R-EDIT-8, R-EDIT-9, R-EDIT-11, R-VIEW-1, R-VIEW-2, and R-VIEW-4.
+# R-EDIT-7, R-EDIT-8, R-EDIT-9, R-EDIT-11, R-EDIT-12, R-VIEW-1, R-VIEW-2, and
+# R-VIEW-4.
 # Needs graphics access.
 set -euo pipefail
 shopt -s failglob
@@ -13,7 +14,8 @@ usage() {
         'Opens SOURCE in SESSION, dumps its template, edits one Body and two Face' \
         'parameters and four colours (orange hair, green eyes) in one request,' \
         'then selects other Hair Front and Outfit Tops items and adds cat and' \
-        'rabbit ears, undoing and redoing both edits, saves a copy, renders' \
+        'rabbit ears, undoing and redoing both edits, recolours the new top,' \
+        'undoing that and a later change of top, saves a copy, renders' \
         'each view, draws the thumbnails of those two categories, restarts,' \
         'checks the saved values, and applies the original template. Editor' \
         'screenshots before and after the edit land in the artifact directory.' \
@@ -341,6 +343,34 @@ check_items() {
 }
 check_items 'after apply'
 
+# Outfit colours: a distinct Base Color for each part of the new top, which
+# stays the same built-in item (R-EDIT-12) and reads back as set (R-EDIT-8).
+outfit_colours=$(jq -cn '{method: "parameters", section: "Outfit", category: "Tops"}' | vroid - |
+    jq -c '[.[] | select(.label == "Base Color") | .value | ascii_upcase] as $now
+        | ["#B22222", "#1E90FF", "#228B22", "#9932CC", "#DAA520", "#008080"] as $pick
+        | [range($now | length) | if $now[.] == $pick[.] then "#000080" else $pick[.] end]
+        | if length == 1 then .[0] else . end')
+[[ $outfit_colours != '[]' ]] || fatal "Outfit/Tops ${expected_item['Outfit|Tops']} has no Base Color"
+check_outfit() {
+    jq -cn '{method: "parameters", section: "Outfit", category: "Tops"}' | vroid - |
+        jq -e --argjson want "$outfit_colours" '[.[] | select(.label == "Base Color") | .value | ascii_upcase] == ([$want] | flatten)' >/dev/null ||
+        fatal "Outfit/Tops Base Color does not read $outfit_colours $1"
+}
+request=$(with_value Outfit Tops 'Base Color' "$outfit_colours" <<<'{"method": "apply"}')
+vroid '{"method": "dump"}' >"$out/before-outfit.json"
+result=$(vroid "$request")
+undo "$result" "$out/before-outfit.json"
+vroid "$request" | jq -e --argjson want "$outfit_colours" '.changed == ([$want] | flatten | length)' >/dev/null ||
+    fatal "apply did not change every part's Base Color"
+check_outfit 'after apply'
+check_items 'after setting an outfit colour'
+# Another top brings its own colours; the undo restores the item and the colours
+# set above (R-EDIT-11).
+vroid '{"method": "dump"}' >"$out/before-retop.json"
+result=$(with_value Outfit Tops item "$(pick_item Outfit Tops)" <<<'{"method": "apply"}' | vroid -)
+undo "$result" "$out/before-retop.json"
+check_outfit 'after undoing a change of top'
+
 # A value above its maximum, an unknown parameter, an unknown category, a number
 # for a colour, a shared colour set twice, and a colour that writes several
 # refuse the whole request, and each is reported.
@@ -472,6 +502,7 @@ for edit in "${edits[@]}"; do
     same "$actual" "${expected[$edit]}" || fatal "$label reopened as $actual, saved ${expected[$edit]}"
 done
 check_items 'after reopening'
+check_outfit 'after reopening'
 # Item identifiers name the same items after a restart (R-EDIT-9).
 for item in "${items[@]}"; do
     IFS='|' read -r section category <<<"$item"
@@ -488,6 +519,8 @@ for colour in "${colours[@]}"; do
         '.[$s][$c][$l] == $v' "$out/edited.json" >/dev/null ||
         fatal "$out/edited.json lacks $section/$category/$label ${expected[$edit]}"
 done
+jq -e --argjson want "$outfit_colours" '.Outfit.Tops["Base Color"] == $want' "$out/edited.json" >/dev/null ||
+    fatal "$out/edited.json lacks Outfit/Tops/Base Color $outfit_colours"
 front='Hair|Front|Main Color'
 actual=$(value_of Hair Back 'Main Color')
 same "$actual" "${expected[$front]}" || fatal "Hair/Back Main Color is $actual, not Front's"

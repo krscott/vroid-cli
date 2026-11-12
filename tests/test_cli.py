@@ -200,20 +200,41 @@ def test_malformed_colours_are_rejected_without_state(
     assert not (tmp_path / "state").exists()
 
 
+@pytest.mark.parametrize(
+    "colors", ['["#FFFFFF", "#12345"]', '["#FFFFFF", 0.5]', '[0.5, "#FFFFFF"]']
+)
+def test_malformed_colour_arrays_are_rejected_without_state(
+    tmp_path: Path, colors: str
+) -> None:
+    # R-EDIT-2: an array holds only numbers or only colours.
+    request = '{"method": "apply", "Outfit": {"Tops": {"Base Color": %s}}}' % colors
+    result = run_cli(tmp_path, "test", request)
+    assert result.returncode == 2
+    assert "Outfit.Tops.Base Color: " in result.stderr
+    assert "an array of numbers or of colours" in result.stderr
+    assert not (tmp_path / "state").exists()
+
+
 def test_colour_labels_may_repeat_across_categories(tmp_path: Path) -> None:
-    # "Color" names a different colour in each category; only the bridge knows
-    # which colours are shared.
+    # "Color" names a different colour in each category, and each outfit
+    # item's parts have their own colours; only the bridge knows which colours
+    # are shared.
     rpc = bridge(tmp_path)
     face = {"Eyebrows": {"Color": "#8f5836"}, "Eyelashes": {"Color": "#6E5B4D"}}
-    peer, received = answer(rpc, lambda packet: applied(rpc, packet, changed=2))
-    result = invoke(tmp_path, "apply", Face=face)
+    outfit = {
+        "Tops": {"Base Color": ["#B22222", "#FFFFFF"]},
+        "Shoes": {"Base Color": "#000000"},
+    }
+    peer, received = answer(rpc, lambda packet: applied(rpc, packet, changed=5))
+    result = invoke(tmp_path, "apply", Face=face, Outfit=outfit)
     peer.join()
     assert result.returncode == 0, result.stderr
     assert received[0]["Face"] == face
+    assert received[0]["Outfit"] == outfit
 
 
 def test_bridge_from_an_older_protocol_is_refused(tmp_path: Path) -> None:
-    rpc = bridge(tmp_path, protocol=2)
+    rpc = bridge(tmp_path, protocol=PROTOCOL - 1)
     result = invoke(tmp_path, "dump")
     assert result.returncode == 1
     assert "incompatible" in result.stderr
@@ -692,7 +713,15 @@ ITEM_DUMP = {
     },
     "Hair": {"Front": {"item": "048"}, "Overall Hair": {"item": "custom"}},
     "Body": {"Whole Body": {"item": "Preset_F", "Head Size": 0.125}},
-    "Outfit": {"Tops": {"item": "159"}, "Dresses": {"item": None}},
+    "Outfit": {
+        "Tops": {
+            "item": "159",
+            "Base Color": ["#B22222", "#FFFFFF"],
+            "Shade Color": ["#CFD6F7", "#F7F6F8"],
+        },
+        "Dresses": {"item": None},
+        "Shoes": {"item": "018", "Base Color": "#FFFFFF", "Shade Color": "#CFD6F7"},
+    },
     "Accessories": [
         {"item": "CatEar", "Color": "#825A46"},
         {"item": "CatEar", "Color": "#FF0000"},
@@ -780,6 +809,9 @@ def test_parameters_list_numbers_and_colours(tmp_path: Path) -> None:
     listed = [
         {"label": "Head Size", "value": 0.125, "min": -1.0, "max": 1.0},
         {"label": "Color", "value": "#FAEBDE"},
+        # Each part of an outfit item has its own colours, listed in app order.
+        {"label": "Base Color", "value": "#B22222"},
+        {"label": "Base Color", "value": "#FFFFFF"},
     ]
     peer, _ = answer(rpc, lambda _: {"ok": True, "result": listed, "error": None})
     result = invoke(tmp_path, "parameters", section="Body", category="Whole Body")

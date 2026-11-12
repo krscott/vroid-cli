@@ -151,7 +151,7 @@ public sealed partial class Plugin
             if (Reflect.Get(selection, "IsAvailable") is not bool available) throw Differs($"colour availability for accessory {name}");
             if (!available) continue;
             foreach (var sub in Reflect.Items(Reflect.Get(selection, "_subColorSelections")))
-                swatches.Add(new Swatch(Reflect.Get(sub, "TranslatedDisplayName") as string ?? "", sub, "Color", new HashSet<string>()));
+                swatches.Add(Field(Reflect.Get(sub, "TranslatedDisplayName") as string ?? "", sub, "Color", new HashSet<string>()));
         }
         return new Worn(item != null && AttachmentIds.Contains(item) ? item : ItemIds.Custom, name, id, instance, swatches.ToArray());
     }).ToArray();
