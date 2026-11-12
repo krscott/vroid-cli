@@ -3,11 +3,11 @@
     "framewisp": {
       "flake": false,
       "locked": {
-        "lastModified": 1794437931,
-        "narHash": "sha256-eZ1wkVeXrFXYnFlNfSnwfEqklpp2ooB3xQ18rPANnTE=",
+        "lastModified": 1794459315,
+        "narHash": "sha256-hHpv/MU9QtcQULvcRoc6Sw+KnaAIQ1Q/kliLZdHCAvc=",
         "owner": "krscott",
         "repo": "framewisp",
-        "rev": "e254bc69e492e79996cfb83136a717e2e4f66066",
+        "rev": "df60cbd3da3d50dad886703b98c2aa097a74bae7",
         "type": "github"
       },
       "original": {
