@@ -58,6 +58,15 @@ def no_default(schema: dict[str, Any]) -> None:
     schema.pop("default", None)
 
 
+def omittable(schema: dict[str, Any]) -> None:
+    # A field that may be omitted but not null: its None default only marks it
+    # omitted, which `not_null` enforces.
+    no_default(schema)
+    schema.update(
+        next(branch for branch in schema.pop("anyOf") if branch.get("type") != "null")
+    )
+
+
 class Model(BaseModel):
     # The defaults accept NaN, coerce "0.5" to 0.5, and drop misspelled fields.
     model_config = ConfigDict(
@@ -135,18 +144,18 @@ class Accessory(BaseModel):
         None,
         description="[x, y, z] in metres from the default placement, relative to "
         "the bone",
-        json_schema_extra=no_default,
+        json_schema_extra=omittable,
     )
     rotation: Quaternion | None = Field(
         None,
         description="a unit quaternion [x, y, z, w] relative to the bone; "
         "[0, 0, 0, 1] is the default",
-        json_schema_extra=no_default,
+        json_schema_extra=omittable,
     )
     scale: Vector3 | None = Field(
         None,
         description="positive [x, y, z] factors; [1, 1, 1] is the default",
-        json_schema_extra=no_default,
+        json_schema_extra=omittable,
     )
 
     @field_validator("position", "rotation", "scale", mode="before")

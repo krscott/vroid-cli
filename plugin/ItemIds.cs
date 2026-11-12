@@ -134,8 +134,8 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
     /// group is worn; it adds one on its default bone, and a duplicate copies the
     /// item and bone. So the accessories of one group sit on their default bone,
     /// except copies of one item on one other bone. Built-in accessories of one
-    /// item are interchangeable: a wanted one keeps a worn one that `same` says
-    /// already matches it, then one on its wanted bone, then for one that names
+    /// item are interchangeable: a wanted one that names its bone keeps a worn one
+    /// that `same` says already matches it, then one on its wanted bone, then for one that names
     /// no bone one on the default bone, then any. When a kept one cannot move,
     /// every one of that kind is
     /// removed and added again: one first, moved while alone, then copies of it
@@ -159,7 +159,7 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
         bool BuiltIn(int i) => wanted[i].Item != ItemIds.Custom;
         foreach (var pass in new Func<int, int, bool>[]
                  {
-                     (i, j) => BuiltIn(i) && same != null && same(i, j),
+                     (i, j) => BuiltIn(i) && wanted[i].HasBone && same != null && same(i, j),
                      (i, j) => BuiltIn(i) && wanted[i].HasBone && worn[j].Bone == wanted[i].Bone,
                      (i, j) => BuiltIn(i) && !wanted[i].HasBone && worn[j].Bone == Bones.Default(wanted[i].Item),
                      (i, j) => BuiltIn(i) && !wanted[i].HasBone,

@@ -461,7 +461,8 @@ Test("accessories of one item reach every arrangement of bones VRoid can make", 
     // lists first, so the other may move.
     foreach (var worn in new[] { new[] { Worn("CatEar", Neck), Worn("CatEar", Head) }, new[] { Worn("CatEar", Head), Worn("CatEar", Neck) } })
     {
-        var order = AccessoryPlan.Of(worn, new[] { Any("CatEar"), On("RabbitEar", Chest) });
+        // Even though the bare entry matches either.
+        var order = AccessoryPlan.Of(worn, new[] { Any("CatEar"), On("RabbitEar", Chest) }, (i, _) => i == 0);
         var source = order.Added.Single(addition => addition.Wanted == 0).Was;
         Check(order.Errors.Count == 0 && source != null && worn[source.Value].Bone == Head, Show(order));
     }
@@ -470,7 +471,7 @@ Test("accessories of one item reach every arrangement of bones VRoid can make", 
     var dumped = AccessoryPlan.Of(new[] { Worn("CatEar", Head), Worn("CatEar", Head) }, new[] { On("CatEar", Head), On("CatEar", Head) },
         (i, j) => i != j);
     Check(dumped.Kept.SequenceEqual(new[] { (1, 0), (0, 1) }) && dumped.Removed.Count == 0, Show(dumped));
-        // "None" is a bone too.
+    // "None" is a bone too.
     var none = AccessoryPlan.Of(new[] { Worn("CatTail", Hips) }, new[] { On("CatTail", null) });
     Check(none.Rebone.SequenceEqual(new (int, string?)[] { (0, null) }), Show(none));
 });
