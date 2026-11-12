@@ -269,7 +269,7 @@ Operations:
 | `categories` | Edit root `set_EditMode(FaceEditor, HairEditor, BodyEditor, or ClothingEditor)`, selector `Categories.Children[].Name` | Selector captured |
 | `parameters` | Selector `set_SelectedCategory`, then the category's `Parameters[]` `Label`, `CombinedValue` or `Value`, `MinValue`, `MaxValue`, and its colours, below | No rebuild running |
 | `items` | The category's item state and presets, below | Selector captured |
-| `accessories` | Edit root `set_EditMode(AccessoryEditor)`, its `Instances` and templates, below | Editor active |
+| `accessories` | Edit root `set_EditMode(AccessoryEditor)`, its `Instances`, templates, and bones, below | Editor active |
 | `dump` | `parameters` and the item for every Face, Hair, Body, and Outfit category in app order, then `accessories` | No rebuild running |
 | `apply` | Items, then accessories, below; then `parameters` for each named category, and parameter `set_CombinedValue` or `set_Value`, or a colour's setter, per changed value | One rebuild finished per changed item, accessory, and value (R-EDIT-6) |
 | `save` | Edit root `_mainActionHandler.SaveSync(path, true)` | Call returned true and the file is nonempty |
@@ -306,7 +306,9 @@ the request may change a category's item (its own pick, a conflicting item
 VRoid takes it off for, or a set in the section), the first pass skips the
 colours the next item may offer differently: every Outfit colour, since each
 item brings its own parts, and elsewhere colours unavailable for the current
-item. The second pass changes items, then accessories, because a new item can
+item; an added accessory's shape sliders are known only once it is worn
+too. The second pass checks those (R-EDIT-13). It changes items, then
+accessories, because a new item can
 reset its category's values (Irises and Eyebrows, and an Outfit item's
 colours, in 2.16.0; other colours survive), then revisits the categories and
 sets each value that differs, waiting for each rebuild. It stops at the first
@@ -415,17 +417,58 @@ add another; `AddSelectedTemplate` would add a second instance.
 Selecting an index and calling `RemoveSelectedInstance` removes one. Each
 takes one rebuild.
 
-`Accessories` in a template is every accessory to wear. `apply` keeps the
-first unmatched worn accessory with each wanted item in order, removes the
-other worn ones from the end, then adds the rest and sets their colours. It
-refuses an unknown item, `custom` with no other worn accessory that is not
-built in, more than the editor's `MaxInstanceCount`, and removing one that
-is not built in without `discard_custom`. `dump` and `accessories` list
-accessories by item, built-in before `custom`, keeping app order within an
-item, so lists compare across instances. Placement and shape sliders are not
-read or set: added accessories take VRoid's default placement, and a removed
-one loses its placement, which `undo` restores as the default. `plugin/ItemIds.cs`, which
-`tests/protocol` also builds, holds the identifier and matching rules.
+An accessory entry holds its `item`, its colours and shape sliders by label,
+and its placement under the reserved keys `bone`, `position`, `rotation`, and
+`scale`; `dump` fails if a label equals one. Each instance's
+`Parameters` are its shape sliders, read and written like Face sliders
+(`Value`, or `CombinedValue` for a two-sided one). Fox Tail repeats "Tail Base
+Thickness", so the repeated-label rule applies. Placement is the instance's
+`PartOrigin`, read with `GetPartOriginQuery(transferableId)` on the editing
+model: a parent bone, VRoid's joint name such as `J_Bip_C_Head`, and a
+position, rotation quaternion, and scale relative to it, which are the
+identity at VRoid's default placement. VRoid saves exactly the float32 values
+given and does not normalize a quaternion, so they read back exactly after a
+save and a reopen. The editor's own view-model setters (`PartOriginLocalScale`
+and so on) only change what the gizmo shows, so `apply` runs VRoid's commands
+through the edit context's `ExecuteSyncCommand`, which records them in VRoid's
+history: `SetPartOriginTransformCommand(transferableId, Transform)` and
+`SetPartOriginParentCommand(groupId, ResolvedBoneId)`, each one rebuild. A
+null bone is VRoid's "None", which removes the `PartOrigin` and so the
+placement. `accessories` lists the bones `apply` accepts: the avatar's
+`HumanBoneMap`, 54 humanoid joints in 2.16.0 (Jaw is not mapped), which
+`plugin/ItemIds.cs` holds and any worn accessory's `GetAvatar()` checks.
+
+The parent command throws while another accessory of its group is worn, and
+VRoid keeps one group per kind (the catalog entry's `transferableGroupType`,
+such as every pair of animal ears). A new accessory starts on its default
+bone, which `plugin/ItemIds.cs` holds and each fresh one checks: Hips for
+tails, Head for the rest. `DuplicateSelectedInstance` appends a copy with the
+same item, bone, placement, colours, and shape. So the accessories of one kind
+sit on their default bone, except copies of one item on one other bone, and
+`apply` refuses any other combination before any change (R-EDIT-3).
+
+`Accessories` in a template is every accessory to wear. Built-in accessories
+of one item are interchangeable, so `apply` keeps for each wanted one the
+first unmatched worn one of its item on its wanted bone, then for one that
+names no bone any of its item, then any of its item; `custom` matches any worn
+accessory that is not built in, in order. It removes the other worn ones from
+the end, moves a kept one that is alone in its kind, then adds the rest and
+sets their placement, colours, and shape sliders, reading each back. When a
+kept one must move while others of its kind stay, or an added one must start
+away from its default bone while others are worn, `apply` rebuilds that kind:
+it removes every one, adds the first one that is away from its default and
+moves it while alone, duplicates it for the others on that bone, and adds the
+rest; each takes over the values of the one it replaced. This reaches every
+arrangement VRoid's own controls can make, so dumps and undo files restore
+exactly (R-EDIT-7, R-EDIT-11). A custom accessory moves only while alone in
+its group. `apply` refuses an unknown item or bone, `custom` with no other
+worn accessory that is not built in, more than the editor's
+`MaxInstanceCount`, and removing one that is not built in without
+`discard_custom`. `dump` and `accessories` list accessories by item, built-in
+before `custom`; one item's built-in accessories are ordered by their entry,
+and custom ones keep app order, so lists compare across instances whichever
+one VRoid lists first. `plugin/ItemIds.cs`, which `tests/protocol` also
+builds, holds the identifier, bone, and matching rules.
 
 ### Colours
 
@@ -600,12 +643,13 @@ errors (R-CLI-2).
 - `tests/test_launcher.py`: the launcher against a stand-in Wine and a
   read-only stand-in store.
 - `tests/protocol`: the bridge's file protocol, colour rules, camera
-  placement, item identifiers, accessory matching, and thumbnail sheet layout
-  and font under the .NET SDK.
+  placement, item identifiers, accessory matching and bones, and thumbnail
+  sheet layout and font under the .NET SDK.
 
 `scripts/gui-smoke.sh`, run by `just gui-smoke`, drives a real session through
 open, dump, numeric and colour edits, item and accessory edits, including two
-accessories of one kind, outfit colour edits that keep the item built in
+accessories of one kind with one moved to another bone, placed, and reshaped,
+and the undo of its removal, outfit colour edits that keep the item built in
 (R-EDIT-12), refusal, save, rendering every view, drawing the
 thumbnails of the edited item categories, restart, reopen with a read-back of
 every edited number, colour, item, and accessory (R-EDIT-1) and of each

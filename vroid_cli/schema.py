@@ -104,18 +104,59 @@ Template = Annotated[
 ]
 
 
+Vector3 = Annotated[list[float], Field(min_length=3, max_length=3)]
+Quaternion = Annotated[list[float], Field(min_length=4, max_length=4)]
+# Placement keys of an accessory entry, which are not VRoid labels.
+PLACEMENT = ("bone", "position", "rotation", "scale")
+
+
 class Accessory(BaseModel):
-    """One worn accessory: its item and its colours, keyed by label."""
+    """One worn accessory: its item, placement, and its colours and shape
+    sliders, keyed by label."""
 
     model_config = ConfigDict(
         strict=True, extra="allow", allow_inf_nan=False, frozen=True
     )
     # Types the extra labels; pyright cannot see pydantic allows narrowing it.
-    __pydantic_extra__: dict[str, Color] = Field(init=False)  # pyright: ignore[reportIncompatibleVariableOverride]  # fmt: skip
+    __pydantic_extra__: dict[str, Value] = Field(init=False)  # pyright: ignore[reportIncompatibleVariableOverride]  # fmt: skip
     item: ItemId = Field(
         description="a built-in accessory's identifier as `accessories` lists it, "
         'or "custom" for a worn accessory that is not built in'
     )
+    bone: Annotated[str, StringConstraints(min_length=1)] | None = Field(
+        None,
+        description="VRoid's joint name for the bone it hangs from, one of "
+        "`accessories` `bones`, such as J_Bip_C_Head; null is VRoid's None, "
+        "which takes no position, rotation, or scale. Omit it to keep a worn "
+        "accessory's bone, or to add one on its default bone.",
+        json_schema_extra=no_default,
+    )
+    position: Vector3 | None = Field(
+        None,
+        description="[x, y, z] in metres from the default placement, relative to "
+        "the bone",
+        json_schema_extra=no_default,
+    )
+    rotation: Quaternion | None = Field(
+        None,
+        description="a unit quaternion [x, y, z, w] relative to the bone; "
+        "[0, 0, 0, 1] is the default",
+        json_schema_extra=no_default,
+    )
+    scale: Vector3 | None = Field(
+        None,
+        description="positive [x, y, z] factors; [1, 1, 1] is the default",
+        json_schema_extra=no_default,
+    )
+
+    @model_serializer(mode="wrap")
+    def omit_unset_placement(self, handler: SerializerFunctionWrapHandler) -> Any:
+        # An omitted key keeps the current value, while a null bone is None.
+        data = handler(self)
+        for key in PLACEMENT:
+            if key not in self.model_fields_set:
+                data.pop(key, None)
+        return data
 
 
 def resolved(value: Path, suffix: str, kind: str) -> Path:
@@ -225,9 +266,11 @@ class Apply(Model):
     Accessories: list[Accessory] | None = Field(
         None,
         description="every accessory to wear, in any order; apply adds and "
-        "removes accessories to match, so list the worn ones to keep them. Added "
-        "accessories take VRoid's default placement, and a removed one loses its "
-        "placement. Omit it to keep the current ones.",
+        "removes accessories to match, so list the worn ones to keep them. "
+        "Accessories of one item are interchangeable: apply keeps the worn ones "
+        "and may replace them with new ones of the same values. An added "
+        "accessory takes VRoid's defaults for what its entry leaves out. Omit it "
+        "to keep the current ones.",
     )
     discard_custom: bool = Field(
         False,
@@ -418,6 +461,7 @@ class AccessoryList(Model):
         description="built-in accessories, including ones VRoid's editor does not "
         "offer, such as animal ears and tails"
     )
+    bones: list[str] = Field(description="the bones an accessory can hang from")
 
 
 class Applied(Model):

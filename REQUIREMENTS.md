@@ -168,8 +168,9 @@ backfill unrelated requirements.
 
   Manual test: Run `just gui-smoke SESSION SOURCE.vroid` with an editable
   project. It saves at least one value of each kind `apply` can set, including
-  an item in a Hair and an Outfit category, an Outfit colour, and an
-  accessory, and passes only if each reads back unchanged.
+  an item in a Hair and an Outfit category, an Outfit colour, and an accessory
+  with a colour, a bone other than its default, a position, rotation and scale,
+  and a shape slider, and passes only if each reads back unchanged.
 
 - **R-EDIT-2** [test] `apply` rejects a value that is not finite, or a colour
   that is not `#RRGGBB`, before contacting the app.
@@ -180,26 +181,30 @@ backfill unrelated requirements.
 
 - **R-EDIT-3** [manual] `apply` refuses a request in which any value is
   outside its parameter's bounds or of the wrong kind, names a category,
-  parameter or item that is unknown or ambiguous, gives the wrong number of
-  values for a label, sets one shared colour more than once, or selects items
-  that VRoid cannot wear together, and changes nothing. A colour of a category
-  whose item the request changes, directly or through VRoid, is checked once
-  the new item is worn instead; a refusal then stops `apply`, and its undo
-  file restores what changed (R-EDIT-11).
+  parameter, item or bone that is unknown or ambiguous, gives the wrong number
+  of values for a label, sets one shared colour more than once, selects items
+  that VRoid cannot wear together, or puts accessories of one kind on bones
+  that VRoid cannot combine, and changes nothing. Values that R-EDIT-13 covers
+  are checked as R-EDIT-13 says.
 
   Rationale: VRoid's own controls never produce out-of-range values, so the
   app's behaviour for them is unknown. A partly applied template leaves a
   character that matches neither the old nor the new version. A shared colour
   set twice in one request would take whichever value came last. VRoid
   silently takes off an item that conflicts with a newly selected one, such as
-  a top when a dress is selected, so the template would not read back. An
-  item's colours are known only once it is worn: a new outfit item brings its
-  own parts and colours, and a new Face item can make a colour unavailable.
+  a top when a dress is selected, so the template would not read back. VRoid
+  changes an accessory's bone only while no other accessory of its kind is
+  worn, and gives every other one the default bone or a copy of another's, so
+  some combinations of bones cannot be built. A rotation that is not a unit
+  quaternion, or a scale that is not positive, distorts the accessory; VRoid's
+  own controls never produce one.
 
   Manual test: `just gui-smoke` applies one valid value, one above its
   maximum, an unknown parameter, an unknown category, a number for a colour,
-  one shared colour in two categories, an unknown item, and a dress with a
-  top, then checks the error and that the values are unchanged.
+  one shared colour in two categories, an unknown item, a dress with a top, an
+  accessory rotation that is not a unit quaternion, an unknown bone, and an
+  accessory shape slider above its maximum, then checks the error and that the
+  values are unchanged.
 
 - **R-EDIT-4** [test] `save` refuses an existing destination and leaves it
   unchanged.
@@ -260,16 +265,19 @@ backfill unrelated requirements.
   means to discard one says so, and saves a copy of the project first if it may
   want the item back.
 
-- **R-EDIT-11** [manual: `just gui-smoke` applies the undo file of a value
-  `apply` and of an item and accessory `apply`, and compares `dump` with one
-  taken before each] Before `apply` changes anything, it writes a template to a
-  new file that restores everything the request changes, including what VRoid
-  changes with an item, except what its result names in `discarded`
+- **R-EDIT-11** [manual] Before `apply` changes anything, it writes a template
+  to a new file that restores everything the request changes, including what
+  VRoid changes with an item, except what its result names in `discarded`
   (R-EDIT-10). Its result, and its error after a change, name the file.
 
   Rationale: Agents try edits and back out the ones that don't match a
   reference. The file survives a failed or interrupted `apply`, and keeping the
   template out of the result keeps the result short enough to read.
+
+  Manual test: `just gui-smoke` applies the undo file of a value `apply`, of an
+  item and accessory `apply`, and of an `apply` that removes one of two
+  accessories of one kind after moving it to another bone, placing it and
+  reshaping it, and compares `dump` with one taken before each.
 
 - **R-EDIT-12** [manual] Setting the colour of a built-in outfit item keeps it
   the same built-in item.
@@ -282,6 +290,22 @@ backfill unrelated requirements.
   Manual test: `just gui-smoke` sets an Outfit colour, then checks that
   `items` names the same built-in item after the edit and after a save, a full
   restart and a reopen.
+
+- **R-EDIT-13** [manual] `apply` checks a colour of a category whose item the
+  request changes, directly or through VRoid, and a colour or shape slider of
+  an accessory the request adds, once the new item or accessory is worn. A
+  refusal then stops `apply`, and its undo file restores what changed
+  (R-EDIT-11).
+
+  Rationale: An item's colours and an accessory's shape sliders are known only
+  once it is worn: a new outfit item brings its own parts and colours, a new
+  Face item can make a colour unavailable, and a new accessory brings its own
+  sliders.
+
+  Manual test: `just gui-smoke` applies a request that selects another top
+  with more colours than it has, and one that adds an accessory with a shape
+  slider above its maximum. It checks that each error names the undo file, and
+  that applying the undo file restores a `dump` taken before.
 
 ## Views (VIEW)
 

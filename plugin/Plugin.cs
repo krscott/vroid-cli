@@ -377,34 +377,41 @@ public sealed partial class Plugin : BasePlugin
 
     private static CategoryEdit[] Edits(Request request, string section) =>
         request.Body.TryGetProperty(section, out var categories)
-            ? categories.EnumerateObject().Select(category => new CategoryEdit(category.Name,
-                category.Value.EnumerateObject().Where(parameter => parameter.Name != "item").Select(parameter => parameter.Value.ValueKind switch
-                {
-                    // The CLI checks that an array holds only numbers or only colours.
-                    JsonValueKind.Array when parameter.Value.EnumerateArray().Any(value => value.ValueKind == JsonValueKind.String) =>
-                        new Wanted(parameter.Name, Array.Empty<double>(), true,
-                            parameter.Value.EnumerateArray().Select(value => value.GetString()!).ToArray()),
-                    JsonValueKind.Array => new Wanted(parameter.Name,
-                        parameter.Value.EnumerateArray().Select(value => value.GetDouble()).ToArray(), true, null),
-                    JsonValueKind.String => new Wanted(parameter.Name, Array.Empty<double>(), false, new[] { parameter.Value.GetString()! }),
-                    _ => new Wanted(parameter.Name, new[] { parameter.Value.GetDouble() }, false, null),
-                }).ToArray(),
+            ? categories.EnumerateObject().Select(category => new CategoryEdit(category.Name, WantedValues(category.Value, new[] { "item" }),
                 category.Value.TryGetProperty("item", out var item), item.ValueKind == JsonValueKind.String ? item.GetString() : null)).ToArray()
             : Array.Empty<CategoryEdit>();
+
+    // The values in a template object by label, except its `reserved` keys.
+    private static Wanted[] WantedValues(JsonElement values, string[] reserved) =>
+        values.EnumerateObject().Where(parameter => !reserved.Contains(parameter.Name)).Select(parameter => parameter.Value.ValueKind switch
+        {
+            // The CLI checks that an array holds only numbers or only colours.
+            JsonValueKind.Array when parameter.Value.EnumerateArray().Any(value => value.ValueKind == JsonValueKind.String) =>
+                new Wanted(parameter.Name, Array.Empty<double>(), true,
+                    parameter.Value.EnumerateArray().Select(value => value.GetString()!).ToArray()),
+            JsonValueKind.Array => new Wanted(parameter.Name,
+                parameter.Value.EnumerateArray().Select(value => value.GetDouble()).ToArray(), true, null),
+            JsonValueKind.String => new Wanted(parameter.Name, Array.Empty<double>(), false, new[] { parameter.Value.GetString()! }),
+            _ => new Wanted(parameter.Name, new[] { parameter.Value.GetDouble() }, false, null),
+        }).ToArray();
 
     // Resolves each wanted value to its parameter or colour and checks its
     // bounds or kind, adding a message to `errors` for each value it cannot set
     // (R-EDIT-3). When the request may change the category's item, it skips
     // colours the next item may offer differently: in Outfit every colour,
     // since each item brings its own parts, and elsewhere colours unavailable
-    // for the current item. The pass after the items change checks them.
-    private static Target Match(string section, Category category, CategoryEdit edit, List<string> errors, bool itemMayChange)
+    // for the current item. The pass after the items change checks them
+    // (R-EDIT-13). `prefix` names the category in messages, SECTION/CATEGORY
+    // by default.
+    private static Target Match(string section, Category category, CategoryEdit edit, List<string> errors, bool itemMayChange,
+        string? prefix = null)
     {
         var matched = new List<(object, float, string)>();
         var painted = new List<Paint>();
+        prefix ??= $"{section}/{category.Name}";
         foreach (var wanted in edit.Values)
         {
-            var path = $"{section}/{category.Name}/{wanted.Label}";
+            var path = $"{prefix}/{wanted.Label}";
             var found = category.Parameters.Where(parameter => Label(parameter) == wanted.Label).ToArray();
             var swatches = category.Swatches.Where(swatch => swatch.Label == wanted.Label).ToArray();
             if (found.Length > 0 && swatches.Length > 0)
@@ -755,6 +762,7 @@ public sealed partial class Plugin : BasePlugin
                 {
                     worn = AccessoryList(worn),
                     available = AvailableAccessories().Select(accessory => new { item = accessory.Item, name = accessory.Name }).ToArray(),
+                    bones = AccessoryBones(worn),
                 };
                 break;
             }

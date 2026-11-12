@@ -120,9 +120,19 @@ public sealed partial class Plugin
     private static bool Conflict(Slot a, Slot b) =>
         a.Conflicts.Contains(ItemIds.Kind(b.Type)) || b.Conflicts.Contains(ItemIds.Kind(a.Type));
 
-    // A worn accessory instance: its item, VRoid's name for it, its transferable,
-    // and its available colours.
-    private sealed record Worn(string Item, string Name, string Id, object Instance, Swatch[] Swatches);
+    // A worn accessory instance: its item, VRoid's name for it, its transferable
+    // and group, its available colours, its shape sliders, and its placement.
+    private sealed record Worn(string Item, string Name, string Id, string Group, object Instance, Swatch[] Swatches,
+        object[] Parameters, Pose Pose);
+
+    // Where an accessory hangs: VRoid's joint name for its bone, and its position,
+    // rotation quaternion (x, y, z, w), and scale relative to that bone, which
+    // are the identity at VRoid's default placement. A null bone is VRoid's
+    // "None", which has no placement.
+    private sealed record Pose(string? Bone, float[]? Position, float[]? Rotation, float[]? Scale);
+
+    // An accessory entry's keys that are not VRoid labels.
+    private static readonly string[] PoseKeys = { "bone", "position", "rotation", "scale" };
 
     private static object AccessoryEditor => Reflect.Get(Root, "AccessoryEditor") ?? throw Differs("the accessory editor");
 
@@ -140,9 +150,10 @@ public sealed partial class Plugin
     private static Worn[] WornAccessories() => Instances().Select(instance =>
     {
         var name = Reflect.Get(instance, "TranslatedDisplayName") as string ?? "";
-        var model = Reflect.Get(Reflect.Get(Reflect.Get(instance, "_engine"), "Context"), "editingModel")
-            ?? throw Differs("the editing model");
-        var id = Reflect.Get(Reflect.Get(instance, "transferableInfo"), "Id") as string ?? throw Differs($"the transferable of accessory {name}");
+        var model = Reflect.Get(EditContext(instance), "editingModel") ?? throw Differs("the editing model");
+        var info = Reflect.Get(instance, "transferableInfo");
+        var id = Reflect.Get(info, "Id") as string ?? throw Differs($"the transferable of accessory {name}");
+        var group = Reflect.Get(info, "GroupId") as string ?? throw Differs($"the group of accessory {name}");
         var display = Reflect.Call(Reflect.New("VRoidCore.Editing.Query.GetTransferableDisplayNameQuery", id), "Execute", model);
         var item = ItemIds.AccessoryKey(Reflect.Get(display, "LocalizationKey") as string);
         var swatches = new List<Swatch>();
@@ -153,24 +164,68 @@ public sealed partial class Plugin
             foreach (var sub in Reflect.Items(Reflect.Get(selection, "_subColorSelections")))
                 swatches.Add(Field(Reflect.Get(sub, "TranslatedDisplayName") as string ?? "", sub, "Color", new HashSet<string>()));
         }
-        return new Worn(item != null && AttachmentIds.Contains(item) ? item : ItemIds.Custom, name, id, instance, swatches.ToArray());
+        // VRoid's own query, which the editor's gizmo starts from; it changes nothing.
+        var origin = Reflect.Call(Reflect.New("VRoidCore.Editing.Query.GetPartOriginQuery", id), "Execute", model);
+        Pose pose;
+        if (origin == null) pose = new Pose(null, null, null, null);
+        else
+        {
+            var bone = Reflect.Get(Reflect.Get(origin, "ParentBoneName"), "Value") as string ?? throw Differs($"the bone of accessory {name}");
+            var transform = Reflect.Get(origin, "Transform") ?? throw Differs($"the placement of accessory {name}");
+            float[] Parts(string member, params string[] parts)
+            {
+                var value = Reflect.Get(transform, member) ?? throw Differs($"the placement of accessory {name}");
+                return parts.Select(part => Convert.ToSingle(Reflect.Get(value, part) ?? throw Differs($"the placement of accessory {name}"))).ToArray();
+            }
+            pose = new Pose(bone, Parts("Position", "x", "y", "z"), Parts("Rotation", "x", "y", "z", "w"), Parts("Scale", "x", "y", "z"));
+        }
+        return new Worn(item != null && AttachmentIds.Contains(item) ? item : ItemIds.Custom, name, id, group, instance, swatches.ToArray(),
+            Reflect.Items(Reflect.Get(instance, "Parameters")).ToArray(), pose);
     }).ToArray();
 
-    // An accessory as a template entry: its item, then its colours by label.
-    private static Dictionary<string, object> AccessoryEntry(Worn worn)
+    private static object EditContext(object instance) =>
+        Reflect.Get(Reflect.Get(instance, "_engine"), "Context") ?? throw Differs("the edit context");
+
+    // An accessory as a template entry: its item, colours, and shape sliders by
+    // label, and its placement.
+    private static Dictionary<string, object?> AccessoryEntry(Worn worn)
     {
-        var entry = new Dictionary<string, object> { ["item"] = worn.Item };
+        var entry = new Dictionary<string, object?> { ["item"] = worn.Item };
         foreach (var swatch in worn.Swatches)
             if (!entry.TryAdd(swatch.Label, ReadHex(swatch, $"Accessories/{worn.Name}/{swatch.Label}")))
                 throw new InvalidOperationException($"Accessory {worn.Name} has two values labelled {swatch.Label}; a template cannot hold both");
+        foreach (var (label, value) in Values(worn.Parameters))
+            if (PoseKeys.Contains(label) || !entry.TryAdd(label, value))
+                throw new InvalidOperationException($"Accessory {worn.Name} has two values labelled {label}; a template cannot hold both");
+        entry["bone"] = worn.Pose.Bone;
+        if (worn.Pose.Bone != null)
+        {
+            entry["position"] = worn.Pose.Position;
+            entry["rotation"] = worn.Pose.Rotation;
+            entry["scale"] = worn.Pose.Scale;
+        }
         return entry;
     }
 
     // Accessory entries in dump order, so lists compare across instances.
-    private static Dictionary<string, object>[] AccessoryList(IReadOnlyList<Dictionary<string, object>> entries) =>
-        AccessoryPlan.DumpOrder(entries.Select(entry => (string)entry["item"]).ToList()).Select(index => entries[index]).ToArray();
+    private static Dictionary<string, object?>[] AccessoryList(IReadOnlyList<Dictionary<string, object?>> entries) =>
+        AccessoryPlan.DumpOrder(entries.Select(entry => (string)entry["item"]!).ToList(), entries.Select(entry => JsonSerializer.Serialize(entry)).ToList())
+            .Select(index => entries[index]).ToArray();
 
-    private static Dictionary<string, object>[] AccessoryList(Worn[] worn) => AccessoryList(worn.Select(AccessoryEntry).ToArray());
+    private static Dictionary<string, object?>[] AccessoryList(Worn[] worn) => AccessoryList(worn.Select(AccessoryEntry).ToArray());
+
+    // The bones apply accepts. The table holds VRoid 2.16.0's; any worn
+    // accessory's avatar checks it.
+    private static IReadOnlyList<string> AccessoryBones(Worn[] worn)
+    {
+        if (worn.Length > 0)
+        {
+            var map = Reflect.Get(Reflect.Call(worn[0].Instance, "GetAvatar"), "HumanBoneMap") ?? throw Differs("the avatar's bones");
+            var live = Reflect.Items(Reflect.Get(map, "Values")).Select(bone => Reflect.Get(bone, "Value") as string).ToHashSet();
+            if (!live.SetEquals(Bones.All)) throw Differs("the avatar's bones");
+        }
+        return Bones.All;
+    }
 
     // The asset catalog's built-in accessory templates, which do not change
     // while the app runs.
@@ -184,6 +239,12 @@ public sealed partial class Plugin
     private static HashSet<string>? attachmentIds;
     private static HashSet<string> AttachmentIds => attachmentIds ??=
         Attachments().Select(entry => ItemIds.Attachment(Reflect.Get(entry, "resourceName") as string)!).ToHashSet();
+    // Each built-in accessory's kind, the group type VRoid keeps its accessories
+    // in, such as TransferableGroupType.N00.Level1.AnimalEar for cat and rabbit ears.
+    private static Dictionary<string, string>? attachmentKinds;
+    private static Dictionary<string, string> AttachmentKinds => attachmentKinds ??= Attachments().ToDictionary(
+        entry => ItemIds.Attachment(Reflect.Get(entry, "resourceName") as string)!,
+        entry => Reflect.Get(entry, "transferableGroupType") as string ?? throw Differs("the kind of a built-in accessory"));
 
     // Every built-in accessory with its name and template. The editor offers
     // only the glasses, so the catalog's other attachments, such as animal ears,
@@ -234,6 +295,19 @@ public sealed partial class Plugin
         foreach (var step in WaitForAccessories(before, count + 1)) yield return step;
     }
 
+    // VRoid's own Duplicate appends a copy of the accessory, with its bone,
+    // placement, colours, and shape.
+    private static IEnumerable<bool> DuplicateAccessory(int index)
+    {
+        var count = Instances().Length;
+        var before = rebuilt;
+        modified = true;
+        Reflect.Call(AccessoryEditor, "set_SelectedIndex", index);
+        if (!Equals(Reflect.Get(AccessoryEditor, "SelectedIndex"), index)) throw Differs($"how to select accessory {index}");
+        Reflect.Call(AccessoryEditor, "DuplicateSelectedInstance");
+        foreach (var step in WaitForAccessories(before, count + 1)) yield return step;
+    }
+
     private static IEnumerable<bool> RemoveAccessory(int index)
     {
         var count = Instances().Length;
@@ -257,9 +331,9 @@ public sealed partial class Plugin
         // Null when the request leaves accessories alone; `WornEntries` holds their
         // entries from before the change.
         public Worn[]? Worn;
-        public Dictionary<string, object>[] WornEntries = Array.Empty<Dictionary<string, object>>();
+        public Dictionary<string, object?>[] WornEntries = Array.Empty<Dictionary<string, object?>>();
         public AccessoryPlan? Plan;
-        public List<(string Item, Dictionary<string, string> Colors)> Wanted = new();
+        public List<AccessorySpec> Wanted = new();
         public int Changed;
 
         public bool ItemsChange(string section) =>
@@ -337,35 +411,100 @@ public sealed partial class Plugin
         foreach (var step in EnterAccessories()) yield return step;
         var worn = work.Worn = WornAccessories();
         work.WornEntries = worn.Select(AccessoryEntry).ToArray();
+        var bones = AccessoryBones(worn).ToHashSet();
         var available = AvailableAccessories().Select(accessory => accessory.Item).ToHashSet();
-        work.Wanted = accessories.EnumerateArray().Select(entry => (entry.GetProperty("item").GetString()!,
-            entry.EnumerateObject().Where(color => color.Name != "item").ToDictionary(color => color.Name, color => color.Value.GetString()!))).ToList();
-        var plan = work.Plan = AccessoryPlan.Of(worn.Select(accessory => accessory.Item).ToList(), work.Wanted.Select(wanted => wanted.Item).ToList());
+        work.Wanted = accessories.EnumerateArray().Select(SpecOf).ToList();
+        var plan = work.Plan = AccessoryPlan.Of(worn.Select(accessory => new WornAccessory(accessory.Item, accessory.Pose.Bone, accessory.Group)).ToList(),
+            work.Wanted.Select(wanted => new WantedAccessory(wanted.Item, wanted.HasBone, wanted.Bone,
+                AttachmentKinds.GetValueOrDefault(wanted.Item, wanted.Item))).ToList());
         for (var i = 0; i < work.Wanted.Count; i++)
             if (work.Wanted[i].Item != ItemIds.Custom && !available.Contains(work.Wanted[i].Item))
                 errors.Add($"Accessories[{i}]: unknown accessory {work.Wanted[i].Item}; list them with accessories");
-        foreach (var i in plan.Added.Where(i => work.Wanted[i].Item == ItemIds.Custom))
-            errors.Add($"Accessories[{i}]: \"custom\" keeps an accessory that is not built in, but the project wears no other one");
+        foreach (var addition in plan.Added.Where(addition => work.Wanted[addition.Wanted].Item == ItemIds.Custom))
+            errors.Add($"Accessories[{addition.Wanted}]: \"custom\" keeps an accessory that is not built in, but the project wears no other one");
         if (!discard)
             foreach (var j in plan.Removed.Where(j => worn[j].Item == ItemIds.Custom))
                 errors.Add($"Accessories: {worn[j].Name} is not built in, and this request removes it; undo cannot restore it. Set discard_custom to allow it");
         var max = Convert.ToInt32(Reflect.StaticProperty("VRoid.Studio.AccessoryEditor.ViewModel", "MaxInstanceCount").GetValue(null));
         if (worn.Length - plan.Removed.Count + plan.Added.Count > max)
             errors.Add($"Accessories: VRoid allows at most {max} accessories");
-        foreach (var (j, i) in plan.Kept)
-            foreach (var label in work.Wanted[i].Colors.Keys)
-            {
-                var matches = worn[j].Swatches.Count(swatch => swatch.Label == label);
-                if (matches != 1)
-                    errors.Add($"Accessories[{i}]/{label}: " + (matches == 0 ? $"{worn[j].Name} has no such colour; list them with accessories"
-                        : $"{matches} colours have this label; it cannot be set by label"));
-            }
-        // An accessory's colours are known only once it is worn; every built-in one has
-        // a single colour labelled Color in VRoid 2.16.0, which the change rechecks.
-        foreach (var i in plan.Added)
-            foreach (var label in work.Wanted[i].Colors.Keys.Where(label => label != AccessoryColor))
-                errors.Add($"Accessories[{i}]/{label}: built-in accessories have one colour, {AccessoryColor}");
+        errors.AddRange(plan.Errors);
+        // The worn accessory whose labels each wanted one has: the one it keeps, or
+        // the one a rebuild replaces.
+        var from = plan.Kept.ToDictionary(pair => pair.Wanted, pair => pair.Worn);
+        foreach (var addition in plan.Added)
+            if (addition.Was is { } was) from[addition.Wanted] = was;
+        for (var i = 0; i < work.Wanted.Count; i++)
+        {
+            var spec = work.Wanted[i];
+            var path = $"Accessories[{i}]";
+            var matched = from.TryGetValue(i, out var j) ? worn[j] : null;
+            // A kept accessory may stay on a bone the table lacks, such as a custom one's.
+            if (spec.HasBone && spec.Bone != null && !bones.Contains(spec.Bone) && matched?.Pose.Bone != spec.Bone)
+                errors.Add($"{path}/bone: unknown bone {spec.Bone}; list them with accessories");
+            var bone = spec.HasBone ? spec.Bone : matched != null ? matched.Pose.Bone : Bones.Default(spec.Item);
+            if (bone == null && spec.Places) errors.Add($"{path}: has no bone, so it takes no position, rotation, or scale");
+            foreach (var (key, vector, check) in new (string, float[]?, Func<IReadOnlyList<float>, string?>)[]
+                     {
+                         ("position", spec.Position, _ => null), ("rotation", spec.Rotation, Placement.Rotation), ("scale", spec.Scale, Placement.Scale),
+                     })
+                if (vector == null) continue;
+                else if (vector.Any(part => !float.IsFinite(part))) errors.Add($"{path}/{key}: is outside float range");
+                else if (check(vector) is { } reason) errors.Add($"{path}/{key}: {reason}");
+            if (matched != null) Match("Accessories", AsCategory(matched), new CategoryEdit("", spec.Values, false, null), errors, false, path);
+            // An added accessory's sliders are known only once it is worn (R-EDIT-13);
+            // every built-in one has a single colour labelled Color in VRoid 2.16.0.
+            else
+                foreach (var wanted in spec.Values.Where(wanted => wanted.Colors != null && wanted.Label != AccessoryColor))
+                    errors.Add($"{path}/{wanted.Label}: built-in accessories have one colour, {AccessoryColor}");
+        }
     }
+
+    // A wanted accessory: its item, its bone if the request names one, the parts of
+    // its placement it names, and its colours and shape sliders.
+    private sealed record AccessorySpec(string Item, bool HasBone, string? Bone, float[]? Position, float[]? Rotation, float[]? Scale,
+        Wanted[] Values)
+    {
+        public bool Places => Position != null || Rotation != null || Scale != null;
+    }
+
+    private static AccessorySpec SpecOf(JsonElement entry)
+    {
+        // A value beyond float range becomes infinite, which the checks refuse.
+        float[]? Vector(string key) =>
+            entry.TryGetProperty(key, out var value) ? value.EnumerateArray().Select(part => (float)part.GetDouble()).ToArray() : null;
+        var hasBone = entry.TryGetProperty("bone", out var bone);
+        return new AccessorySpec(entry.GetProperty("item").GetString()!, hasBone, hasBone ? bone.GetString() : null,
+            Vector("position"), Vector("rotation"), Vector("scale"), WantedValues(entry, PoseKeys.Append("item").ToArray()));
+    }
+
+    // A dumped entry as a spec that names every value.
+    private static AccessorySpec SpecOf(Dictionary<string, object?> entry) =>
+        new((string)entry["item"]!, true, entry["bone"] as string, entry.GetValueOrDefault("position") as float[],
+            entry.GetValueOrDefault("rotation") as float[], entry.GetValueOrDefault("scale") as float[],
+            entry.Where(pair => pair.Key != "item" && !PoseKeys.Contains(pair.Key)).Select(pair => pair.Value switch
+            {
+                string hex => new Wanted(pair.Key, Array.Empty<double>(), false, new[] { hex }),
+                float[] values => new Wanted(pair.Key, values.Select(value => (double)value).ToArray(), true, null),
+                float value => new Wanted(pair.Key, new[] { (double)value }, false, null),
+                _ => throw new InvalidOperationException($"Accessory value {pair.Key} has no known kind"),
+            }).ToArray());
+
+    // `over` on top of `under`: what over names, and what it leaves out from under.
+    // A bone of None has no placement.
+    private static AccessorySpec Over(AccessorySpec under, AccessorySpec over)
+    {
+        var bone = over.HasBone ? over.Bone : under.Bone;
+        float[]? Part(float[]? mine, float[]? theirs) => mine ?? (bone != null ? theirs : null);
+        return new AccessorySpec(over.Item, true, bone, Part(over.Position, under.Position), Part(over.Rotation, under.Rotation),
+            Part(over.Scale, under.Scale),
+            under.Values.Where(value => over.Values.All(other => other.Label != value.Label)).Concat(over.Values).ToArray());
+    }
+
+    // An accessory's colours and shape sliders as a category, so they resolve like
+    // a category's values.
+    private static Category AsCategory(Worn worn) =>
+        new(worn.Name, 0, worn.Instance, worn.Parameters, worn.Swatches, new Dictionary<string, string>());
 
     private const string AccessoryColor = "Color";
 
@@ -416,7 +555,8 @@ public sealed partial class Plugin
         }
     }
 
-    // Removes, adds, and recolours accessories to match the request.
+    // Removes, moves, adds, places, recolours, and reshapes accessories to match
+    // the request.
     private static IEnumerable<bool> ChangeAccessories(Outfitting work, Dictionary<string, object> undo)
     {
         if (work.Plan is not { } plan) yield break;
@@ -428,7 +568,8 @@ public sealed partial class Plugin
         {
             var path = $"Accessories/{(worn[j].Item == ItemIds.Custom ? worn[j].Name : worn[j].Item)}";
             Changed.Add(path);
-            work.Changed++;
+            // A rebuild adds it again.
+            if (!plan.Rebuilt.Contains(j)) work.Changed++;
             var removed = false;
             try
             {
@@ -457,38 +598,133 @@ public sealed partial class Plugin
                 }
             }
         }
-        var targets = plan.Kept.Select(pair => (Index: pair.Worn - plan.Removed.Count(j => j < pair.Worn), pair.Wanted)).ToList();
-        foreach (var i in plan.Added)
+        // Where a worn accessory is listed once the removals are done.
+        int Now(int j) => j - plan.Removed.Count(k => k < j);
+        foreach (var (j, bone) in plan.Rebone)
         {
-            var item = work.Wanted[i].Item;
-            Changed.Add($"Accessories/{item}");
+            foreach (var step in MoveBone(Now(j), bone, $"Accessories[{plan.Kept.Single(pair => pair.Worn == j).Wanted}]")) yield return step;
             work.Changed++;
+        }
+        var targets = plan.Kept.Select(pair => (Index: Now(pair.Worn), pair.Wanted, Was: (int?)null)).ToList();
+        // Where each added accessory is listed, by wanted index.
+        var made = new Dictionary<int, int>();
+        foreach (var addition in plan.Added)
+        {
+            var item = work.Wanted[addition.Wanted].Item;
+            var path = $"Accessories[{addition.Wanted}]";
+            Changed.Add($"Accessories/{item}");
+            if (addition.Was == null) work.Changed++;
+            if (addition.CopyOf is { } source)
+                foreach (var step in DuplicateAccessory(made[source])) yield return step;
             // The editor may rebuild its template list, so find the template in the current one.
-            foreach (var step in AddAccessory(AvailableAccessories().First(available => available.Item == item).Template)) yield return step;
+            else foreach (var step in AddAccessory(AvailableAccessories().First(available => available.Item == item).Template)) yield return step;
             var added = WornAccessories();
             if (added[^1].Item != item) throw Differs($"where VRoid lists the added accessory {item}");
-            targets.Add((added.Length - 1, i));
-        }
-        foreach (var (index, i) in targets)
-            foreach (var (label, wanted) in work.Wanted[i].Colors)
+            made[addition.Wanted] = added.Length - 1;
+            var home = Bones.Default(item);
+            if (home != null)
             {
-                var path = $"Accessories[{i}]/{label}";
-                Swatch Find()
+                var expected = addition.CopyOf is { } copied ? added[made[copied]].Pose.Bone : home;
+                if (added[^1].Pose.Bone != expected) throw Differs($"the bone VRoid puts an added {item} on");
+                if (addition.SetBone)
                 {
-                    var matches = WornAccessories()[index].Swatches.Where(swatch => swatch.Label == label).ToArray();
-                    return matches.Length == 1 ? matches[0]
-                        : throw new InvalidOperationException($"{path}: " + (matches.Length == 0 ? "no such colour on the added accessory" : "two colours have this label"));
+                    foreach (var step in MoveBone(made[addition.Wanted], addition.Bone, path)) yield return step;
+                    if (addition.Was == null) work.Changed++;
                 }
-                var hex = Colors.Normalize(wanted) ?? throw new ArgumentException($"{path}: {wanted} is not #RRGGBB");
-                if (Colors.Write(ReadHex(Find(), path), hex) is not { } channels) continue;
+            }
+            targets.Add((made[addition.Wanted], addition.Wanted, addition.Was));
+        }
+        foreach (var (index, i, was) in targets)
+        {
+            // A rebuild's accessory takes over the values of the one it replaced.
+            var spec = was is { } j ? Over(SpecOf(work.WornEntries[j]), work.Wanted[i]) : work.Wanted[i];
+            var before = was is { } k ? work.WornEntries[k] : AccessoryEntry(WornAccessories()[index]);
+            foreach (var step in Fit(index, spec, $"Accessories[{i}]")) yield return step;
+            work.Changed += Differences(before, AccessoryEntry(WornAccessories()[index]));
+        }
+    }
+
+    // Moves the accessory listed at `index` to `bone`, which VRoid's command does
+    // only while no other accessory of its group is worn.
+    private static IEnumerable<bool> MoveBone(int index, string? bone, string path)
+    {
+        var worn = WornAccessories();
+        if (worn[index].Pose.Bone == bone) yield break;
+        if (worn.Count(other => other.Group == worn[index].Group) > 1)
+            throw new InvalidOperationException($"{path}: another accessory of its kind is worn, so VRoid cannot move it to {bone ?? "None"}");
+        var before = rebuilt;
+        modified = true;
+        Run(worn[index], "SetPartOriginParentCommand", worn[index].Group, bone == null ? null : Reflect.New("VRoidCore.Common.Types.ResolvedBoneId", bone));
+        Changed.Add($"{path}/bone");
+        while (rebuilt == before || updating) yield return true;
+        var actual = WornAccessories()[index].Pose.Bone;
+        if (actual != bone) throw new InvalidOperationException($"{path}/bone reads {actual ?? "None"} after setting {bone ?? "None"}");
+    }
+
+    // Sets the placement, colours, and shape sliders `spec` names on the accessory
+    // listed at `index`, waiting for the rebuild after each change and reading it
+    // back. An added accessory's labels and bounds are checked here (R-EDIT-13).
+    private static IEnumerable<bool> Fit(int index, AccessorySpec spec, string path)
+    {
+        Worn Find() => WornAccessories()[index];
+        if (spec.Places)
+        {
+            var now = Find().Pose;
+            if (now.Bone == null) throw new InvalidOperationException($"{path}: has no bone, so it takes no position, rotation, or scale");
+            var want = new Pose(now.Bone, spec.Position ?? now.Position, spec.Rotation ?? now.Rotation, spec.Scale ?? now.Scale);
+            if (!SamePlace(want, now))
+            {
+                var worn = Find();
                 var before = rebuilt;
                 modified = true;
-                Write(Find(), channels);
-                Changed.Add(path);
-                work.Changed++;
+                Run(worn, "SetPartOriginTransformCommand", worn.Id, Reflect.New("VRoidCore.Common.Types.Transform",
+                    Unity("UnityEngine.Vector3", want.Position!), Unity("UnityEngine.Quaternion", want.Rotation!), Unity("UnityEngine.Vector3", want.Scale!)));
+                Changed.Add($"{path}/placement");
                 while (rebuilt == before || updating) yield return true;
-                var actual = ReadHex(Find(), path);
-                if (actual != hex) throw new InvalidOperationException($"{path} reads {actual} after setting {hex}");
+                if (!SamePlace(want, Find().Pose)) throw new InvalidOperationException($"{path}: VRoid did not keep the placement it was given");
             }
+        }
+        foreach (var wanted in spec.Values)
+        {
+            // Values are resolved again after each change, since a rebuild may replace
+            // the accessory's sliders and colour fields.
+            var set = new HashSet<string>();
+            while (true)
+            {
+                var errors = new List<string>();
+                var target = Match("Accessories", AsCategory(Find()), new CategoryEdit("", new[] { wanted }, false, null), errors, false, path);
+                if (errors.Count > 0) throw new InvalidOperationException(string.Join("; ", errors) + ".");
+                var number = target.Matched.FirstOrDefault(match => Read(match.Parameter) != match.Value);
+                var paint = target.Painted.FirstOrDefault(match => match.Field.Hex != match.Hex);
+                var where = number.Path ?? paint?.Field.Path;
+                if (where == null) break;
+                if (!set.Add(where))
+                    throw new InvalidOperationException(number.Path != null ? $"{where} reads {Read(number.Parameter)} after setting {number.Value}"
+                        : $"{where} reads {paint!.Field.Hex} after setting {paint.Hex}");
+                var before = rebuilt;
+                modified = true;
+                if (number.Path != null) Reflect.Call(number.Parameter, "set_" + Member(number.Parameter), number.Value);
+                else Write(paint!.Swatch, Colors.Write(paint.Field.Hex, paint.Hex)!);
+                Changed.Add(where);
+                while (rebuilt == before || updating) yield return true;
+            }
+        }
     }
+
+    private static bool SamePlace(Pose a, Pose b) =>
+        a.Bone == b.Bone && Same(a.Position, b.Position) && Same(a.Rotation, b.Rotation) && Same(a.Scale, b.Scale);
+
+    private static object Unity(string type, float[] parts) => Activator.CreateInstance(Reflect.Type(type), parts.Cast<object>().ToArray())!;
+
+    // Runs one of VRoid's edit commands, which records it in VRoid's own history.
+    private static void Run(Worn worn, string command, params object?[] args) =>
+        Reflect.Call(EditContext(worn.Instance), "ExecuteSyncCommand", Reflect.New("VRoidCore.Editing.History.Command." + command, args!));
+
+    // The number of values that differ between two entries of one accessory; each
+    // element of a repeated label counts.
+    private static int Differences(Dictionary<string, object?> before, Dictionary<string, object?> after) =>
+        before.Keys.Union(after.Keys).Where(key => key != "item").Sum(key =>
+            !PoseKeys.Contains(key) && before.GetValueOrDefault(key) is float[] a && after.GetValueOrDefault(key) is float[] b && a.Length == b.Length
+                ? a.Zip(b).Count(pair => pair.First != pair.Second)
+                : Same(before.GetValueOrDefault(key), after.GetValueOrDefault(key)) ? 0 : 1);
 }

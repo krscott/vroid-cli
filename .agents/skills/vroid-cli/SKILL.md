@@ -33,7 +33,7 @@ vroid-cli alice '{"method": "thumbnails", "section": "Outfit", "category": "Tops
 vroid-cli alice '{"method": "apply", "Outfit": {"Tops": {"item": "159"}}}'
 vroid-cli alice '{"method": "apply", "Outfit": {"Tops": {"Base Color": ["#B22222", "#FFFFFF"]}}}'
 vroid-cli alice '{"method": "accessories"}'
-vroid-cli alice '{"method": "apply", "Accessories": [{"item": "CatEar", "Color": "#3A2A20"}]}'
+vroid-cli alice '{"method": "apply", "Accessories": [{"item": "CatEar", "Color": "#3A2A20", "scale": [1.2, 1.2, 1.2]}]}'
 vroid-cli alice '{"method": "dump"}' > alice.json
 vroid-cli alice @alice.json
 vroid-cli alice '{"method": "save", "path": "./alice-v2.vroid"}'
@@ -51,11 +51,12 @@ in the Face and Body editors and the colour fields in the Face, Hairstyle, and
 Body editors, sets the base and shade colours of built-in outfit items, selects
 VRoid's built-in items (hairstyle parts, face parts and presets, body presets,
 outfit items), draws a category's built-in item thumbnails labelled with their
-identifiers, adds, removes, and recolours built-in accessories (glasses, cat
-and rabbit ears, cat, fox, and rabbit tails, hats), renders the character to
-PNG from the front, three-quarter, side, or back, and saves projects. It can't
-yet place or reshape accessories, change outfit textures or the colours of
-custom items, import or create custom items, create characters, or export VRM.
+identifiers, adds, removes, recolours, places, and reshapes built-in
+accessories (glasses, cat and rabbit ears, cat, fox, and rabbit tails, hats),
+including their bone and shape sliders, renders the character to PNG from the
+front, three-quarter, side, or back, and saves projects. It can't change
+outfit textures or the colours of custom items, hide, lock, or rename
+accessories, import or create custom items, create characters, or export VRM.
 To see the character, use `render`, not screenshots of the editor window. Edits
 go through `vroid-cli`, never Framewisp input. When a request needs anything
 vroid-cli can't do, do the parts it can and tell the user which parts you
@@ -127,10 +128,22 @@ and tails are accessories.
 - `Accessories` in `apply` is every accessory to wear; `apply` adds and
   removes to match, and an omitted key leaves them alone. To add one, append
   it to `worn` from `accessories`, as the example's list would otherwise
-  remove the rest. Each entry has an `item` from `accessories` and its
-  colours. Added ones take VRoid's default placement, and a removed one loses
-  its placement, even through `undo`. A pair of ears is one accessory; VRoid
-  allows five.
+  remove the rest. A pair of ears is one accessory; VRoid allows five.
+- An accessory entry has an `item` from `accessories`, its "Color", its shape
+  sliders by label (list them from `worn` once it is worn), and its
+  placement: `bone`, one of `accessories` `bones` such as `J_Bip_C_Head`;
+  `position` `[x, y, z]` in metres; `rotation`, a unit quaternion
+  `[x, y, z, w]`; and `scale` `[x, y, z]`, all relative to the bone and the
+  identity at VRoid's default placement. A rotation of θ about the x axis is
+  `[sin(θ/2), 0, 0, cos(θ/2)]`. `"bone": null` is VRoid's None, with no
+  placement. An omitted key keeps a worn accessory's value, or VRoid's default
+  for an added one, whose sliders are checked only once it is worn.
+- VRoid moves an accessory to another bone only while no other of its kind
+  (all glasses, all ears, all tails, all hats) is worn, so `apply` may remove
+  and re-add that kind to reach a template. Accessories of one item are
+  interchangeable, and `dump` orders them by their values. Within a kind,
+  only copies of one item may leave the default bone, all on one bone;
+  `apply` refuses other combinations.
 - `categories`, `parameters`, `items`, `accessories`, `dump`, and `apply`
   change which section VRoid's editor shows (`thumbnails` and `render` do
   not), and `parameters`, `dump`, and
