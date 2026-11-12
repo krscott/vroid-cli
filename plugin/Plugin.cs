@@ -394,11 +394,11 @@ public sealed partial class Plugin : BasePlugin
 
     // Resolves each wanted value to its parameter or colour and checks its
     // bounds or kind, adding a message to `errors` for each value it cannot set
-    // (R-EDIT-3). `itemChanges` skips colours the category's next item may
-    // offer differently: in Outfit every colour, since each item brings its
-    // own parts, and elsewhere colours unavailable for the current item. The
-    // pass after the items change checks them.
-    private static Target Match(string section, Category category, CategoryEdit edit, List<string> errors, bool itemChanges)
+    // (R-EDIT-3). When the request may change the category's item, it skips
+    // colours the next item may offer differently: in Outfit every colour,
+    // since each item brings its own parts, and elsewhere colours unavailable
+    // for the current item. The pass after the items change checks them.
+    private static Target Match(string section, Category category, CategoryEdit edit, List<string> errors, bool itemMayChange)
     {
         var matched = new List<(object, float, string)>();
         var painted = new List<Paint>();
@@ -413,7 +413,7 @@ public sealed partial class Plugin : BasePlugin
                 continue;
             }
             var refused = category.Refused.TryGetValue(wanted.Label, out var reason) ? $"{path}: {reason}" : null;
-            if (itemChanges && (section == "Outfit" ? wanted.Colors != null : reason == Unavailable))
+            if (itemMayChange && (section == "Outfit" ? wanted.Colors != null : reason == Unavailable))
             {
                 if (wanted.Colors == null) errors.Add($"{path}: is a colour; give \"#RRGGBB\"");
                 continue;
@@ -427,7 +427,7 @@ public sealed partial class Plugin : BasePlugin
                     errors.Add(swatches.Length == 1 ? $"{path}: give one colour"
                         : $"{path}: {swatches.Length} colours have this label; give an array of {swatches.Length} colours in app order");
                 else if (hexes.Any(hex => hex == null))
-                    errors.Add($"{path}: {string.Join(", ", colors.Where(color => Colors.Normalize(color) == null))} is not #RRGGBB");
+                    errors.Add($"{path}: {string.Join(", ", colors.Where((_, at) => hexes[at] == null))} is not #RRGGBB");
                 else
                     foreach (var (swatch, at) in swatches.Select((swatch, at) => (swatch, at)))
                     {
@@ -477,7 +477,7 @@ public sealed partial class Plugin : BasePlugin
 
     // Visits each edited category with the values it resolved; null means wait a frame.
     private static IEnumerable<Target?> Targets(Dictionary<string, CategoryEdit[]> edits, List<string> errors,
-        Func<string, string, bool> itemChanges)
+        Func<string, string, bool> itemMayChange)
     {
         // Item-only categories are checked with the items; any other, even an empty
         // one, must name a category.
@@ -487,7 +487,7 @@ public sealed partial class Plugin : BasePlugin
             var valued = edits[section].Where(Visited).ToArray();
             foreach (var category in Visit(section, valued.Select(edit => edit.Name), errors))
                 yield return category == null ? null
-                    : Match(section, category, valued.Single(edit => edit.Name == category.Name), errors, itemChanges(section, category.Name));
+                    : Match(section, category, valued.Single(edit => edit.Name == category.Name), errors, itemMayChange(section, category.Name));
         }
     }
 
@@ -501,10 +501,7 @@ public sealed partial class Plugin : BasePlugin
         foreach (var step in CheckItems(request, edits, discard, work, errors)) yield return step;
         var previous = Sections.ToDictionary(section => section, _ => new Dictionary<string, Dictionary<string, object?>>());
         var colors = new List<ColorField>();
-        // A new outfit item brings its own colours, and a set or conflict can change
-        // any item in the section.
-        foreach (var target in Targets(edits, errors,
-            (section, category) => section == "Outfit" ? work.ItemsChange(section) : work.ItemChanges(section, category)))
+        foreach (var target in Targets(edits, errors, work.ItemMayChange))
         {
             if (target is not { } found)
             {
@@ -513,9 +510,9 @@ public sealed partial class Plugin : BasePlugin
             }
             var parameters = found.Matched.Select(item => item.Parameter).ToHashSet();
             var values = Values(found.Category.Parameters.Where(parameters.Contains));
+            // Match paints every colour of a label or none.
             foreach (var label in found.Painted.GroupBy(paint => paint.Swatch.Label))
-                values[label.Key] = found.Category.Swatches.Count(swatch => swatch.Label == label.Key) > 1
-                    ? label.Select(paint => paint.Field.Hex).ToArray() : label.Single().Field.Hex;
+                values[label.Key] = label.Count() > 1 ? label.Select(paint => paint.Field.Hex).ToArray() : label.Single().Field.Hex;
             previous[found.Section][found.Category.Name] = values;
             colors.AddRange(found.Painted.Select(paint => paint.Field));
         }
@@ -552,7 +549,7 @@ public sealed partial class Plugin : BasePlugin
         {
             // The first pass found none, unless new items made a colour unavailable or
             // the app changed underneath; stop changing it.
-            if (errors.Count > 0) throw new InvalidOperationException(string.Join("; ", errors));
+            if (errors.Count > 0) throw new InvalidOperationException(string.Join("; ", errors) + ".");
             if (target is not { } found)
             {
                 yield return true;
@@ -584,7 +581,7 @@ public sealed partial class Plugin : BasePlugin
                     throw new InvalidOperationException($"{field.Path} reads {actual} after setting {hex}");
             }
         }
-        if (errors.Count > 0) throw new InvalidOperationException(string.Join("; ", errors));
+        if (errors.Count > 0) throw new InvalidOperationException(string.Join("; ", errors) + ".");
         result = new { changed, discarded = Discarded };
     }
 

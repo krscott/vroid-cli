@@ -48,17 +48,18 @@ field and result.
 
 vroid-cli opens existing `.vroid` projects, reads and sets the numeric sliders
 in the Face and Body editors and the colour fields in the Face, Hairstyle, and
-Body editors, sets the base and shade colours of built-in outfit items, selects VRoid's built-in items (hairstyle parts, face parts and
-presets, body presets, outfit items), draws a category's built-in item
-thumbnails labelled with their identifiers, adds, removes, and recolours built-in
-accessories (glasses, cat and rabbit ears, cat, fox, and rabbit tails, hats),
-renders the character to PNG from the front, three-quarter, side, or back, and
-saves projects. It can't yet place or reshape accessories, change outfit
-textures or the colours of custom items, import or create custom items, create characters, or
-export VRM. To see the character, use `render`, not screenshots of the editor
-window. Edits go through `vroid-cli`, never Framewisp input. When a request
-needs anything vroid-cli can't do, do the parts it can and tell the user which
-parts you couldn't.
+Body editors, sets the base and shade colours of built-in outfit items, selects
+VRoid's built-in items (hairstyle parts, face parts and presets, body presets,
+outfit items), draws a category's built-in item thumbnails labelled with their
+identifiers, adds, removes, and recolours built-in accessories (glasses, cat
+and rabbit ears, cat, fox, and rabbit tails, hats), renders the character to
+PNG from the front, three-quarter, side, or back, and saves projects. It can't
+yet place or reshape accessories, change outfit textures or the colours of
+custom items, import or create custom items, create characters, or export VRM.
+To see the character, use `render`, not screenshots of the editor window. Edits
+go through `vroid-cli`, never Framewisp input. When a request needs anything
+vroid-cli can't do, do the parts it can and tell the user which parts you
+couldn't.
 
 Face "Ear" parameters shape human ears at the sides of the head. Animal ears
 and tails are accessories.
@@ -77,7 +78,8 @@ and tails are accessories.
   Size" in Face Sets, takes an array with one value per occurrence, in
   `parameters` order. Outfit items have a "Base Color" and "Shade Color" per
   part, so an item with several parts takes an array of colours; `render` to
-  see which part each one colours.
+  see which part each one colours. A new item's parts are known only once it
+  is worn: select it, list its `parameters`, then set its colours.
 - `apply` accepts finite values within each parameter's `min..max`, and
   colours as `"#RRGGBB"` where `parameters` lists a colour. It checks every
   value before changing any; one bad value refuses the whole request. Its

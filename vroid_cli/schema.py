@@ -176,7 +176,7 @@ class Open(Model):
 
 
 class Categories(Model):
-    """List a section's categories. Outfit categories hold only items."""
+    """List a section's categories."""
 
     method: Literal["categories"]
     section: Section

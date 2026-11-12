@@ -60,7 +60,8 @@ vroid-cli demo '{"method": "dump"}' > template.json
 vroid-cli other @template.json
 ```
 
-`apply` checks every item and value before changing any. Before the first
+`apply` checks every item and value before changing any, except colours that
+depend on an item the request selects, which it checks once that item is worn. Before the first
 change it writes an `undo` file, an `apply` request that restores the previous
 ones; its result names the file. A category's
 `"item"` names one of VRoid's built-in items, listed by `items`, or `"custom"`

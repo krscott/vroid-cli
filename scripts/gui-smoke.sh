@@ -343,37 +343,50 @@ check_items() {
 }
 check_items 'after apply'
 
-# Outfit colours: a distinct Base Color for each part of the new top, which
-# stays the same built-in item (R-EDIT-12) and reads back as set (R-EDIT-8).
+# Outfit colours: a distinct Base Color and Shade Color for each part of the
+# new top, which stays the same built-in item (R-EDIT-12) and reads back as set
+# (R-EDIT-8).
 outfit_colours=$(jq -cn '{method: "parameters", section: "Outfit", category: "Tops"}' | vroid - |
-    jq -c '[.[] | select(.label == "Base Color") | .value | ascii_upcase] as $now
-        | ["#B22222", "#1E90FF", "#228B22", "#9932CC", "#DAA520", "#008080"] as $pick
-        | [range($now | length) | if $now[.] == $pick[.] then "#000080" else $pick[.] end]
-        | if length == 1 then .[0] else . end')
-[[ $outfit_colours != '[]' ]] || fatal "Outfit/Tops ${expected_item['Outfit|Tops']} has no Base Color"
+    jq -c 'def distinct($label; $pick):
+            [.[] | select(.label == $label) | .value | ascii_upcase] as $now
+            | [range($now | length) | if $now[.] == $pick[.] then "#000080" else $pick[.] end]
+            | if length == 1 then .[0] else . end;
+        {"Base Color": distinct("Base Color"; ["#B22222", "#1E90FF", "#228B22", "#9932CC", "#DAA520", "#008080"]),
+         "Shade Color": distinct("Shade Color"; ["#5A1111", "#0F4880", "#114411", "#4C1966", "#6D5210", "#004040"])}')
+jq -e '.["Base Color"] != [] and .["Shade Color"] != []' <<<"$outfit_colours" >/dev/null ||
+    fatal "Outfit/Tops ${expected_item['Outfit|Tops']} lacks Base Color or Shade Color"
 check_outfit() {
     jq -cn '{method: "parameters", section: "Outfit", category: "Tops"}' | vroid - |
-        jq -e --argjson want "$outfit_colours" '[.[] | select(.label == "Base Color") | .value | ascii_upcase] == ([$want] | flatten)' >/dev/null ||
-        fatal "Outfit/Tops Base Color does not read $outfit_colours $1"
+        jq -e --argjson want "$outfit_colours" '. as $listed | all($want | keys[]; . as $label
+            | ([$want[$label]] | flatten) == [$listed[] | select(.label == $label) | .value | ascii_upcase])' >/dev/null ||
+        fatal "Outfit/Tops colours do not read $outfit_colours $1"
 }
-request=$(with_value Outfit Tops 'Base Color' "$outfit_colours" <<<'{"method": "apply"}')
+request=$(jq -c --argjson colours "$outfit_colours" '.Outfit.Tops = $colours' <<<'{"method": "apply"}')
 vroid '{"method": "dump"}' >"$out/before-outfit.json"
 result=$(vroid "$request")
 undo "$result" "$out/before-outfit.json"
-vroid "$request" | jq -e --argjson want "$outfit_colours" '.changed == ([$want] | flatten | length)' >/dev/null ||
-    fatal "apply did not change every part's Base Color"
+vroid "$request" | jq -e --argjson want "$outfit_colours" '.changed == ([$want[]] | flatten | length)' >/dev/null ||
+    fatal "apply did not change every part's colours"
 check_outfit 'after apply'
-check_items 'after setting an outfit colour'
-# Another top brings its own colours; the undo restores the item and the colours
-# set above (R-EDIT-11).
+check_items 'after setting outfit colours'
+# Another top's colours are checked once it is worn (R-EDIT-3): too many of them
+# fail after the change of top, and the undo file the error names restores the
+# top and the colours set above (R-EDIT-11).
 vroid '{"method": "dump"}' >"$out/before-retop.json"
-result=$(with_value Outfit Tops item "$(pick_item Outfit Tops)" <<<'{"method": "apply"}' | vroid -)
-undo "$result" "$out/before-retop.json"
+if with_value Outfit Tops item "$(pick_item Outfit Tops)" <<<'{"method": "apply"}' |
+    with_value Outfit Tops 'Base Color' '["#123456", "#123456", "#123456", "#123456", "#123456", "#123456"]' |
+    vroid - >/dev/null 2>"$out/retop.err"; then
+    fatal "apply with too many colours for the new top succeeded"
+fi
+grep -qF 'Outfit/Tops/Base Color: ' "$out/retop.err" || fatal "the refused top colours were not reported: $(<"$out/retop.err")"
+undone=$(grep -oE 'apply @[^ ]+\.json' "$out/retop.err" | cut -c8-) || fatal "the error names no undo file: $(<"$out/retop.err")"
+undo "$(jq -cn --arg undo "$undone" '{undo: $undo}')" "$out/before-retop.json"
 check_outfit 'after undoing a change of top'
 
 # A value above its maximum, an unknown parameter, an unknown category, a number
-# for a colour, a shared colour set twice, and a colour that writes several
-# refuse the whole request, and each is reported.
+# for a colour, a shared colour set twice, a colour that writes several, and
+# too many colours for an outfit item the request leaves alone refuse the whole
+# request, and each is reported.
 IFS='|' read -r section category label <<<"${edits[0]}"
 IFS='|' read -r other_section other_category other_label <<<"${edits[1]}"
 # Pipeline stages run at once, so each request they need runs first.
@@ -392,14 +405,15 @@ refused=$(with_value "$section" "$category" "$label" "$(jq -n --argjson max "$ma
     with_value Face Irises 'Both Eyes' '"#123456"' |
     with_value Hair Back item '"NoSuchItem"' |
     with_value Outfit Dresses item "$dress" |
-    with_value Outfit Tops item "$top")
+    with_value Outfit Tops item "$top" |
+    with_value Outfit Shoes 'Base Color' '["#123456", "#123456", "#123456", "#123456", "#123456", "#123456"]')
 if vroid "$refused" >/dev/null 2>"$out/bounds.err"; then
     fatal "apply above the maximum succeeded"
 fi
 for reason in 'is outside' 'No Such Parameter: unknown parameter' 'No Such Category: unknown category' \
     'Face/Irises/R Eye: is a colour' 'Face/Skin/Color and Body/Whole Body/Color set the same colour' \
     'Face/Irises/Both Eyes: sets R Eye and L Eye together' 'Hair/Back: unknown item NoSuchItem' \
-    'VRoid cannot wear these together' 'Nothing changed'; do
+    'VRoid cannot wear these together' 'Outfit/Shoes/Base Color: ' 'Nothing changed'; do
     grep -qF "$reason" "$out/bounds.err" || fatal "refusal lacks '$reason': $(<"$out/bounds.err")"
 done
 actual=$(value_of Body 'Whole Body' Color)
@@ -519,8 +533,8 @@ for colour in "${colours[@]}"; do
         '.[$s][$c][$l] == $v' "$out/edited.json" >/dev/null ||
         fatal "$out/edited.json lacks $section/$category/$label ${expected[$edit]}"
 done
-jq -e --argjson want "$outfit_colours" '.Outfit.Tops["Base Color"] == $want' "$out/edited.json" >/dev/null ||
-    fatal "$out/edited.json lacks Outfit/Tops/Base Color $outfit_colours"
+jq -e --argjson want "$outfit_colours" '.Outfit.Tops as $tops | all($want | keys[]; $tops[.] == $want[.])' "$out/edited.json" >/dev/null ||
+    fatal "$out/edited.json lacks the Outfit/Tops colours $outfit_colours"
 front='Hair|Front|Main Color'
 actual=$(value_of Hair Back 'Main Color')
 same "$actual" "${expected[$front]}" || fatal "Hair/Back Main Color is $actual, not Front's"

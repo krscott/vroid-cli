@@ -304,9 +304,10 @@ compare the value as float32, as VRoid stores it, so a dumped bound such as
 0.7 stays in range. Any refusal fails the request before anything changes
 (R-EDIT-3, R-EDIT-10). A colour that is unavailable for a category's current
 item is not refused when the request changes that category's item, since the
-new item may offer it. When the request changes any Outfit item, Outfit
-colours are checked only in the second pass: each item brings its own parts,
-and a set or conflict can change other categories' items. The second pass
+new item may offer it. An Outfit colour is checked only in the second pass
+when the request may change its category's item, since each item brings its
+own parts: through the category's own item, a conflicting item VRoid takes it
+off for, or a set in the section. The second pass
 changes items, then accessories, because a new item can reset its category's
 values (Irises and Eyebrows, and an Outfit item's colours, in 2.16.0; other
 colours survive), then

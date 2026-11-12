@@ -265,9 +265,13 @@ public sealed partial class Plugin
         public bool ItemsChange(string section) =>
             Picks.Any(pick => pick.Slot.Section == section && pick.Item != Before[pick.Slot.Path]);
 
-        // Whether the request changes this category's own item.
-        public bool ItemChanges(string section, string category) =>
-            Picks.Any(pick => pick.Slot.Section == section && pick.Slot.Name == category && pick.Item != Before[pick.Slot.Path]);
+        // Whether the request may change this category's item: its own pick, a
+        // pick VRoid takes this item off for, or a set, which selects items across
+        // its section.
+        public bool ItemMayChange(string section, string category) =>
+            Picks.Any(pick => pick.Slot.Section == section && pick.Item != Before[pick.Slot.Path]
+                && (pick.Slot.Name == category || pick.Slot.IsSet
+                    || Slots[section].Any(slot => slot.Name == category && Conflict(pick.Slot, slot))));
     }
 
     // Resolves every requested item and accessory and adds a message to
