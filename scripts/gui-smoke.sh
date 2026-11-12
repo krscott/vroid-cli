@@ -334,7 +334,9 @@ undo "$result" "$out/before-items.json"
 before=$(rebuilt)
 changed=$(vroid "$request" | jq .changed)
 ((changed >= ${#items[@]} + 2)) || fatal "apply changed $changed items and accessories"
-vroid '{"method": "status"}' | jq -e --argjson before "$before" --argjson count "$changed" \
+# One rebuild sets an accessory's position, rotation, and scale together, so
+# only each item and added accessory needs its own.
+vroid '{"method": "status"}' | jq -e --argjson before "$before" --argjson count "$((${#items[@]} + 2))" \
     '.bridge.rebuilt >= $before + $count and .bridge.updating == false' >/dev/null ||
     fatal "apply returned before a completed rebuild per item"
 check_items() {
