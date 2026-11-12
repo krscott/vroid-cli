@@ -457,7 +457,20 @@ Test("accessories of one item reach every arrangement of bones VRoid can make", 
     var ears = AccessoryPlan.Of(new[] { Worn("CatEar", Head), Worn("RabbitEar", Head) }, new[] { On("CatEar", Chest), Any("RabbitEar") });
     Check(ears.Rebuilt.Count == 2 && ears.Added.SequenceEqual(new[] { new Addition(0, null, true, 0, Chest), new Addition(1, null, false, 1, Head) }),
         Show(ears));
-    // "None" is a bone too.
+    // One that names no bone keeps a worn one on the default bone whichever VRoid
+    // lists first, so the other may move.
+    foreach (var worn in new[] { new[] { Worn("CatEar", Neck), Worn("CatEar", Head) }, new[] { Worn("CatEar", Head), Worn("CatEar", Neck) } })
+    {
+        var order = AccessoryPlan.Of(worn, new[] { Any("CatEar"), On("RabbitEar", Chest) });
+        var source = order.Added.Single(addition => addition.Wanted == 0).Was;
+        Check(order.Errors.Count == 0 && source != null && worn[source.Value].Bone == Head, Show(order));
+    }
+    // An entry that already matches a worn one keeps it, so reapplying a dump
+    // changes nothing whichever order VRoid lists them in.
+    var dumped = AccessoryPlan.Of(new[] { Worn("CatEar", Head), Worn("CatEar", Head) }, new[] { On("CatEar", Head), On("CatEar", Head) },
+        (i, j) => i != j);
+    Check(dumped.Kept.SequenceEqual(new[] { (1, 0), (0, 1) }) && dumped.Removed.Count == 0, Show(dumped));
+        // "None" is a bone too.
     var none = AccessoryPlan.Of(new[] { Worn("CatTail", Hips) }, new[] { On("CatTail", null) });
     Check(none.Rebone.SequenceEqual(new (int, string?)[] { (0, null) }), Show(none));
 });

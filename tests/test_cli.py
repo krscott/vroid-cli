@@ -301,6 +301,10 @@ def test_bridge_from_an_older_protocol_is_refused(tmp_path: Path) -> None:
             "Accessories.0.scale",
         ),
         (
+            '{"method": "apply", "Accessories": [{"item": "CatEar", "position": null}]}',
+            "Accessories.0.position: give an array of numbers",
+        ),
+        (
             '{"method": "apply", "Accessories": [{"item": "CatEar", "bone": 3}]}',
             "Accessories.0.bone",
         ),

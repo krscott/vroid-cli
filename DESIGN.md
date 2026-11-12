@@ -271,7 +271,7 @@ Operations:
 | `items` | The category's item state and presets, below | Selector captured |
 | `accessories` | Edit root `set_EditMode(AccessoryEditor)`, its `Instances`, templates, and bones, below | Editor active |
 | `dump` | `parameters` and the item for every Face, Hair, Body, and Outfit category in app order, then `accessories` | No rebuild running |
-| `apply` | Items, then accessories, below; then `parameters` for each named category, and parameter `set_CombinedValue` or `set_Value`, or a colour's setter, per changed value | One rebuild finished per changed item, accessory, and value (R-EDIT-6) |
+| `apply` | Items, then accessories, below; then `parameters` for each named category, and parameter `set_CombinedValue` or `set_Value`, or a colour's setter, per changed value | One rebuild finished per changed item, accessory, accessory bone, accessory placement, and value (R-EDIT-6) |
 | `save` | Edit root `_mainActionHandler.SaveSync(path, true)` | Call returned true and the file is nonempty |
 | `render` | A temporary Unity camera renders `ModelOrigin`, below | PNG written to a new file |
 | `thumbnails` | The category's options' `Preview.Create()`, below | PNG written to a new file |
@@ -441,16 +441,17 @@ placement. `accessories` lists the bones `apply` accepts: the avatar's
 The parent command throws while another accessory of its group is worn, and
 VRoid keeps one group per kind (the catalog entry's `transferableGroupType`,
 such as every pair of animal ears). A new accessory starts on its default
-bone, which `plugin/ItemIds.cs` holds and each fresh one checks: Hips for
-tails, Head for the rest. `DuplicateSelectedInstance` appends a copy with the
+bone, which `plugin/ItemIds.cs` holds for every catalog accessory and each
+fresh one checks: Hips for tails, Head for the rest. `DuplicateSelectedInstance` appends a copy with the
 same item, bone, placement, colours, and shape. So the accessories of one kind
 sit on their default bone, except copies of one item on one other bone, and
 `apply` refuses any other combination before any change (R-EDIT-3).
 
 `Accessories` in a template is every accessory to wear. Built-in accessories
 of one item are interchangeable, so `apply` keeps for each wanted one the
-first unmatched worn one of its item on its wanted bone, then for one that
-names no bone any of its item, then any of its item; `custom` matches any worn
+first unmatched worn one of its item whose entry already holds what it names,
+then one on its wanted bone, then for one that names no bone one on the
+default bone, then any of its item; `custom` matches any worn
 accessory that is not built in, in order. It removes the other worn ones from
 the end, moves a kept one that is alone in its kind, then adds the rest and
 sets their placement, colours, and shape sliders, reading each back. When a

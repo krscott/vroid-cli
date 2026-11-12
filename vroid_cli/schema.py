@@ -149,6 +149,14 @@ class Accessory(BaseModel):
         json_schema_extra=no_default,
     )
 
+    @field_validator("position", "rotation", "scale", mode="before")
+    @classmethod
+    def not_null(cls, value: Any) -> Any:
+        # Unlike a null bone, null has no meaning here; omit the key instead.
+        if value is None:
+            raise ValueError("give an array of numbers, or omit it to keep the value")
+        return value
+
     @model_serializer(mode="wrap")
     def omit_unset_placement(self, handler: SerializerFunctionWrapHandler) -> Any:
         # An omitted key keeps the current value, while a null bone is None.

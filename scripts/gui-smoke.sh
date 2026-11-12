@@ -421,9 +421,10 @@ check_outfit 'after undoing a change of top'
 
 # A value above its maximum, an unknown parameter, an unknown category, a number
 # for a colour, a shared colour set twice, a colour that writes several, too
-# many colours for an outfit item the request leaves alone, and a worn
-# accessory's rotation that is no unit quaternion, unknown bone, and shape
-# slider above its maximum refuse the whole request, and each is reported.
+# many colours for an outfit item the request leaves alone, a worn
+# accessory's rotation that is no unit quaternion, scale that is not positive,
+# unknown bone, and shape slider above its maximum, and ears of one kind on
+# bones VRoid cannot combine refuse the whole request, and each is reported.
 IFS='|' read -r section category label <<<"${edits[0]}"
 IFS='|' read -r other_section other_category other_label <<<"${edits[1]}"
 # Pipeline stages run at once, so each request they need runs first.
@@ -446,7 +447,8 @@ refused=$(with_value "$section" "$category" "$label" "$(jq -n --argjson max "$ma
     with_value Outfit Tops item "$top" |
     with_value Outfit Shoes 'Base Color' '["#123456", "#123456", "#123456", "#123456", "#123456", "#123456"]' |
     jq -c --argjson worn "$worn" '.Accessories = [$worn[] | if .item == "CatEar"
-        then .rotation = [0, 0, 0, 2] | .bone = "J_No_Such_Bone" | .["Ear Size (Bigger)"] = 101 else . end]')
+        then .rotation = [0, 0, 0, 2] | .scale = [1, 0, 1] | .bone = "J_No_Such_Bone" | .["Ear Size (Bigger)"] = 101
+        elif .item == "RabbitEar" then .bone = "J_Bip_C_Chest" else . end]')
 if vroid "$refused" >/dev/null 2>"$out/bounds.err"; then
     fatal "apply above the maximum succeeded"
 fi
@@ -454,7 +456,7 @@ for reason in 'is outside' 'No Such Parameter: unknown parameter' 'No Such Categ
     'Face/Irises/R Eye: is a colour' 'Face/Skin/Color and Body/Whole Body/Color set the same colour' \
     'Face/Irises/Both Eyes: sets R Eye and L Eye together' 'Hair/Back: unknown item NoSuchItem' \
     'VRoid cannot wear these together' '/rotation: has length 2, not 1' '/bone: unknown bone J_No_Such_Bone' \
-    '/Ear Size (Bigger): 101 is outside' 'Nothing changed'; do
+    '/scale: every factor must be positive' '/Ear Size (Bigger): 101 is outside' 'only as copies of one' 'Nothing changed'; do
     grep -qF "$reason" "$out/bounds.err" || fatal "refusal lacks '$reason': $(<"$out/bounds.err")"
 done
 grep -qE 'Outfit/Shoes/Base Color: (give one colour|[0-9]+ colours have this label)' "$out/bounds.err" ||

@@ -83,7 +83,7 @@ public static class Bones
     };
 
     /// The bone VRoid 2.16.0 puts a newly added built-in accessory on, or null
-    /// for an accessory this table does not know.
+    /// for an item that is not built in.
     public static string? Default(string item) => Defaults.GetValueOrDefault(item);
 }
 
@@ -111,9 +111,9 @@ public static class Placement
 /// bone is VRoid's "None".
 public sealed record WornAccessory(string Item, string? Bone, string Group);
 
-/// A wanted accessory: its item, its bone if the request names one, and the
-/// group a built-in one joins.
-public sealed record WantedAccessory(string Item, bool HasBone, string? Bone, string Group);
+/// A wanted accessory: its item, its bone if the request names one, and its
+/// kind, the group type a built-in one joins.
+public sealed record WantedAccessory(string Item, bool HasBone, string? Bone, string Kind);
 
 /// One accessory to add for a wanted index: a new one from its template, or a
 /// copy of the one added for `CopyOf`, which copies its bone. `SetBone` moves
@@ -134,12 +134,15 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
     /// group is worn; it adds one on its default bone, and a duplicate copies the
     /// item and bone. So the accessories of one group sit on their default bone,
     /// except copies of one item on one other bone. Built-in accessories of one
-    /// item are interchangeable: a wanted one keeps a worn one on its wanted bone
-    /// first, then any. When a kept one cannot move, every one of that group is
+    /// item are interchangeable: a wanted one keeps a worn one that `same` says
+    /// already matches it, then one on its wanted bone, then for one that names
+    /// no bone one on the default bone, then any. When a kept one cannot move,
+    /// every one of that kind is
     /// removed and added again: one first, moved while alone, then copies of it
     /// and new ones. "custom" matches any worn accessory that is not built in, in
     /// order, and moves only while alone in its group.
-    public static AccessoryPlan Of(IReadOnlyList<WornAccessory> worn, IReadOnlyList<WantedAccessory> wanted)
+    public static AccessoryPlan Of(IReadOnlyList<WornAccessory> worn, IReadOnlyList<WantedAccessory> wanted,
+        Func<int, int, bool>? same = null)
     {
         var plan = new AccessoryPlan(new(), new(), new(), new(), new(), new());
         var used = new bool[worn.Count];
@@ -151,11 +154,15 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
         }
         int Free(int i, Func<int, bool> fits) =>
             Enumerable.Range(0, worn.Count).FirstOrDefault(j => !used[j] && worn[j].Item == wanted[i].Item && fits(j), -1);
-        // A wanted bone first, then any for a wanted one that keeps its bone, then the rest.
+        // A built-in one that names no bone takes one on its default bone first, so
+        // it never leaves the default bone only because of app order.
+        bool BuiltIn(int i) => wanted[i].Item != ItemIds.Custom;
         foreach (var pass in new Func<int, int, bool>[]
                  {
-                     (i, j) => wanted[i].Item != ItemIds.Custom && wanted[i].HasBone && worn[j].Bone == wanted[i].Bone,
-                     (i, j) => wanted[i].Item != ItemIds.Custom && !wanted[i].HasBone,
+                     (i, j) => BuiltIn(i) && same != null && same(i, j),
+                     (i, j) => BuiltIn(i) && wanted[i].HasBone && worn[j].Bone == wanted[i].Bone,
+                     (i, j) => BuiltIn(i) && !wanted[i].HasBone && worn[j].Bone == Bones.Default(wanted[i].Item),
+                     (i, j) => BuiltIn(i) && !wanted[i].HasBone,
                      (_, _) => true,
                  })
             for (var i = 0; i < wanted.Count; i++)
@@ -174,17 +181,13 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
                     plan.Errors.Add($"Accessories[{i}]: VRoid moves an accessory to another bone only while no other accessory of its kind is worn");
                 else plan.Rebone.Add((j, wanted[i].Bone));
             }
-        foreach (var group in wanted.Where(entry => entry.Item != ItemIds.Custom).Select(entry => entry.Group).Distinct())
+        foreach (var kind in wanted.Where(entry => entry.Item != ItemIds.Custom).Select(entry => entry.Kind).Distinct())
         {
-            var entries = Enumerable.Range(0, wanted.Count).Where(i => wanted[i].Item != ItemIds.Custom && wanted[i].Group == group).ToList();
+            var entries = Enumerable.Range(0, wanted.Count).Where(i => wanted[i].Item != ItemIds.Custom && wanted[i].Kind == kind).ToList();
             var kept = entries.Where(i => matched[i] != null).ToList();
-            var unknown = entries.Select(i => wanted[i].Item).Where(item => Bones.Default(item) == null).Distinct().ToList();
-            if (unknown.Count > 0)
+            // An item VRoid does not offer, which the caller refuses.
+            if (entries.Any(i => Bones.Default(wanted[i].Item) == null))
             {
-                // Only an item VRoid does not offer, which the caller refuses, or a
-                // VRoid this table was not checked against.
-                if (entries.Any(i => wanted[i].HasBone))
-                    plan.Errors.Add($"Accessories: the default bone of {string.Join(", ", unknown)} is unknown, so no bone can be set");
                 plan.Kept.AddRange(kept.Select(i => (matched[i]!.Value, i)));
                 plan.Added.AddRange(entries.Where(i => matched[i] == null).Select(i => new Addition(i, null, false, null, null)));
                 continue;

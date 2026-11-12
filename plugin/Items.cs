@@ -190,20 +190,19 @@ public sealed partial class Plugin
     // label, and its placement.
     private static Dictionary<string, object?> AccessoryEntry(Worn worn)
     {
-        var entry = new Dictionary<string, object?> { ["item"] = worn.Item };
-        foreach (var swatch in worn.Swatches)
-            if (!entry.TryAdd(swatch.Label, ReadHex(swatch, $"Accessories/{worn.Name}/{swatch.Label}")))
-                throw new InvalidOperationException($"Accessory {worn.Name} has two values labelled {swatch.Label}; a template cannot hold both");
-        foreach (var (label, value) in Values(worn.Parameters))
-            if (PoseKeys.Contains(label) || !entry.TryAdd(label, value))
-                throw new InvalidOperationException($"Accessory {worn.Name} has two values labelled {label}; a template cannot hold both");
-        entry["bone"] = worn.Pose.Bone;
+        var entry = new Dictionary<string, object?> { ["item"] = worn.Item, ["bone"] = worn.Pose.Bone };
         if (worn.Pose.Bone != null)
         {
             entry["position"] = worn.Pose.Position;
             entry["rotation"] = worn.Pose.Rotation;
             entry["scale"] = worn.Pose.Scale;
         }
+        var values = worn.Swatches.Select(swatch => (swatch.Label, Value: (object?)ReadHex(swatch, $"Accessories/{worn.Name}/{swatch.Label}")))
+            .Concat(Values(worn.Parameters).Select(pair => (Label: pair.Key, pair.Value)));
+        foreach (var (label, value) in values)
+            if (PoseKeys.Append("item").Contains(label) || !entry.TryAdd(label, value))
+                throw new InvalidOperationException($"Accessory {worn.Name} has a value labelled {label}, which another value or a reserved key "
+                    + "also uses; a template cannot hold both");
         return entry;
     }
 
@@ -245,6 +244,12 @@ public sealed partial class Plugin
     private static Dictionary<string, string> AttachmentKinds => attachmentKinds ??= Attachments().ToDictionary(
         entry => ItemIds.Attachment(Reflect.Get(entry, "resourceName") as string)!,
         entry => Reflect.Get(entry, "transferableGroupType") as string ?? throw Differs("the kind of a built-in accessory"));
+    // Every built-in accessory needs its default bone in the table.
+    private static void CheckDefaultBones()
+    {
+        if (AttachmentIds.FirstOrDefault(item => Bones.Default(item) == null) is { } missing)
+            throw Differs($"the default bone of {missing}");
+    }
 
     // Every built-in accessory with its name and template. The editor offers
     // only the glasses, so the catalog's other attachments, such as animal ears,
@@ -413,10 +418,12 @@ public sealed partial class Plugin
         work.WornEntries = worn.Select(AccessoryEntry).ToArray();
         var bones = AccessoryBones(worn).ToHashSet();
         var available = AvailableAccessories().Select(accessory => accessory.Item).ToHashSet();
+        CheckDefaultBones();
         work.Wanted = accessories.EnumerateArray().Select(SpecOf).ToList();
         var plan = work.Plan = AccessoryPlan.Of(worn.Select(accessory => new WornAccessory(accessory.Item, accessory.Pose.Bone, accessory.Group)).ToList(),
             work.Wanted.Select(wanted => new WantedAccessory(wanted.Item, wanted.HasBone, wanted.Bone,
-                AttachmentKinds.GetValueOrDefault(wanted.Item, wanted.Item))).ToList());
+                AttachmentKinds.GetValueOrDefault(wanted.Item, wanted.Item))).ToList(),
+            (i, j) => Satisfies(work.Wanted[i], work.WornEntries[j]));
         for (var i = 0; i < work.Wanted.Count; i++)
             if (work.Wanted[i].Item != ItemIds.Custom && !available.Contains(work.Wanted[i].Item))
                 errors.Add($"Accessories[{i}]: unknown accessory {work.Wanted[i].Item}; list them with accessories");
@@ -477,6 +484,15 @@ public sealed partial class Plugin
         return new AccessorySpec(entry.GetProperty("item").GetString()!, hasBone, hasBone ? bone.GetString() : null,
             Vector("position"), Vector("rotation"), Vector("scale"), WantedValues(entry, PoseKeys.Append("item").ToArray()));
     }
+
+    // Whether a worn accessory's entry already holds everything `spec` names.
+    private static bool Satisfies(AccessorySpec spec, Dictionary<string, object?> entry) =>
+        entry["item"] as string == spec.Item && (!spec.HasBone || entry["bone"] as string == spec.Bone)
+        && new[] { ("position", spec.Position), ("rotation", spec.Rotation), ("scale", spec.Scale) }
+            .All(part => part.Item2 == null || Same(part.Item2, entry.GetValueOrDefault(part.Item1)))
+        && spec.Values.All(wanted => entry.GetValueOrDefault(wanted.Label) is var value && (wanted.Colors is { } colors
+            ? !wanted.Repeated && Colors.Normalize(colors[0]) is { } hex && Equals(value, hex)
+            : Same(value, wanted.Repeated ? wanted.Values.Select(number => (float)number).ToArray() : (float)wanted.Values[0])));
 
     // A dumped entry as a spec that names every value.
     private static AccessorySpec SpecOf(Dictionary<string, object?> entry) =>
@@ -621,16 +637,12 @@ public sealed partial class Plugin
             var added = WornAccessories();
             if (added[^1].Item != item) throw Differs($"where VRoid lists the added accessory {item}");
             made[addition.Wanted] = added.Length - 1;
-            var home = Bones.Default(item);
-            if (home != null)
+            var expected = addition.CopyOf is { } copied ? added[made[copied]].Pose.Bone : Bones.Default(item);
+            if (added[^1].Pose.Bone != expected) throw Differs($"the bone VRoid puts an added {item} on");
+            if (addition.SetBone)
             {
-                var expected = addition.CopyOf is { } copied ? added[made[copied]].Pose.Bone : home;
-                if (added[^1].Pose.Bone != expected) throw Differs($"the bone VRoid puts an added {item} on");
-                if (addition.SetBone)
-                {
-                    foreach (var step in MoveBone(made[addition.Wanted], addition.Bone, path)) yield return step;
-                    if (addition.Was == null) work.Changed++;
-                }
+                foreach (var step in MoveBone(made[addition.Wanted], addition.Bone, path)) yield return step;
+                if (addition.Was == null) work.Changed++;
             }
             targets.Add((made[addition.Wanted], addition.Wanted, addition.Was));
         }

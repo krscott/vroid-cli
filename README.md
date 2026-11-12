@@ -61,8 +61,8 @@ vroid-cli other @template.json
 ```
 
 `apply` checks every item and value before changing any, except colours of a
-category whose item the request may change, which it checks once the new item
-is worn. Before the first change it writes an `undo` file, an `apply` request that restores the previous
+category whose item the request may change and the shape sliders of an added
+accessory, which it checks once the new item or accessory is worn. Before the first change it writes an `undo` file, an `apply` request that restores the previous
 ones; its result names the file. A category's
 `"item"` names one of VRoid's built-in items, listed by `items`, or `"custom"`
 for one that is not built in; `accessories` lists accessories the same way. A label that repeats within a
