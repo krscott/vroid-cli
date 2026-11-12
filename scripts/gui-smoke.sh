@@ -369,6 +369,14 @@ vroid "$request" | jq -e --argjson want "$outfit_colours" '.changed == ([$want[]
     fatal "apply did not change every part's colours"
 check_outfit 'after apply'
 check_items 'after setting outfit colours'
+# Taking the top off changes no other category's item, so a colour for the
+# empty Dresses category is refused before the top comes off (R-EDIT-3).
+if vroid '{"method": "apply", "Outfit": {"Tops": {"item": null}, "Dresses": {"Base Color": "#123456"}}}' \
+    >/dev/null 2>"$out/untop.err"; then
+    fatal "apply of a colour for the empty Dresses category succeeded"
+fi
+grep -qF 'Nothing changed' "$out/untop.err" || fatal "taking the top off was not refused up front: $(<"$out/untop.err")"
+check_items 'after a refused change of top'
 # Another top's colours are checked once it is worn (R-EDIT-3): too many of them
 # fail after the change of top, and the undo file the error names restores the
 # top and the colours set above (R-EDIT-11).
@@ -379,7 +387,8 @@ if with_value Outfit Tops item "$(pick_item Outfit Tops)" <<<'{"method": "apply"
     fatal "apply with too many colours for the new top succeeded"
 fi
 grep -qF 'Outfit/Tops/Base Color: ' "$out/retop.err" || fatal "the refused top colours were not reported: $(<"$out/retop.err")"
-undone=$(grep -oE 'apply @[^ ]+\.json' "$out/retop.err" | cut -c8-) || fatal "the error names no undo file: $(<"$out/retop.err")"
+undone=$(sed -n 's/.*To undo any change, apply @\(.*\.json\)$/\1/p' "$out/retop.err")
+[[ -n $undone ]] || fatal "the error names no undo file: $(<"$out/retop.err")"
 undo "$(jq -cn --arg undo "$undone" '{undo: $undo}')" "$out/before-retop.json"
 check_outfit 'after undoing a change of top'
 
@@ -413,9 +422,11 @@ fi
 for reason in 'is outside' 'No Such Parameter: unknown parameter' 'No Such Category: unknown category' \
     'Face/Irises/R Eye: is a colour' 'Face/Skin/Color and Body/Whole Body/Color set the same colour' \
     'Face/Irises/Both Eyes: sets R Eye and L Eye together' 'Hair/Back: unknown item NoSuchItem' \
-    'VRoid cannot wear these together' 'Outfit/Shoes/Base Color: ' 'Nothing changed'; do
+    'VRoid cannot wear these together' 'Nothing changed'; do
     grep -qF "$reason" "$out/bounds.err" || fatal "refusal lacks '$reason': $(<"$out/bounds.err")"
 done
+grep -qE 'Outfit/Shoes/Base Color: (give one colour|[0-9]+ colours have this label)' "$out/bounds.err" ||
+    fatal "refusal lacks the Shoes colour count: $(<"$out/bounds.err")"
 actual=$(value_of Body 'Whole Body' Color)
 same "$actual" "$skin" || fatal "skin changed to $actual after a refused apply"
 for edit in "${edits[@]}"; do

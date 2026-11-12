@@ -297,38 +297,36 @@ in a section share a name (none do in 2.16.0). The `Apply` model refuses a
 label in two categories of a section, since the later value would silently
 win.
 
-`apply` runs in two passes. The first resolves every item, accessory,
-category name, and value, checking each item as below and each value's
-label count, live bounds, and kind, and collects every refusal. Bounds
-compare the value as float32, as VRoid stores it, so a dumped bound such as
-0.7 stays in range. Any refusal fails the request before anything changes
-(R-EDIT-3, R-EDIT-10). A colour that is unavailable for a category's current
-item is not refused when the request changes that category's item, since the
-new item may offer it. An Outfit colour is checked only in the second pass
-when the request may change its category's item, since each item brings its
-own parts: through the category's own item, a conflicting item VRoid takes it
-off for, or a set in the section. The second pass
-changes items, then accessories, because a new item can reset its category's
-values (Irises and Eyebrows, and an Outfit item's colours, in 2.16.0; other
-colours survive), then
-revisits the categories and sets each value that differs, waiting for each
-rebuild. It stops at the first new refusal, such as a colour the new item
-does not offer. It sets `modified` before the first change, so an interrupted
-edit still counts as unsaved. The result counts the changes and lists in
-`discarded` what `undo` cannot restore. The bridge writes the `undo` template
-to its file once the first pass succeeds, before any change. When the request
-changes items, `undo` is a `dump` taken before the change, without items that
-are not built in, since a new item can reset its category's values and VRoid
-changes other categories with it, such as the Base Hair that each Hair Back
-item brings, so it includes the accessories; otherwise it holds the previous
-values of what the request names, and the previous accessories when the
-request lists them. A custom accessory leaves `undo` once its removal is
-confirmed, and the bridge then rewrites the file; a failed rewrite fails the
-request. A crash during that removal can leave it in the file, which apply
-then refuses. If the second pass fails, the bridge ends the
-operation, then reports what already changed and what was discarded, and the
-CLI adds the undo file. Each item waits for its section to settle, so
-reapplying a whole template takes tens of seconds, within the request timeout.
+`apply` runs in two passes. The first resolves every item, accessory, category
+name, and value, checking each item as below and each value's label count,
+live bounds, and kind, and collects every refusal. Bounds compare the value as
+float32, as VRoid stores it, so a dumped bound such as 0.7 stays in range. Any
+refusal fails the request before anything changes (R-EDIT-3, R-EDIT-10). When
+the request may change a category's item (its own pick, a conflicting item
+VRoid takes it off for, or a set in the section), the first pass skips the
+colours the next item may offer differently: every Outfit colour, since each
+item brings its own parts, and elsewhere colours unavailable for the current
+item. The second pass changes items, then accessories, because a new item can
+reset its category's values (Irises and Eyebrows, and an Outfit item's
+colours, in 2.16.0; other colours survive), then revisits the categories and
+sets each value that differs, waiting for each rebuild. It stops at the first
+new refusal, such as a colour the new item does not offer. It sets `modified`
+before the first change, so an interrupted edit still counts as unsaved. The
+result counts the changes and lists in `discarded` what `undo` cannot restore.
+The bridge writes the `undo` template to its file once the first pass
+succeeds, before any change. When the request changes items, `undo` is a
+`dump` taken before the change, without items that are not built in, since a
+new item can reset its category's values and VRoid changes other categories
+with it, such as the Base Hair that each Hair Back item brings, so it includes
+the accessories; otherwise it holds the previous values of what the request
+names, and the previous accessories when the request lists them. A custom
+accessory leaves `undo` once its removal is confirmed, and the bridge then
+rewrites the file; a failed rewrite fails the request. A crash during that
+removal can leave it in the file, which apply then refuses. If the second pass
+fails, the bridge ends the operation, then reports what already changed and
+what was discarded, and the CLI adds the undo file. Each item waits for its
+section to settle, so reapplying a whole template takes tens of seconds,
+within the request timeout.
 
 ### Items and accessories
 

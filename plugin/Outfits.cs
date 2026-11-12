@@ -35,8 +35,8 @@ public sealed partial class Plugin
                     var path = Reflect.Get(color, "elementKey") ?? throw Differs($"the colours of {slot.Path}");
                     var disable = Reflect.Get(color, "disableFlagElementKey") ?? throw Differs($"the colours of {slot.Path}");
                     var key = Reflect.Get(color, "translationKey") as string ?? throw Differs($"the colours of {slot.Path}");
-                    var label = Reflect.CallStatic("VRoidStudio.UICulture.Translator", "Translate", key) as string
-                        ?? throw Differs($"the colour labels of {slot.Path}");
+                    var label = Reflect.CallStatic("VRoidStudio.UICulture.Translator", "Translate", key) as string;
+                    if (string.IsNullOrEmpty(label) || label == key) throw Differs($"the colour labels of {slot.Path}");
                     swatches.Add(new Swatch(label, () => Reflect.Call(context, "GetColorParameter", group, path),
                         // The texture editor's colour field writes without its screen, and
                         // keeps the item built in (R-EDIT-12). VRoid holds view models'
