@@ -173,7 +173,9 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
         bool Moves(int i) => matched[i] is { } j && wanted[i].HasBone && worn[j].Bone != wanted[i].Bone;
 
         for (var i = 0; i < wanted.Count; i++)
-            if (wanted[i].Item == ItemIds.Custom && matched[i] is { } j)
+            // An unmatched one is added, which the caller refuses.
+            if (wanted[i].Item == ItemIds.Custom && matched[i] == null) plan.Added.Add(new Addition(i, null, false, null, null));
+            else if (wanted[i].Item == ItemIds.Custom && matched[i] is { } j)
             {
                 plan.Kept.Add((j, i));
                 if (!Moves(i)) continue;

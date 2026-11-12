@@ -427,6 +427,9 @@ Test("accessories keep matching items in order and add or remove the rest", _ =>
         new[] { Any("CatEar"), Any("FoxTail"), Any("custom") });
     Check(plan.Kept.SequenceEqual(new[] { (1, 0), (2, 2) }) && plan.Removed.SequenceEqual(new[] { 0, 3 }) && plan.Rebone.Count == 0
         && plan.Added.SequenceEqual(new[] { new Addition(1, null, false, null, Hips) }) && plan.Errors.Count == 0, Show(plan));
+    // "custom" with no worn accessory that is not built in is an addition, which apply refuses.
+    var missing = AccessoryPlan.Of(Array.Empty<WornAccessory>(), new[] { Any("custom") });
+    Check(missing.Added.SequenceEqual(new[] { new Addition(0, null, false, null, null) }), Show(missing));
     var same = AccessoryPlan.Of(new[] { Worn("CatEar", Head), Worn("CatEar", Chest) }, new[] { On("CatEar", Head), On("CatEar", Chest) });
     Check(same.Removed.Count == 0 && same.Added.Count == 0 && same.Rebone.Count == 0 && same.Kept.SequenceEqual(new[] { (0, 0), (1, 1) }), Show(same));
 });
