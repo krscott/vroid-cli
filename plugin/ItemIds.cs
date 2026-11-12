@@ -118,9 +118,9 @@ public sealed record WantedAccessory(string Item, bool HasBone, string? Bone, st
 /// One accessory to add for a wanted index: a new one from its template, or a
 /// copy of the one added for `CopyOf`, which copies its bone. `SetBone` moves
 /// it to its wanted bone once it is added, while no other of its kind is worn.
-/// `Was` is the worn accessory whose values it takes over when a rebuild
-/// replaced it, and `Bone` the bone it ends on.
-public sealed record Addition(int Wanted, int? CopyOf, bool SetBone, int? Was, string? Bone);
+/// `Bone` is the bone it ends on. When a rebuild replaced a worn accessory,
+/// `Matched` names it, and the new one takes over its values.
+public sealed record Addition(int Wanted, int? CopyOf, bool SetBone, string? Bone);
 
 /// How worn accessories become the wanted ones. `Kept` pairs a worn index with
 /// a wanted index, and `Rebone` moves kept ones to their wanted bone. `Removed`
@@ -175,7 +175,7 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
 
         for (var i = 0; i < wanted.Count; i++)
             // An unmatched one is added, which the caller refuses.
-            if (wanted[i].Item == ItemIds.Custom && matched[i] == null) plan.Added.Add(new Addition(i, null, false, null, null));
+            if (wanted[i].Item == ItemIds.Custom && matched[i] == null) plan.Added.Add(new Addition(i, null, false, null));
             else if (wanted[i].Item == ItemIds.Custom && matched[i] is { } j)
             {
                 plan.Kept.Add((j, i));
@@ -192,7 +192,7 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
             if (entries.Any(i => Bones.Default(wanted[i].Item) == null))
             {
                 plan.Kept.AddRange(kept.Select(i => (matched[i]!.Value, i)));
-                plan.Added.AddRange(entries.Where(i => matched[i] == null).Select(i => new Addition(i, null, false, null, null)));
+                plan.Added.AddRange(entries.Where(i => matched[i] == null).Select(i => new Addition(i, null, false, null)));
                 continue;
             }
             bool Away(int i) => Final(i) != Bones.Default(wanted[i].Item);
@@ -222,8 +222,7 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
             var added = direct ? entries.Where(i => matched[i] == null).ToList() : entries;
             var first = added.FirstOrDefault(Away, -1);
             foreach (var i in added.OrderBy(i => i != first))
-                plan.Added.Add(new Addition(i, i != first && Away(i) ? first : null, i == first,
-                    direct ? null : matched[i], Final(i)));
+                plan.Added.Add(new Addition(i, i != first && Away(i) ? first : null, i == first, Final(i)));
         }
         plan.Removed.Sort();
         plan.Kept.Sort((a, b) => a.Wanted.CompareTo(b.Wanted));

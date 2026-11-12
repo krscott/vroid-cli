@@ -426,10 +426,10 @@ Test("accessories keep matching items in order and add or remove the rest", _ =>
     var plan = AccessoryPlan.Of(new[] { Worn("GlassesHi", Head), Worn("CatEar", Head), Worn("custom", Head, "user"), Worn("CatEar", Head) },
         new[] { Any("CatEar"), Any("FoxTail"), Any("custom") });
     Check(plan.Kept.SequenceEqual(new[] { (1, 0), (2, 2) }) && plan.Removed.SequenceEqual(new[] { 0, 3 }) && plan.Rebone.Count == 0
-        && plan.Added.SequenceEqual(new[] { new Addition(1, null, false, null, Hips) }) && plan.Errors.Count == 0, Show(plan));
+        && plan.Added.SequenceEqual(new[] { new Addition(1, null, false, Hips) }) && plan.Errors.Count == 0, Show(plan));
     // "custom" with no worn accessory that is not built in is an addition, which apply refuses.
     var missing = AccessoryPlan.Of(Array.Empty<WornAccessory>(), new[] { Any("custom") });
-    Check(missing.Added.SequenceEqual(new[] { new Addition(0, null, false, null, null) }), Show(missing));
+    Check(missing.Added.SequenceEqual(new[] { new Addition(0, null, false, null) }), Show(missing));
     var same = AccessoryPlan.Of(new[] { Worn("CatEar", Head), Worn("CatEar", Chest) }, new[] { On("CatEar", Head), On("CatEar", Chest) });
     Check(same.Removed.Count == 0 && same.Added.Count == 0 && same.Rebone.Count == 0 && same.Kept.SequenceEqual(new[] { (0, 0), (1, 1) }), Show(same));
 });
@@ -447,18 +447,20 @@ Test("accessories of one item reach every arrangement of bones VRoid can make", 
     // stay, since the moved one must be added alone.
     var undo = AccessoryPlan.Of(new[] { Worn("CatEar", Head) }, new[] { On("CatEar", Head), On("CatEar", Chest) });
     Check(undo.Kept.Count == 0 && undo.Removed.SequenceEqual(new[] { 0 }) && undo.Rebuilt.SetEquals(new[] { 0 })
-        && undo.Added.SequenceEqual(new[] { new Addition(1, null, true, null, Chest), new Addition(0, null, false, 0, Head) }), Show(undo));
+        && undo.Added.SequenceEqual(new[] { new Addition(1, null, true, Chest), new Addition(0, null, false, Head) })
+        && undo.Matched.SequenceEqual(new int?[] { 0, null }), Show(undo));
     // Two kept ones cannot move, so both are added again: one moved, then a copy.
     var both = AccessoryPlan.Of(new[] { Worn("CatEar", Head), Worn("CatEar", Head) }, new[] { On("CatEar", Chest), On("CatEar", Chest) });
     Check(both.Removed.SequenceEqual(new[] { 0, 1 }) && both.Rebuilt.Count == 2
-        && both.Added.SequenceEqual(new[] { new Addition(0, null, true, 0, Chest), new Addition(1, 0, false, 1, Chest) }), Show(both));
+        && both.Added.SequenceEqual(new[] { new Addition(0, null, true, Chest), new Addition(1, 0, false, Chest) })
+        && both.Matched.SequenceEqual(new int?[] { 0, 1 }), Show(both));
     // A new set moves its first one away from home while it is alone.
     var fresh = AccessoryPlan.Of(Array.Empty<WornAccessory>(), new[] { On("CatEar", Head), On("CatEar", Chest), On("CatEar", Chest) });
-    Check(fresh.Added.SequenceEqual(new[] { new Addition(1, null, true, null, Chest), new Addition(0, null, false, null, Head),
-        new Addition(2, 1, false, null, Chest) }) && fresh.Rebuilt.Count == 0, Show(fresh));
+    Check(fresh.Added.SequenceEqual(new[] { new Addition(1, null, true, Chest), new Addition(0, null, false, Head),
+        new Addition(2, 1, false, Chest) }) && fresh.Rebuilt.Count == 0, Show(fresh));
     // Cat and rabbit ears share a group, so one cannot move while the other is worn.
     var ears = AccessoryPlan.Of(new[] { Worn("CatEar", Head), Worn("RabbitEar", Head) }, new[] { On("CatEar", Chest), Any("RabbitEar") });
-    Check(ears.Rebuilt.Count == 2 && ears.Added.SequenceEqual(new[] { new Addition(0, null, true, 0, Chest), new Addition(1, null, false, 1, Head) }),
+    Check(ears.Rebuilt.Count == 2 && ears.Added.SequenceEqual(new[] { new Addition(0, null, true, Chest), new Addition(1, null, false, Head) }),
         Show(ears));
     // One that names no bone keeps a worn one on the default bone whichever VRoid
     // lists first, so the other may move.
@@ -466,7 +468,7 @@ Test("accessories of one item reach every arrangement of bones VRoid can make", 
     {
         // Even though the bare entry matches either.
         var order = AccessoryPlan.Of(worn, new[] { Any("CatEar"), On("RabbitEar", Chest) }, (i, _) => i == 0);
-        var source = order.Added.Single(addition => addition.Wanted == 0).Was;
+        var source = order.Matched[0];
         Check(order.Errors.Count == 0 && source != null && worn[source.Value].Bone == Head, Show(order));
     }
     // An entry that already matches a worn one keeps it, so reapplying a dump

@@ -627,7 +627,7 @@ public sealed partial class Plugin
             var item = work.Wanted[addition.Wanted].Item;
             var path = $"Accessories[{addition.Wanted}]";
             Changed.Add($"Accessories/{item}");
-            if (addition.Was == null) work.Changed++;
+            if (plan.Matched[addition.Wanted] == null) work.Changed++;
             if (addition.CopyOf is { } source)
                 foreach (var step in DuplicateAccessory(made[source])) yield return step;
             // The editor may rebuild its template list, so find the template in the current one.
@@ -640,9 +640,9 @@ public sealed partial class Plugin
             if (addition.SetBone)
             {
                 foreach (var step in MoveBone(made[addition.Wanted], addition.Bone, path)) yield return step;
-                if (addition.Was == null) work.Changed++;
+                if (plan.Matched[addition.Wanted] == null) work.Changed++;
             }
-            targets.Add((made[addition.Wanted], addition.Wanted, addition.Was));
+            targets.Add((made[addition.Wanted], addition.Wanted, plan.Matched[addition.Wanted]));
         }
         foreach (var (index, i, was) in targets)
         {
