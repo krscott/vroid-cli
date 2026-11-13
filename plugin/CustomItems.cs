@@ -110,8 +110,8 @@ public sealed partial class Plugin
         {
             // Its entries could match the wrong custom accessories, so the undo
             // file now keeps what is worn, the import too.
-            undo = new Dictionary<string, object> { ["method"] = "apply", ["Accessories"] = AccessoryList(now) };
-            var kept = Try(() => rpc.WriteUndo(request, undo), "replace the undo file");
+            var kept = Try(() => rpc.WriteUndo(request, new Dictionary<string, object> { ["method"] = "apply", ["Accessories"] = AccessoryList(now) }),
+                "replace the undo file");
             throw Differs($"where VRoid lists the imported {file}, which is still worn; "
                 + (kept ? "its undo file now keeps what is worn and cannot take it off" : "do not apply its undo file")
                 + ". Report this to the user");
