@@ -486,12 +486,11 @@ for VRoid's default name, which the app shows in its own language. VRoid's
 Rename dialog keeps the display name's `LocalizationKey`, which names the
 template, so `apply` clones the display name and sets only that string; a new
 display name without the key would read as `custom`. Null builds a display
-name from the key and `FallbackString` alone, which a custom accessory without
-a key cannot have, so `apply` refuses to change such a name to null. `""` is a
-name, which VRoid's dialog cannot enter but saves and reopens. `dump` always
-writes the three keys,
-since an omitted key keeps the worn value, so a template that left out the
-defaults could not restore them (R-EDIT-7, R-EDIT-11).
+name from the key and `FallbackString` alone, or without them for a custom
+accessory that has none. `""` is a name, which VRoid's dialog cannot enter but
+saves and reopens. `dump` always writes the three keys, since an omitted key
+keeps the worn value, so a template that left out the defaults could not
+restore them (R-EDIT-7, R-EDIT-11).
 `SetTransferableVisibilityCommand(transferableId, bool)` and
 `SetTransferableEditabilityCommand(transferableId, bool)` take one rebuild
 each; `SetTransferableDisplayNameCommand(transferableId, LocalizedString)` takes

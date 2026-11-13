@@ -186,9 +186,7 @@ public sealed partial class Plugin
         }
         // A name the user gives keeps the localization key, which names the
         // accessory's template, and adds a user-defined string.
-        var flags = new Flags(Reflect.Get(display, "UserDefinedString") as string,
-            Reflect.Get(instance, "IsVisible") is bool visible ? !visible : throw Differs($"whether accessory {name} is hidden"),
-            Reflect.Get(instance, "IsEditable") is bool editable ? !editable : throw Differs($"whether accessory {name} is locked"));
+        var flags = new Flags(Reflect.Get(display, "UserDefinedString") as string, Flag(instance, "hidden"), Flag(instance, "locked"));
         return new Worn(item != null && AttachmentIds.Contains(item) ? item : ItemIds.Custom, name, id, group, instance, swatches.ToArray(),
             Reflect.Items(Reflect.Get(instance, "Parameters")).ToArray(), pose, flags, display);
     }).ToArray();
@@ -468,8 +466,6 @@ public sealed partial class Plugin
             var bone = spec.HasBone ? spec.Bone : matched != null ? matched.Pose.Bone : Bones.Default(spec.Item);
             if (bone == null && spec.Places) errors.Add($"{path}: has no bone, so it takes no position, rotation, or scale");
             // A built-in accessory's name always has a key; a custom one may have only the user's name.
-            if (spec.HasName && spec.Name == null && matched != null && matched.Flags.Name != null && !HasDefaultName(matched))
-                errors.Add($"{path}/name: {matched.Name} has no default name to go back to; give a name");
             foreach (var (key, vector, check) in new (string, float[]?, Func<IReadOnlyList<float>, string?>)[]
                      {
                          ("position", spec.Position, _ => null), ("rotation", spec.Rotation, Placement.Rotation), ("scale", spec.Scale, Placement.Scale),
@@ -692,7 +688,7 @@ public sealed partial class Plugin
             throw new InvalidOperationException($"{path}: another accessory of its kind is worn, so VRoid cannot move it to {bone ?? "None"}");
         var before = rebuilt;
         modified = true;
-        Run(worn[index], "SetPartOriginParentCommand", worn[index].Group, bone == null ? null : Reflect.New("VRoidCore.Common.Types.ResolvedBoneId", bone));
+        Run(worn[index].Instance, "SetPartOriginParentCommand", worn[index].Group, bone == null ? null : Reflect.New("VRoidCore.Common.Types.ResolvedBoneId", bone));
         Changed.Add($"{path}/bone");
         while (rebuilt == before || updating) yield return true;
         var actual = WornAccessories()[index].Pose.Bone;
@@ -715,7 +711,7 @@ public sealed partial class Plugin
                 var worn = Find();
                 var before = rebuilt;
                 modified = true;
-                Run(worn, "SetPartOriginTransformCommand", worn.Id, Reflect.New("VRoidCore.Common.Types.Transform",
+                Run(worn.Instance, "SetPartOriginTransformCommand", worn.Id, Reflect.New("VRoidCore.Common.Types.Transform",
                     Unity("UnityEngine.Vector3", want.Position!), Unity("UnityEngine.Quaternion", want.Rotation!), Unity("UnityEngine.Vector3", want.Scale!)));
                 Changed.Add($"{path}/placement");
                 while (rebuilt == before || updating) yield return true;
@@ -798,7 +794,7 @@ public sealed partial class Plugin
             foreach (var (index, key) in Enumerable.Reverse(restore))
                 try
                 {
-                    FlagCommand(WornAccessories()[index], key, true);
+                    FlagCommand(Instances()[index], key, true);
                 }
                 catch (Exception error)
                 {
@@ -808,27 +804,27 @@ public sealed partial class Plugin
         }
     }
 
-    private static bool HasDefaultName(Worn worn) => Reflect.Get(worn.DisplayName, "LocalizationKey") is string { Length: > 0 };
+    // Whether an accessory instance is hidden or locked, read from it alone.
+    private static bool Flag(object instance, string key) =>
+        Reflect.Get(instance, key == "hidden" ? "IsVisible" : "IsEditable") is bool value ? !value : throw Differs($"whether an accessory is {key}");
 
-    private static bool Flag(Flags flags, string key) => key == "hidden" ? flags.Hidden : flags.Locked;
-
-    private static void FlagCommand(Worn worn, string key, bool value)
+    private static void FlagCommand(object instance, string key, bool value)
     {
         modified = true;
-        if (key == "hidden") Run(worn, "SetTransferableVisibilityCommand", worn.Id, !value);
-        else Run(worn, "SetTransferableEditabilityCommand", worn.Id, !value);
+        var id = Reflect.Get(Reflect.Get(instance, "transferableInfo"), "Id") as string ?? throw Differs("the transferable of an accessory");
+        Run(instance, key == "hidden" ? "SetTransferableVisibilityCommand" : "SetTransferableEditabilityCommand", id, !value);
     }
 
     // Sets `hidden` or `locked` of the accessory listed at `index`, one rebuild each.
+    // It reads only that instance, so `open` can use it on any accessory.
     private static IEnumerable<bool> SetFlag(int index, string key, bool value, string path)
     {
-        var worn = WornAccessories()[index];
-        if (Flag(worn.Flags, key) == value) yield break;
+        if (Flag(Instances()[index], key) == value) yield break;
         var before = rebuilt;
-        FlagCommand(worn, key, value);
+        FlagCommand(Instances()[index], key, value);
         Changed.Add($"{path}/{key}");
         while (rebuilt == before || updating) yield return true;
-        if (Flag(WornAccessories()[index].Flags, key) != value) throw new InvalidOperationException($"{path}/{key} reads {!value} after setting {value}");
+        if (Flag(Instances()[index], key) != value) throw new InvalidOperationException($"{path}/{key} reads {!value} after setting {value}");
     }
 
     // Renames the accessory listed at `index` as VRoid's Rename dialog does, keeping
@@ -847,16 +843,15 @@ public sealed partial class Plugin
         }
         else
         {
-            if (!HasDefaultName(worn)) throw new InvalidOperationException($"{path}/name: {worn.Name} has no default name to go back to");
-            // The default name is the key and fallback alone; translations would be lost.
-            if (Convert.ToInt32(Reflect.Get(Reflect.Get(worn.DisplayName, "TranslatedString"), "Count")) != 0)
+            // The default name is the key and fallback alone, if any; translations would be lost.
+            if (Convert.ToInt32(Reflect.Get(Reflect.Get(worn.DisplayName, "TranslatedString"), "Count") ?? 0) != 0)
                 throw Differs($"the default name of accessory {worn.Name}");
             display = Reflect.New("VRoidCore.Protobuf.LocalizedString");
-            Reflect.Call(display, "set_LocalizationKey", Reflect.Get(worn.DisplayName, "LocalizationKey")!);
+            if (Reflect.Get(worn.DisplayName, "LocalizationKey") is string key) Reflect.Call(display, "set_LocalizationKey", key);
             if (Reflect.Get(worn.DisplayName, "FallbackString") is string fallback) Reflect.Call(display, "set_FallbackString", fallback);
         }
         modified = true;
-        Run(worn, "SetTransferableDisplayNameCommand", worn.Id, display);
+        Run(worn.Instance, "SetTransferableDisplayNameCommand", worn.Id, display);
         Changed.Add($"{path}/name");
         // The editor's list shows a new name only once told it changed.
         foreach (var property in new[] { "TranslatedDisplayName", "IconAndTranslatedDisplayName" })
@@ -872,8 +867,8 @@ public sealed partial class Plugin
     private static object Unity(string type, float[] parts) => Activator.CreateInstance(Reflect.Type(type), parts.Cast<object>().ToArray())!;
 
     // Runs one of VRoid's edit commands, which records it in VRoid's own history.
-    private static void Run(Worn worn, string command, params object?[] args) =>
-        Reflect.Call(EditContext(worn.Instance), "ExecuteSyncCommand", Reflect.New("VRoidCore.Editing.History.Command." + command, args!));
+    private static void Run(object instance, string command, params object?[] args) =>
+        Reflect.Call(EditContext(instance), "ExecuteSyncCommand", Reflect.New("VRoidCore.Editing.History.Command." + command, args!));
 
     // The number of values that differ between two entries of one accessory; each
     // element of a repeated label counts.
