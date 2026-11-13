@@ -478,9 +478,8 @@ sit on their default bone, except copies of one item on one other bone, and
 one item are interchangeable, so `apply` keeps for each wanted one the first
 unmatched worn one of its item whose entry already holds what it names, then
 one on its wanted bone, then for one that names no bone one on the default
-bone, then any of its item; `custom` keeps the first worn accessory that is not
-built in whose values it names in full, as a dump or undo file does, then any,
-in order, so one naming only a bone moves the one listed in its place. It
+bone, then any of its item; `custom` matches any worn accessory that is not
+built in, in order, since equal values do not make two of them the same. It
 removes the other worn ones from the end, moves a kept one that is alone in its
 kind, then adds the rest and sets their placement, colours, and shape sliders,
 reading each back. When a kept one must move while others of its kind stay, or
@@ -540,9 +539,10 @@ from before with `discard_custom`, then calls
 task completes within a few frames. VRoid reports an error before changing
 anything; otherwise it appends the accessory to `Instances` and rebuilds
 twice. The bridge waits until rebuilds stop, finds the new accessory as the
-one whose transferable was not listed before, and returns its entry. The
-undo's `custom` entries hold every value of the accessories from before, so
-they keep those and remove the import (R-EDIT-11). The undo leaves the
+one whose transferable was not listed before, and returns its entry. VRoid
+lists it after every other custom accessory, which the bridge checks, and
+`custom` entries keep custom accessories in app order, so the undo's entries
+keep the accessories from before and remove the import (R-EDIT-11). The undo leaves the
 import's group, so built-in accessories of its kind stay refused.
 
 `export` takes an index into `accessories` `worn` and calls

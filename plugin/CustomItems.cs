@@ -64,8 +64,9 @@ public sealed partial class Plugin
         // Beyond its limit VRoid shows a dialog no one can close on the private display.
         var max = Convert.ToInt32(Reflect.StaticProperty("VRoid.Studio.AccessoryEditor.ViewModel", "MaxInstanceCount").GetValue(null));
         if (worn.Length >= max) throw new ArgumentException($"VRoid allows at most {max} accessories, and the project wears {worn.Length}. Nothing changed");
-        // Removing the import needs discard_custom; the custom entries listed here
-        // keep the accessories from before.
+        // Removing the import needs discard_custom; custom entries keep custom
+        // accessories in app order, so the ones listed here keep the ones from
+        // before as long as VRoid lists the import after them, as checked below.
         var restore = new Dictionary<string, object>
         {
             ["method"] = "apply",
@@ -101,9 +102,13 @@ public sealed partial class Plugin
             yield return true;
         }
         var ids = worn.Select(accessory => accessory.Id).ToHashSet();
-        var added = WornAccessories().Where(accessory => !ids.Contains(accessory.Id)).ToArray();
+        var now = WornAccessories();
+        var added = now.Where(accessory => !ids.Contains(accessory.Id)).ToArray();
         if (added.Length != 1 || added[0].Kind != kind) throw Differs($"which accessory VRoid added for {file}");
         if (added[0].Item != ItemIds.Custom) throw Differs($"how VRoid marks the imported {file}");
+        if (now.Last(accessory => accessory.Item == ItemIds.Custom) != added[0])
+            throw new InvalidOperationException($"VRoid lists the imported {file} before another accessory that is not built in, so its undo "
+                + "file would remove that one instead; check the accessories before applying it");
         result = new { imported = AccessoryEntry(added[0]) };
     }
 

@@ -450,7 +450,7 @@ public sealed partial class Plugin
         var plan = work.Plan = AccessoryPlan.Of(worn.Select(accessory => new WornAccessory(accessory.Item, accessory.Pose.Bone, accessory.Kind)).ToList(),
             work.Wanted.Select(wanted => new WantedAccessory(wanted.Item, wanted.HasBone, wanted.Bone,
                 AttachmentKinds.GetValueOrDefault(wanted.Item, wanted.Item))).ToList(),
-            (i, j) => Satisfies(work.Wanted[i], work.WornEntries[j]) && (work.Wanted[i].Item != ItemIds.Custom || Names(work.Wanted[i], work.WornEntries[j])),
+            (i, j) => Satisfies(work.Wanted[i], work.WornEntries[j]),
             AccessoryGroups().Imported);
         for (var i = 0; i < work.Wanted.Count; i++)
             if (work.Wanted[i].Item != ItemIds.Custom && !available.Contains(work.Wanted[i].Item))
@@ -519,20 +519,6 @@ public sealed partial class Plugin
         && spec.Values.All(wanted => entry.GetValueOrDefault(wanted.Label) is var value && (wanted.Colors is { } colors
             ? !wanted.Repeated && Colors.Normalize(colors[0]) is { } hex && Equals(value, hex)
             : Same(value, wanted.Repeated ? wanted.Values.Select(number => (float)number).ToArray() : (float)wanted.Values[0])));
-
-    // Whether `spec` names every value of a worn accessory's entry, as a dump or
-    // undo file does. Only such a "custom" entry keeps a custom accessory by its
-    // values; others keep them in order, so one that names only a bone moves the
-    // accessory listed in its place.
-    private static bool Names(AccessorySpec spec, Dictionary<string, object?> entry) =>
-        spec.HasBone && entry.Keys.All(key => key switch
-        {
-            "item" or "bone" => true,
-            "position" => spec.Position != null,
-            "rotation" => spec.Rotation != null,
-            "scale" => spec.Scale != null,
-            _ => spec.Values.Any(value => value.Label == key),
-        });
 
     // A dumped entry as a spec that names every value.
     private static AccessorySpec SpecOf(Dictionary<string, object?> entry) =>
