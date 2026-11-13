@@ -514,7 +514,8 @@ bridge and VRoid shows no dialog. A `.vroidcustomitem` is a zip archive;
 as `TransferableGroupType.N00.Level1.AnimalEar`, which
 `plugin/CustomItemFile.cs`, also built by `tests/protocol`, reads; it refuses
 a `meta.json` over 1 MiB, which would stall the main thread. The file carries
-the accessory's mesh, textures, colours, shape sliders, bone, and placement.
+the accessory's mesh, textures, colours, shape sliders, bone, placement,
+name, and hidden and locked flags.
 
 VRoid keeps a kind's group in the model (the editing model's
 `_transferableGroups`, keyed by group with its `TypeId` and header
@@ -544,7 +545,9 @@ entries keep custom accessories in app order, so the undo's entries keep the
 accessories from before and remove the import (R-EDIT-11) only while VRoid
 lists those as before and the import after them. The bridge checks that, and
 otherwise replaces the undo file with one that keeps what is worn and fails,
-leaving the import worn. The undo leaves the import's group, so built-in
+leaving the import worn. VRoid builds no colour fields for an accessory
+imported hidden or locked, as for one that opens so, so `import` then builds
+them as `open` does. The undo leaves the import's group, so built-in
 accessories of its kind stay refused.
 
 `export` takes an index into `accessories` `worn` and calls
