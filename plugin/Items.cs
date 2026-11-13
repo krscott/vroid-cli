@@ -120,9 +120,10 @@ public sealed partial class Plugin
     private static bool Conflict(Slot a, Slot b) =>
         a.Conflicts.Contains(ItemIds.Kind(b.Type)) || b.Conflicts.Contains(ItemIds.Kind(a.Type));
 
-    // A worn accessory instance: its item, VRoid's name for it, its transferable
-    // and group, its available colours, its shape sliders, and its placement.
-    private sealed record Worn(string Item, string Name, string Id, string Group, object Instance, Swatch[] Swatches,
+    // A worn accessory instance: its item, VRoid's name for it, its transferable,
+    // its group and that group's type (its kind), its available colours, its
+    // shape sliders, and its placement.
+    private sealed record Worn(string Item, string Name, string Id, string Group, string Kind, object Instance, Swatch[] Swatches,
         object[] Parameters, Pose Pose);
 
     // Where an accessory hangs: VRoid's joint name for its bone, and its position,
@@ -146,7 +147,8 @@ public sealed partial class Plugin
 
     // VRoid keeps one group per kind of accessory, such as glasses, so a worn
     // accessory's group names only the first of its kind; its display name's
-    // localization key names its own template.
+    // localization key names its own template. A group an imported accessory
+    // started makes every accessory in it custom.
     private static Worn[] WornAccessories() => Instances().Select(instance =>
     {
         var name = Reflect.Get(instance, "TranslatedDisplayName") as string ?? "";
@@ -154,8 +156,10 @@ public sealed partial class Plugin
         var info = Reflect.Get(instance, "transferableInfo");
         var id = Reflect.Get(info, "Id") as string ?? throw Differs($"the transferable of accessory {name}");
         var group = Reflect.Get(info, "GroupId") as string ?? throw Differs($"the group of accessory {name}");
+        var kind = Reflect.Get(info, "GroupType") as string ?? throw Differs($"the kind of accessory {name}");
+        var resource = Reflect.Get(info, "GroupResourceName") as string ?? throw Differs($"the group resource of accessory {name}");
         var display = Reflect.Call(Reflect.New("VRoidCore.Editing.Query.GetTransferableDisplayNameQuery", id), "Execute", model);
-        var item = ItemIds.AccessoryKey(Reflect.Get(display, "LocalizationKey") as string);
+        var item = ItemIds.Accessory(Reflect.Get(display, "LocalizationKey") as string, resource, AttachmentIds);
         var swatches = new List<Swatch>();
         foreach (var selection in Reflect.Items(Reflect.Get(Reflect.Get(instance, "CategoryColorSelection"), "_colorSelections")))
         {
@@ -179,7 +183,7 @@ public sealed partial class Plugin
             }
             pose = new Pose(bone, Parts("Position", "x", "y", "z"), Parts("Rotation", "x", "y", "z", "w"), Parts("Scale", "x", "y", "z"));
         }
-        return new Worn(item != null && AttachmentIds.Contains(item) ? item : ItemIds.Custom, name, id, group, instance, swatches.ToArray(),
+        return new Worn(item, name, id, group, kind, instance, swatches.ToArray(),
             Reflect.Items(Reflect.Get(instance, "Parameters")).ToArray(), pose);
     }).ToArray();
 
@@ -423,7 +427,7 @@ public sealed partial class Plugin
         var available = AvailableAccessories().Select(accessory => accessory.Item).ToHashSet();
         CheckDefaultBones();
         work.Wanted = accessories.EnumerateArray().Select(SpecOf).ToList();
-        var plan = work.Plan = AccessoryPlan.Of(worn.Select(accessory => new WornAccessory(accessory.Item, accessory.Pose.Bone, accessory.Group)).ToList(),
+        var plan = work.Plan = AccessoryPlan.Of(worn.Select(accessory => new WornAccessory(accessory.Item, accessory.Pose.Bone, accessory.Kind)).ToList(),
             work.Wanted.Select(wanted => new WantedAccessory(wanted.Item, wanted.HasBone, wanted.Bone,
                 AttachmentKinds.GetValueOrDefault(wanted.Item, wanted.Item))).ToList(),
             (i, j) => Satisfies(work.Wanted[i], work.WornEntries[j]));

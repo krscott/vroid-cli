@@ -12,6 +12,7 @@ public static class ItemIds
     private const string BuiltIn = "pixiv/VRoid/";
     private const string Attachments = "pixiv/VRoid/Attachment/";
     private const string AccessoryName = "Model.N00.Transferable.";
+    private const string CustomItems = "user/VRoid/CustomItem/";
     // The CLI's ItemId pattern; "custom" is reserved.
     private static readonly Regex Valid = new("^[A-Za-z0-9_]+$");
 
@@ -43,6 +44,14 @@ public static class ItemIds
         localizationKey != null && localizationKey.StartsWith(AccessoryName)
             ? Checked(localizationKey[AccessoryName.Length..])
             : null;
+
+    /// A worn accessory's item: the built-in template its localization key
+    /// names, or "custom". The key names the template even for an imported
+    /// accessory, but VRoid keeps every accessory of a kind in one group, and a
+    /// group an imported accessory started is a `user/VRoid/CustomItem/...`
+    /// resource, so every accessory in such a group is custom.
+    public static string Accessory(string? localizationKey, string groupResourceName, IReadOnlySet<string> builtIn) =>
+        AccessoryKey(localizationKey) is { } key && builtIn.Contains(key) && !groupResourceName.StartsWith(CustomItems) ? key : Custom;
 
     /// What a category wears, such as `Onepiece`: the last part of its group
     /// type (`TransferableGroupType.N00.Level1.Onepiece`) or of a conflicting
@@ -106,10 +115,10 @@ public static class Placement
         scale.All(factor => factor > 0) ? null : "every factor must be positive";
 }
 
-/// A worn accessory as matching sees it: its item, bone, and the group VRoid
-/// keeps accessories of its kind in, such as every pair of animal ears. A null
-/// bone is VRoid's "None".
-public sealed record WornAccessory(string Item, string? Bone, string Group);
+/// A worn accessory as matching sees it: its item, bone, and kind, the group
+/// type VRoid keeps one group of accessories for, such as every pair of animal
+/// ears. A null bone is VRoid's "None".
+public sealed record WornAccessory(string Item, string? Bone, string Kind);
 
 /// A wanted accessory: its item, its bone if the request names one, and its
 /// kind, the group type a built-in one joins.
@@ -141,7 +150,9 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
     /// one cannot move, every one of that kind is removed and added again: one
     /// first, moved while alone, then copies of it and new ones. "custom" matches
     /// any worn accessory that is not built in, in order, and moves only while
-    /// alone in its group.
+    /// alone in its group. A built-in one is not added to a kind that keeps a
+    /// custom one, since VRoid would add it to that one's group, where it reads
+    /// as custom.
     public static AccessoryPlan Of(IReadOnlyList<WornAccessory> worn, IReadOnlyList<WantedAccessory> wanted,
         Func<int, int, bool>? same = null)
     {
@@ -180,14 +191,23 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
             {
                 plan.Kept.Add((j, i));
                 if (!Moves(i)) continue;
-                if (Enumerable.Range(0, worn.Count).Count(k => used[k] && worn[k].Group == worn[j].Group) > 1)
+                if (Enumerable.Range(0, worn.Count).Count(k => used[k] && worn[k].Kind == worn[j].Kind) > 1)
                     plan.Errors.Add($"Accessories[{i}]: VRoid moves an accessory to another bone only while no other accessory of its kind is worn");
                 else plan.Rebone.Add((j, wanted[i].Bone));
             }
+        var custom = Enumerable.Range(0, worn.Count).Where(j => used[j] && worn[j].Item == ItemIds.Custom).Select(j => worn[j].Kind).ToHashSet();
         foreach (var kind in wanted.Where(entry => entry.Item != ItemIds.Custom).Select(entry => entry.Kind).Distinct())
         {
             var entries = Enumerable.Range(0, wanted.Count).Where(i => wanted[i].Item != ItemIds.Custom && wanted[i].Kind == kind).ToList();
             var kept = entries.Where(i => matched[i] != null).ToList();
+            if (custom.Contains(kind))
+            {
+                // A built-in one of this kind would read as custom, so none is worn or kept.
+                foreach (var i in entries)
+                    plan.Errors.Add($"Accessories[{i}]: VRoid would add {wanted[i].Item} to the group of a worn accessory of its kind that is not "
+                        + "built in, where it would read as custom; remove that one first");
+                continue;
+            }
             // An item VRoid does not offer, which the caller refuses.
             if (entries.Any(i => Bones.Default(wanted[i].Item) == null))
             {

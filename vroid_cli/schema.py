@@ -9,6 +9,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    NonNegativeInt,
     PositiveFloat,
     SerializerFunctionWrapHandler,
     StringConstraints,
@@ -189,6 +190,16 @@ def project_path(value: Path) -> Path:
     return resolved(value, ".vroid", "project")
 
 
+def item_path(value: Path) -> Path:
+    return resolved(value, ".vroidcustomitem", "custom item")
+
+
+def existing_file(path: Path) -> Path:
+    if not path.is_file():
+        raise ValueError(f"{path} is not an existing file")
+    return path
+
+
 def new_file(path: Path) -> Path:
     """Refuse an existing destination or a missing directory (R-EDIT-4, R-VIEW-3)."""
     if path.exists() or path.is_symlink():
@@ -229,10 +240,7 @@ class Open(Model):
     @field_validator("path")
     @classmethod
     def existing(cls, value: Path) -> Path:
-        path = project_path(value)
-        if not path.is_file():
-            raise ValueError(f"{path} is not an existing file")
-        return path
+        return existing_file(project_path(value))
 
 
 class New(Model):
@@ -342,6 +350,41 @@ class Apply(Model):
         return self
 
 
+class Import(Model):
+    """Wear the accessory in a .vroidcustomitem file as a new accessory.
+
+    It reads as "custom" in `accessories` and `dump`; place, recolour, and
+    reshape it with apply. Refused for a file that holds no accessory, and for
+    an accessory of a kind the project wears a built-in one of, such as cat
+    ears from a file while rabbit ears are worn.
+    """
+
+    method: Literal["import"]
+    path: Path
+
+    @field_validator("path")
+    @classmethod
+    def existing(cls, value: Path) -> Path:
+        return existing_file(item_path(value))
+
+
+class Export(Model):
+    """Write a worn accessory to a new .vroidcustomitem file in an existing
+    directory, with its colours, shape sliders, and placement. `import` wears
+    it in any project."""
+
+    method: Literal["export"]
+    index: NonNegativeInt = Field(
+        description="the accessory's position in `accessories` `worn`, from 0"
+    )
+    path: Path
+
+    @field_validator("path")
+    @classmethod
+    def new(cls, value: Path) -> Path:
+        return new_file(item_path(value))
+
+
 class Save(Model):
     """Save the project to a new .vroid path in an existing directory."""
 
@@ -416,6 +459,8 @@ Request = Annotated[
     | Accessories
     | Dump
     | Apply
+    | Import
+    | Export
     | Save
     | Render
     | Thumbnails,
@@ -430,6 +475,8 @@ BridgeRequest = (
     | Accessories
     | Dump
     | Apply
+    | Import
+    | Export
     | Save
     | Render
     | Thumbnails
@@ -534,14 +581,38 @@ class Applied(Model):
     @field_validator("undo")
     @classmethod
     def applies(cls, value: str) -> str:
-        # Agents read the file only when they need it, so check it now.
-        try:
-            text = Path(value).read_text()
-        except OSError as error:
-            raise ValueError(f"cannot read {value}: {error.strerror}") from None
-        if not isinstance(parse(text), Apply):
-            raise ValueError(f"{value} is not an apply request")
-        return value
+        return undo_file(value)
+
+
+def undo_file(value: str) -> str:
+    # Agents read the file only when they need it, so check it now.
+    try:
+        text = Path(value).read_text()
+    except OSError as error:
+        raise ValueError(f"cannot read {value}: {error.strerror}") from None
+    if not isinstance(parse(text), Apply):
+        raise ValueError(f"{value} is not an apply request")
+    return value
+
+
+class Imported(Model):
+    imported: Accessory = Field(
+        description='the new accessory\'s entry, as `accessories` lists it: "custom"'
+    )
+    undo: str = Field(
+        description="path of an apply request, written before the import, that "
+        "removes the imported accessory; apply it with `@PATH`"
+    )
+
+    @field_validator("undo")
+    @classmethod
+    def applies(cls, value: str) -> str:
+        return undo_file(value)
+
+
+class Exported(Model):
+    exported: str
+    bytes: int
 
 
 class Saved(Model):
@@ -574,6 +645,8 @@ RESULTS: dict[str, TypeAdapter[Any]] = {
     "accessories": TypeAdapter(AccessoryList),
     "dump": TypeAdapter(Apply),
     "apply": TypeAdapter(Applied),
+    "import": TypeAdapter(Imported),
+    "export": TypeAdapter(Exported),
     "save": TypeAdapter(Saved),
     "render": TypeAdapter(Rendered),
     "thumbnails": TypeAdapter(Thumbnailed),

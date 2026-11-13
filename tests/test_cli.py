@@ -951,9 +951,14 @@ def test_an_apply_without_a_result_names_its_undo_file(tmp_path: Path) -> None:
     )
 
 
-def test_an_interrupted_apply_names_its_undo_file(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "request_",
+    [APPLY % "0.5", '{"method": "import", "path": "ears.vroidcustomitem"}'],
+)
+def test_an_interrupted_edit_names_its_undo_file(tmp_path: Path, request_: str) -> None:
     # R-EDIT-11: the app keeps going, and may write the undo file later.
     rpc = bridge(tmp_path)
+    (tmp_path / "ears.vroidcustomitem").write_bytes(b"item")
     environment = {k: v for k, v in os.environ.items() if k != "VROID_STATE_DIR"}
     environment["PYTHONPATH"] = os.pathsep.join(
         filter(None, [str(SOURCE), environment.get("PYTHONPATH")])
@@ -961,7 +966,7 @@ def test_an_interrupted_apply_names_its_undo_file(tmp_path: Path) -> None:
     environment["VROID_STATE_DIR"] = str(tmp_path / "state")
     request = rpc / "request.json"
     process = subprocess.Popen(
-        [sys.executable, "-m", "vroid_cli", "test", APPLY % "0.5"],
+        [sys.executable, "-m", "vroid_cli", "test", request_],
         cwd=tmp_path,
         env=environment,
         text=True,
@@ -1098,104 +1103,199 @@ def test_invalid_thumbnails_requests_are_rejected_without_state(
     assert not (tmp_path / "state").exists()
 
 
-def render_files(directory: Path) -> list[str]:
-    return sorted(path.name for path in directory.iterdir() if path.suffix == ".png")
+def published_files(directory: Path) -> list[str]:
+    return sorted(
+        path.name
+        for path in directory.iterdir()
+        if path.suffix in (".png", ".vroidcustomitem")
+    )
 
 
-# Requests whose image the bridge writes and the CLI publishes.
-IMAGES: dict[str, dict[str, Any]] = {
-    "render": {"view": "front"},
-    "thumbnails": {"section": "Outfit", "category": "Tops"},
+# Requests whose file the bridge writes and the CLI publishes, with their
+# other fields and destination.
+PUBLISHED: dict[str, tuple[dict[str, Any], str]] = {
+    "render": ({"view": "front"}, "image.png"),
+    "thumbnails": ({"section": "Outfit", "category": "Tops"}, "image.png"),
+    "export": ({"index": 1}, "ears.vroidcustomitem"),
 }
 
 
-def image_result(request: dict[str, Any], size: int) -> dict[str, Any]:
+def published_result(request: dict[str, Any], size: int) -> dict[str, Any]:
+    if request["method"] == "export":
+        return {"exported": request["path"], "bytes": size}
     result: dict[str, Any] = {"rendered": request["path"], "bytes": size}
     if request["method"] == "thumbnails":
         result |= {"columns": 10, "items": ["159", "Default"]}
     return result
 
 
-def writes_image(
-    image: bytes, *, then: Callable[[], object] = lambda: None, error: str | None = None
+def writes_file(
+    data: bytes, *, then: Callable[[], object] = lambda: None, error: str | None = None
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
-    """A stand-in bridge reply that writes `image` where the request says."""
+    """A stand-in bridge reply that writes `data` where the request says."""
 
     def reply(request: dict[str, Any]) -> dict[str, Any]:
         assert request["path"].startswith("Z:")
-        Path(request["path"][2:]).write_bytes(image)
+        Path(request["path"][2:]).write_bytes(data)
         then()
         if error is not None:
             return {"ok": False, "result": None, "error": error}
-        return {"ok": True, "result": image_result(request, len(image)), "error": None}
+        return {
+            "ok": True,
+            "result": published_result(request, len(data)),
+            "error": None,
+        }
 
     return reply
 
 
-@pytest.mark.parametrize("method", IMAGES)
-def test_images_are_published_at_the_callers_path(tmp_path: Path, method: str) -> None:
-    # R-VIEW-3
+def publish(tmp_path: Path, method: str) -> subprocess.CompletedProcess[str]:
+    fields, name = PUBLISHED[method]
+    return invoke(tmp_path, method, path=name, **fields)
+
+
+@pytest.mark.parametrize("method", PUBLISHED)
+def test_files_are_published_at_the_callers_path(tmp_path: Path, method: str) -> None:
+    # R-VIEW-3, R-EDIT-16
     rpc = bridge(tmp_path)
-    with answer(rpc, writes_image(b"\x89PNG image")) as received:
-        result = invoke(tmp_path, method, path="image.png", **IMAGES[method])
+    name = PUBLISHED[method][1]
+    with answer(rpc, writes_file(b"written")) as received:
+        result = publish(tmp_path, method)
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout) == image_result(
-        {"method": method, "path": str(tmp_path / "image.png")}, 10
+    assert json.loads(result.stdout) == published_result(
+        {"method": method, "path": str(tmp_path / name)}, 7
     )
-    assert (tmp_path / "image.png").read_bytes() == b"\x89PNG image"
-    assert render_files(tmp_path) == ["image.png"]
+    assert (tmp_path / name).read_bytes() == b"written"
+    assert published_files(tmp_path) == [name]
     request = received[0]
-    assert Path(request["path"][2:]).parent == tmp_path
-    assert Path(request["path"]).name.startswith(".vroid-render-")
+    temporary = Path(request["path"][2:])
+    assert temporary.parent == tmp_path
+    assert temporary.suffix == Path(name).suffix
+    if method == "export":
+        assert temporary.name.startswith(".vroid-export-")
+        assert request["index"] == 1
+    else:
+        assert temporary.name.startswith(".vroid-render-")
     if method == "render":
         assert (request["view"], request["frame"]) == ("front", "body")
         assert (request["width"], request["height"]) == (1024, 1024)
-    else:
+    elif method == "thumbnails":
         assert (request["section"], request["category"]) == ("Outfit", "Tops")
 
 
-@pytest.mark.parametrize("method", IMAGES)
-def test_images_never_replace_a_destination_created_meanwhile(
+@pytest.mark.parametrize("method", PUBLISHED)
+def test_files_never_replace_a_destination_created_meanwhile(
     tmp_path: Path, method: str
 ) -> None:
-    # R-VIEW-3
+    # R-VIEW-3, R-EDIT-16
     rpc = bridge(tmp_path)
-    destination = tmp_path / "image.png"
+    destination = tmp_path / PUBLISHED[method][1]
     with answer(
         rpc,
-        writes_image(
-            b"\x89PNG new", then=lambda: destination.write_bytes(b"earlier image")
-        ),
+        writes_file(b"new", then=lambda: destination.write_bytes(b"earlier file")),
     ):
-        result = invoke(tmp_path, method, path="image.png", **IMAGES[method])
+        result = publish(tmp_path, method)
     assert result.returncode == 1
     assert result.stdout == ""
     assert "refusing to overwrite" in result.stderr
-    assert destination.read_bytes() == b"earlier image"
-    assert render_files(tmp_path) == ["image.png"]
+    assert destination.read_bytes() == b"earlier file"
+    assert published_files(tmp_path) == [destination.name]
 
 
-@pytest.mark.parametrize("method", IMAGES)
-def test_failed_images_leave_no_file(tmp_path: Path, method: str) -> None:
-    # R-VIEW-3
+@pytest.mark.parametrize("method", PUBLISHED)
+def test_failed_files_leave_no_file(tmp_path: Path, method: str) -> None:
+    # R-VIEW-3, R-EDIT-16
     error = "Open or create a character first"
     rpc = bridge(tmp_path)
-    with answer(rpc, writes_image(b"\x89PNG partial", error=error)):
-        result = invoke(tmp_path, method, path="image.png", **IMAGES[method])
+    with answer(rpc, writes_file(b"partial", error=error)):
+        result = publish(tmp_path, method)
     assert result.returncode == 1
     assert error in result.stderr
-    assert render_files(tmp_path) == []
+    assert published_files(tmp_path) == []
 
 
-@pytest.mark.parametrize("method", IMAGES)
-def test_images_report_a_missing_bridge_file(tmp_path: Path, method: str) -> None:
+@pytest.mark.parametrize("method", PUBLISHED)
+def test_files_report_a_missing_bridge_file(tmp_path: Path, method: str) -> None:
     rpc = bridge(tmp_path)
     with answer(
-        rpc, lambda r: {"ok": True, "result": image_result(r, 1), "error": None}
+        rpc, lambda r: {"ok": True, "result": published_result(r, 1), "error": None}
     ):
-        result = invoke(tmp_path, method, path="image.png", **IMAGES[method])
+        result = publish(tmp_path, method)
     assert result.returncode == 1
-    assert "cannot link .vroid-render-" in result.stderr
+    assert "cannot link .vroid-" in result.stderr
     assert "No such file or directory" in result.stderr
     assert "hard links" not in result.stderr
-    assert render_files(tmp_path) == []
+    assert published_files(tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    ("request_", "reason"),
+    [
+        ({"method": "import", "path": "ears.zip"}, "path: custom item paths must end"),
+        ({"method": "import", "path": "missing.vroidcustomitem"}, "is not an existing"),
+        ({"method": "import", "path": "ears.vroidcustomitem", "index": 0}, "Extra"),
+        (
+            {"method": "export", "index": 0, "path": "existing.vroidcustomitem"},
+            "path: refusing to overwrite",
+        ),
+        (
+            {"method": "export", "index": 0, "path": "missing/x.vroidcustomitem"},
+            "is not a directory",
+        ),
+        ({"method": "export", "index": -1, "path": "x.vroidcustomitem"}, "index"),
+        ({"method": "export", "index": "0", "path": "x.vroidcustomitem"}, "index"),
+        ({"method": "export", "path": "x.vroidcustomitem"}, "index: Field required"),
+    ],
+)
+def test_invalid_custom_item_requests_are_rejected_without_state(
+    tmp_path: Path, request_: dict[str, Any], reason: str
+) -> None:
+    # R-CLI-3, R-EDIT-16
+    (tmp_path / "ears.vroidcustomitem").write_bytes(b"item")
+    (tmp_path / "existing.vroidcustomitem").write_bytes(b"earlier item")
+    result = run_cli(tmp_path, "test", json.dumps(request_))
+    assert result.returncode == 2
+    assert reason in result.stderr
+    assert (tmp_path / "existing.vroidcustomitem").read_bytes() == b"earlier item"
+    assert not (tmp_path / "x.vroidcustomitem").exists()
+    assert not (tmp_path / "state").exists()
+
+
+IMPORTED = {
+    "item": "custom",
+    "bone": "J_Bip_C_Neck",
+    "position": [0, 0.01, -0.005],
+    "rotation": [0, 0, 0, 1],
+    "scale": [1.25, 1.25, 1.25],
+    "Color": "#3A2A20",
+    "Ear Size (Bigger)": 50,
+}
+
+
+@pytest.mark.parametrize("outcome", ["imported", "refused"])
+def test_import_names_its_undo_file(tmp_path: Path, outcome: str) -> None:
+    # R-EDIT-11, R-EDIT-15
+    rpc = bridge(tmp_path)
+    (tmp_path / "ears.vroidcustomitem").write_bytes(b"item")
+
+    def reply(packet: dict[str, Any]) -> dict[str, Any]:
+        if outcome == "refused":
+            return {"ok": False, "result": None, "error": "not an accessory"}
+        undo = rpc / "undo" / f"{packet['id']}.json"
+        undo.parent.mkdir(exist_ok=True)
+        undo.write_text(
+            json.dumps({"method": "apply", "Accessories": [], "discard_custom": True})
+        )
+        return {"ok": True, "result": {"imported": IMPORTED}, "error": None}
+
+    with answer(rpc, reply) as received:
+        result = invoke(tmp_path, "import", path="ears.vroidcustomitem")
+    assert received[0]["path"] == f"Z:{tmp_path / 'ears.vroidcustomitem'}"
+    if outcome == "refused":
+        assert result.returncode == 1
+        assert "import failed: not an accessory" in result.stderr
+        assert "undo" not in result.stderr
+        return
+    assert result.returncode == 0, result.stderr
+    undo = rpc.resolve() / "undo" / f"{received[0]['id']}.json"
+    assert json.loads(result.stdout) == {"imported": IMPORTED, "undo": str(undo)}

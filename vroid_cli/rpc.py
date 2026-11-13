@@ -115,7 +115,7 @@ def submit(rpc: Path, *, boot: str, method: str, args: dict[str, Any]) -> Any:
             f"{response}; restarting the session marks it as having an unknown "
             "outcome"
         )
-        if method == "apply" and not undo.exists():
+        if method in ("apply", "import") and not undo.exists():
             # The app may still write the undo file and change things later.
             reason += f"; if {undo} appears, apply it to undo any change"
         return RuntimeError(restore(reason))
