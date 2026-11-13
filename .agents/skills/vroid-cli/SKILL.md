@@ -185,15 +185,15 @@ and tails are accessories.
   `width` and `height` default to 1024.
 - `{"method": "new", "base": "Preset_F"}` (or `"Preset_M"`) starts a character
   from VRoid's feminine (or masculine) base instead of `open`; it works
-  offline and wears only built-in items. It has no file until `save`, and one without edits
-  stops without `force`, since `new` recreates it exactly.
+  offline and wears only built-in items. It has no file until `save`, and one
+  without edits stops without `force`, since `new` recreates it exactly.
 - Opening or creating another character requires `save`, `stop`, and `launch`
   first.
 - `stop` refuses while there are unsaved changes or a pending request. Save
   or wait first; send `{"method": "stop", "force": true}` only when discarding
   them is intended.
-- Never repeat a timed-out `open`, `new`, `apply`, or `save` automatically. Inspect
-  `status` and the result file named in the error first.
+- Never repeat a timed-out `open`, `new`, `apply`, or `save` automatically.
+  Inspect `status` and the result file named in the error first.
 
 ## Timing and sandboxes
 

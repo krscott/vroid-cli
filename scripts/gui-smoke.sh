@@ -631,6 +631,7 @@ for round in 1 2; do
         # An edited new character refuses to stop until it is saved.
         if [[ $round == 1 && $base == Preset_M ]]; then
             vroid "$(with_value Body 'Whole Body' 'Head Size' "$(pick "$(value_of Body 'Whole Body' 'Head Size')")" <<<'{"method": "apply"}')" >/dev/null
+            [[ $(modified) == true ]] || fatal "an edited new $base is not marked unsaved"
             if vroid '{"method": "stop"}' >/dev/null 2>"$out/stop.err"; then
                 fatal "stop discarded an edited new character"
             fi

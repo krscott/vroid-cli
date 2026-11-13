@@ -708,7 +708,7 @@ public sealed partial class Plugin : BasePlugin
     // Opens or creates the character, then waits for its editor and first rebuild.
     private static IEnumerable<bool> Load(Action start)
     {
-        if (loaded) throw new InvalidOperationException("A character is already open or loading; save, then restart the session to open or create another");
+        if (loaded) throw new InvalidOperationException("A character is already open or loading; restart the session to open or create another, saving first if one is open");
         loaded = true;
         var before = rebuilt;
         start();
