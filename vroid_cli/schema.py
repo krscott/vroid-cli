@@ -159,9 +159,10 @@ class Accessory(BaseModel):
     )
     name: str | None = Field(
         None,
-        description="the name VRoid's accessory list shows; null is VRoid's "
-        "default name for the item, in the app's language. Omit it to keep a worn "
-        "accessory's name, or to add one with the default name.",
+        description="a name the user gave it, which VRoid's accessory list shows "
+        "instead of the item's name; null is VRoid's default name for the item, "
+        "in the app's language. Omit it to keep a worn accessory's name, or to add "
+        "one with the default name.",
         json_schema_extra=no_default,
     )
     hidden: bool | None = Field(
@@ -489,7 +490,10 @@ class ItemList(Model):
 
 class AvailableAccessory(Model):
     item: str
-    name: str
+    name: str = Field(
+        description="VRoid's name for the item, to recognise it; leave it out of an "
+        "entry you add, whose `name` would rename the accessory"
+    )
 
 
 class AccessoryList(Model):

@@ -124,7 +124,7 @@ public sealed partial class Plugin
     // and group, its available colours, its shape sliders, its placement, its
     // flags, and its display name.
     private sealed record Worn(string Item, string Name, string Id, string Group, object Instance, Swatch[] Swatches,
-        object[] Parameters, Pose Pose, Flags Flags, object DisplayName);
+        object[] Parameters, Pose Pose, Flags Flags, object? DisplayName);
 
     // The name the user gave an accessory, or null for VRoid's default name for its
     // item, and whether VRoid hides and locks it.
@@ -159,8 +159,7 @@ public sealed partial class Plugin
         var info = Reflect.Get(instance, "transferableInfo");
         var id = Reflect.Get(info, "Id") as string ?? throw Differs($"the transferable of accessory {name}");
         var group = Reflect.Get(info, "GroupId") as string ?? throw Differs($"the group of accessory {name}");
-        var display = Reflect.Call(Reflect.New("VRoidCore.Editing.Query.GetTransferableDisplayNameQuery", id), "Execute", model)
-            ?? throw Differs($"the name of accessory {name}");
+        var display = Reflect.Call(Reflect.New("VRoidCore.Editing.Query.GetTransferableDisplayNameQuery", id), "Execute", model);
         var item = ItemIds.AccessoryKey(Reflect.Get(display, "LocalizationKey") as string);
         var swatches = new List<Swatch>();
         foreach (var selection in Reflect.Items(Reflect.Get(Reflect.Get(instance, "CategoryColorSelection"), "_colorSelections")))
@@ -469,7 +468,7 @@ public sealed partial class Plugin
             var bone = spec.HasBone ? spec.Bone : matched != null ? matched.Pose.Bone : Bones.Default(spec.Item);
             if (bone == null && spec.Places) errors.Add($"{path}: has no bone, so it takes no position, rotation, or scale");
             // A built-in accessory's name always has a key; a custom one may have only the user's name.
-            if (spec.HasName && spec.Name == null && matched != null && !HasDefaultName(matched))
+            if (spec.HasName && spec.Name == null && matched != null && matched.Flags.Name != null && !HasDefaultName(matched))
                 errors.Add($"{path}/name: {matched.Name} has no default name to go back to; give a name");
             foreach (var (key, vector, check) in new (string, float[]?, Func<IReadOnlyList<float>, string?>)[]
                      {
@@ -598,8 +597,8 @@ public sealed partial class Plugin
         }
     }
 
-    // Removes, moves, adds, places, recolours, and reshapes accessories to match
-    // the request.
+    // Removes, moves, adds, places, recolours, reshapes, renames, hides, and locks
+    // accessories to match the request.
     private static IEnumerable<bool> ChangeAccessories(Outfitting work, Dictionary<string, object> undo)
     {
         if (work.Plan is not { } plan) yield break;
@@ -700,7 +699,7 @@ public sealed partial class Plugin
         if (actual != bone) throw new InvalidOperationException($"{path}/bone reads {actual ?? "None"} after setting {bone ?? "None"}");
     }
 
-    // Sets the placement, colours, and shape sliders `spec` names on the accessory
+    // Sets the placement, colours, shape sliders, name, and flags `spec` names on the accessory
     // listed at `index`, waiting for the rebuild after each change and reading it
     // back. An added accessory's labels and bounds are checked here (R-EDIT-13).
     private static IEnumerable<bool> Fit(int index, AccessorySpec spec, string path)
@@ -760,50 +759,76 @@ public sealed partial class Plugin
     // opens, and builds none for one that is hidden or locked then, which its own
     // editor shows too. So `open` briefly shows and unlocks each such accessory while
     // it builds them again, then restores both; the project ends as it opened.
+    // Only these reads run for every accessory, so an accessory `dump` cannot read
+    // does not stop `open`.
     private static IEnumerable<bool> RebuildAccessoryColors()
     {
         var mode = Reflect.Get(Root, "EditMode") ?? throw Differs("the editor's section");
+        // Flags to set back, latest last, so a failure still restores them.
+        var restore = new List<(int Index, string Key)>();
         try
         {
             foreach (var step in EnterAccessories()) yield return step;
             static bool HasColors(object instance) =>
                 Reflect.Items(Reflect.Get(Reflect.Get(instance, "CategoryColorSelection"), "_colorSelections")).Any();
-            var worn = WornAccessories();
-            for (var i = 0; i < worn.Length; i++)
+            var instances = Instances();
+            for (var i = 0; i < instances.Length; i++)
             {
-                var flags = worn[i].Flags;
-                if (!(flags.Hidden || flags.Locked) || HasColors(worn[i].Instance)) continue;
-                var path = $"Accessories/{worn[i].Name}";
-                foreach (var step in SetFlag(i, "hidden", false, path)) yield return step;
-                foreach (var step in SetFlag(i, "locked", false, path)) yield return step;
-                var instance = Instances()[i];
-                Reflect.Call(instance, "InitColorSelection");
-                if (!HasColors(instance)) throw Differs($"the colours of accessory {worn[i].Name}");
-                foreach (var step in SetFlag(i, "locked", flags.Locked, path)) yield return step;
-                foreach (var step in SetFlag(i, "hidden", flags.Hidden, path)) yield return step;
+                var flagged = new[] { ("hidden", "IsVisible"), ("locked", "IsEditable") }
+                    .Where(flag => Reflect.Get(instances[i], flag.Item2) is false).Select(flag => flag.Item1).ToArray();
+                if (flagged.Length == 0 || HasColors(instances[i])) continue;
+                var path = $"Accessories/{Reflect.Get(instances[i], "TranslatedDisplayName")}";
+                foreach (var key in flagged)
+                {
+                    restore.Add((i, key));
+                    foreach (var step in SetFlag(i, key, false, path)) yield return step;
+                }
+                // One that has no colours at all still has none.
+                Reflect.Call(Instances()[i], "InitColorSelection");
+                while (restore.Count > 0)
+                {
+                    foreach (var step in SetFlag(i, restore[^1].Key, true, path)) yield return step;
+                    restore.RemoveAt(restore.Count - 1);
+                }
             }
         }
         finally
         {
+            // Sent without waiting, since a finally block cannot wait for the rebuild.
+            foreach (var (index, key) in Enumerable.Reverse(restore))
+                try
+                {
+                    FlagCommand(WornAccessories()[index], key, true);
+                }
+                catch (Exception error)
+                {
+                    Diagnostics.LogError($"Could not set accessory {index} {key} again: {error}");
+                }
             Reflect.Call(Root, "set_EditMode", mode);
         }
     }
 
-    private static bool HasDefaultName(Worn worn) => Reflect.Get(worn.DisplayName, "LocalizationKey") is string;
+    private static bool HasDefaultName(Worn worn) => Reflect.Get(worn.DisplayName, "LocalizationKey") is string { Length: > 0 };
 
-    // Hides or locks the accessory listed at `index`, one rebuild each.
-    private static IEnumerable<bool> SetFlag(int index, string key, bool value, string path)
+    private static bool Flag(Flags flags, string key) => key == "hidden" ? flags.Hidden : flags.Locked;
+
+    private static void FlagCommand(Worn worn, string key, bool value)
     {
-        var worn = WornAccessories()[index];
-        bool Of(Flags flags) => key == "hidden" ? flags.Hidden : flags.Locked;
-        if (Of(worn.Flags) == value) yield break;
-        var before = rebuilt;
         modified = true;
         if (key == "hidden") Run(worn, "SetTransferableVisibilityCommand", worn.Id, !value);
         else Run(worn, "SetTransferableEditabilityCommand", worn.Id, !value);
+    }
+
+    // Sets `hidden` or `locked` of the accessory listed at `index`, one rebuild each.
+    private static IEnumerable<bool> SetFlag(int index, string key, bool value, string path)
+    {
+        var worn = WornAccessories()[index];
+        if (Flag(worn.Flags, key) == value) yield break;
+        var before = rebuilt;
+        FlagCommand(worn, key, value);
         Changed.Add($"{path}/{key}");
         while (rebuilt == before || updating) yield return true;
-        if (Of(WornAccessories()[index].Flags) != value) throw new InvalidOperationException($"{path}/{key} reads {!value} after setting {value}");
+        if (Flag(WornAccessories()[index].Flags, key) != value) throw new InvalidOperationException($"{path}/{key} reads {!value} after setting {value}");
     }
 
     // Renames the accessory listed at `index` as VRoid's Rename dialog does, keeping
@@ -816,7 +841,8 @@ public sealed partial class Plugin
         object display;
         if (name != null)
         {
-            display = Reflect.Call(worn.DisplayName, "Clone") ?? throw Differs($"how to rename accessory {worn.Name}");
+            display = worn.DisplayName == null ? Reflect.New("VRoidCore.Protobuf.LocalizedString")
+                : Reflect.Call(worn.DisplayName, "Clone") ?? throw Differs($"how to rename accessory {worn.Name}");
             Reflect.Call(display, "set_UserDefinedString", name);
         }
         else

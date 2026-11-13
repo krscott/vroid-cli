@@ -19,9 +19,9 @@ usage() {
         'cat ears and a refused cat tail, recolours the new top, undoing that' \
         'and a later change of top, saves a copy, renders each view, draws the' \
         'thumbnails of those two categories, restarts, checks the saved values,' \
-        'renders the hidden cat ears shown, and applies the original template.' \
-        'Editor screenshots before and after the edit land in the artifact' \
-        'directory.' \
+        'renders the hidden cat ears shown and named by default, and applies' \
+        'the original template. Editor screenshots before and after the edit' \
+        'land in the artifact directory.' \
         'SESSION must be stopped. Set VROID_CLI to choose the vroid-cli binary.'
 }
 
@@ -275,7 +275,7 @@ items=('Hair|Front' 'Outfit|Tops')
 ears='[{"item": "CatEar", "Color": "#3A2A20", "bone": "J_Bip_C_Neck", "position": [0, 0.01, -0.005],
     "rotation": [0.0871557, 0, 0, 0.9961947], "scale": [1.25, 1.25, 1.25], "Ear Size (Bigger)": 50,
     "name": "Smoke Ears", "hidden": true, "locked": true},
-    {"item": "RabbitEar", "Color": "#F0F0F0"}]'
+    {"item": "RabbitEar", "Color": "#F0F0F0", "name": null}]'
 
 launch
 # The first launch creates a new session's directory.
@@ -599,9 +599,13 @@ front='Hair|Front|Main Color'
 actual=$(value_of Hair Back 'Main Color')
 same "$actual" "${expected[$front]}" || fatal "Hair/Back Main Color is $actual, not Front's"
 # A hidden accessory is left out of renders, as VRoid's editor leaves it out.
+# Showing the cat ears also gives them their default name back.
 render front body 256 512 "$out/hidden-ears.png" >/dev/null
-vroid '{"method": "accessories"}' | jq -c '{method: "apply", Accessories: [.worn[] | if .item == "CatEar" then {item, hidden: false} else {item} end]}' |
+vroid '{"method": "accessories"}' |
+    jq -c '{method: "apply", Accessories: [.worn[] | if .item == "CatEar" then {item, hidden: false, name: null} else {item} end]}' |
     vroid - >/dev/null
+vroid '{"method": "accessories"}' | jq -e '[.worn[] | select(.item == "CatEar") | .name == null and .hidden == false] == [true]' >/dev/null ||
+    fatal "the cat ears are not shown with their default name"
 render front body 256 512 "$out/shown-ears.png" >/dev/null
 ! cmp -s "$out/hidden-ears.png" "$out/shown-ears.png" ||
     fatal "rendering the cat ears hidden and shown gives one image; see $out/hidden-ears.png"

@@ -326,7 +326,7 @@ def test_bridge_from_an_older_protocol_is_refused(tmp_path: Path) -> None:
         ),
         (
             '{"method": "apply", "Accessories": [{"item": "CatEar", "name": 3}]}',
-            "Accessories.0.name",
+            "Accessories.0.name: Input should be a valid string",
         ),
         (
             '{"method": "apply", "Accessories": [{"item": "CatEar", "bone": 3}]}',

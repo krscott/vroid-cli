@@ -455,12 +455,13 @@ sit on their default bone, except copies of one item on one other bone, and
 
 `Accessories` in a template is every accessory to wear. Built-in accessories
 of one item are interchangeable, so `apply` keeps for each wanted one the
-first unmatched worn one of its item whose entry already holds what it names,
-then one on its wanted bone, then for one that names no bone one on the
-default bone, then any of its item; `custom` matches any worn
-accessory that is not built in, in order. It removes the other worn ones from
-the end, moves a kept one that is alone in its kind, then adds the rest and
-sets their placement, colours, and shape sliders, reading each back. When a
+first unmatched worn one of its item whose entry already holds what it names
+(on the default bone, for one that names no bone), then one on its wanted
+bone, then for one that names no bone one on the default bone, then any of its
+item; `custom` matches a worn accessory that is not built in whose entry holds
+what it names, then any, in order. It removes the other worn ones from the end,
+moves a kept one that is alone in its kind, then adds the rest and sets their
+placement, colours, shape sliders, name, and flags, reading each back. When a
 kept one must move while others of its kind stay, or an added one must start
 away from its default bone while others are worn, `apply` rebuilds that kind:
 it removes every one, adds the first one that is away from its default and
@@ -486,8 +487,9 @@ Rename dialog keeps the display name's `LocalizationKey`, which names the
 template, so `apply` clones the display name and sets only that string; a new
 display name without the key would read as `custom`. Null builds a display
 name from the key and `FallbackString` alone, which a custom accessory without
-a key cannot have, so `apply` refuses it there. `""` is a name, which VRoid's
-dialog cannot enter but saves and reopens. `dump` always writes the three keys,
+a key cannot have, so `apply` refuses to change such a name to null. `""` is a
+name, which VRoid's dialog cannot enter but saves and reopens. `dump` always
+writes the three keys,
 since an omitted key keeps the worn value, so a template that left out the
 defaults could not restore them (R-EDIT-7, R-EDIT-11).
 `SetTransferableVisibilityCommand(transferableId, bool)` and

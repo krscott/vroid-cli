@@ -51,12 +51,12 @@ in the Face and Body editors and the colour fields in the Face, Hairstyle, and
 Body editors, sets the base and shade colours of built-in outfit items, selects
 VRoid's built-in items (hairstyle parts, face parts and presets, body presets,
 outfit items), draws a category's built-in item thumbnails labelled with their
-identifiers, adds, removes, recolours, places, reshapes, hides, locks, and
-renames built-in accessories (glasses, cat and rabbit ears, cat, fox, and
-rabbit tails, hats), including their bone and shape sliders, renders the
-character to PNG from the front, three-quarter, side, or back, and saves
-projects. It can't change outfit textures or the colours of custom items,
-import or create custom items, create characters, or export VRM.
+identifiers, adds, removes, recolours, places, and reshapes built-in
+accessories (glasses, cat and rabbit ears, cat, fox, and rabbit tails, hats),
+including their bone and shape sliders, hides, locks, and renames any worn
+accessory, renders the character to PNG from the front, three-quarter, side,
+or back, and saves projects. It can't change outfit textures or the colours of
+custom items, import or create custom items, create characters, or export VRM.
 To see the character, use `render`, not screenshots of the editor window. Edits
 go through `vroid-cli`, never Framewisp input. When a request needs anything
 vroid-cli can't do, do the parts it can and tell the user which parts you
@@ -141,11 +141,12 @@ and tails are accessories.
   `[sin(θ/2), 0, 0, cos(θ/2)]`. `"bone": null` is VRoid's None, with no
   placement. An omitted key keeps a worn accessory's value, or VRoid's default
   for an added one, whose sliders are checked only once it is worn.
-- An entry's `name` is the name VRoid's accessory list shows, or null for
-  VRoid's default name; `hidden` and `locked` are VRoid's Show / Hide and
-  Lock / Unlock. `dump` always lists all three. `render` leaves hidden
-  accessories out. A lock guards only VRoid's own editor: `apply` still
-  changes and removes locked accessories.
+- An entry's `name` is a name the user gave it, which VRoid's accessory list
+  shows, or null for VRoid's default name; leave it out when adding one from
+  `available`, whose `name` is only VRoid's name for the item. `hidden` and
+  `locked` are VRoid's Show / Hide and Lock / Unlock. `dump` always lists all
+  three. `render` leaves hidden accessories out. A lock guards only VRoid's
+  own editor: `apply` still changes and removes locked accessories.
 - `accessories` `sliders` holds one list per `worn` entry, in the same order:
   its shape sliders with `label`, `value`, `min`, and `max`, as `parameters`
   lists them. Bounds differ by slider, such as 0 to 100 for "Ear Size
