@@ -147,16 +147,17 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
     /// kind is worn; it adds one on its default bone, and a duplicate copies the
     /// item and bone. So the accessories of one kind sit on their default bone,
     /// except copies of one item on one other bone. Built-in accessories of one
-    /// item are interchangeable: a wanted one that names its bone keeps a worn
-    /// one that `same` says already matches it, then one on its wanted bone; one
-    /// that names no bone keeps one on the default bone, then any. When a kept
+    /// item are interchangeable: a wanted one keeps a worn one that `same` says
+    /// already matches it, first among those on the default bone if it names no
+    /// bone; then one that names its bone keeps one on that bone, and one that
+    /// names no bone keeps one on the default bone, then any. When a kept
     /// one cannot move, every one of that kind is removed and added again: one
     /// first, moved while alone, then copies of it and new ones. "custom" matches
-    /// any worn accessory that is not built in, in order, since equal values do
-    /// not make two of them the same, and moves only while alone in its kind.
-    /// VRoid keeps a kind's group after its last accessory is removed, and adds
-    /// a built-in one to a group an import started, where it reads as custom,
-    /// so none is added to the `imported` kinds.
+    /// any worn accessory that is not built in, in order, which is its only
+    /// identity, and moves only while alone in its kind. VRoid keeps a kind's
+    /// group after its last accessory is removed, and adds a built-in one to a
+    /// group an import started, where it reads as custom, so none is added to
+    /// the `imported` kinds.
     public static AccessoryPlan Of(IReadOnlyList<WornAccessory> worn, IReadOnlyList<WantedAccessory> wanted,
         Func<int, int, bool>? same = null, IReadOnlySet<string>? imported = null)
     {
@@ -175,7 +176,9 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
         bool BuiltIn(int i) => wanted[i].Item != ItemIds.Custom;
         foreach (var pass in new Func<int, int, bool>[]
                  {
-                     (i, j) => BuiltIn(i) && wanted[i].HasBone && same != null && same(i, j),
+                     (i, j) => BuiltIn(i) && same != null && same(i, j)
+                         && (wanted[i].HasBone || worn[j].Bone == Bones.Default(wanted[i].Item)),
+                     (i, j) => BuiltIn(i) && same != null && same(i, j),
                      (i, j) => BuiltIn(i) && wanted[i].HasBone && worn[j].Bone == wanted[i].Bone,
                      (i, j) => BuiltIn(i) && !wanted[i].HasBone && worn[j].Bone == Bones.Default(wanted[i].Item),
                      (i, j) => BuiltIn(i) && !wanted[i].HasBone,
