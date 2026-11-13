@@ -216,7 +216,7 @@ public sealed partial class Plugin : BasePlugin
     }
 
     private static object Main => main ?? throw new InvalidOperationException("App is not ready");
-    private static object Root => root ?? throw new InvalidOperationException("Open a project first");
+    private static object Root => root ?? throw new InvalidOperationException("Open or create a character first");
 
     // In app order: the editor tabs run Face, Hairstyle, Body, Outfit.
     private static readonly string[] Sections = { "Face", "Hair", "Body", "Outfit" };
@@ -702,6 +702,16 @@ public sealed partial class Plugin : BasePlugin
         }
     }
 
+    // Opens or creates the character, then waits for its editor and first rebuild.
+    private static IEnumerable<bool> Load(Action start)
+    {
+        if (root != null) throw new InvalidOperationException("A character is already open; save, then restart the session to open or create another");
+        var before = rebuilt;
+        start();
+        while (root == null || rebuilt == before || updating) yield return true;
+        modified = false;
+    }
+
     private static IEnumerable<bool> Execute(Request request)
     {
         while (updating) yield return true;
@@ -709,14 +719,24 @@ public sealed partial class Plugin : BasePlugin
         {
             case "open":
             {
-                if (root != null) throw new InvalidOperationException("A project is already open; save, then restart the session to open another");
                 var path = request.Text("path");
                 if (!File.Exists(path)) throw new ArgumentException("Project must be an existing file");
-                var before = rebuilt;
-                Reflect.Call(Main, "ImportFileAndMoveToEditRoot", path, false, false);
-                while (root == null || rebuilt == before || updating) yield return true;
-                modified = false;
+                foreach (var step in Load(() => Reflect.Call(Main, "ImportFileAndMoveToEditRoot", path, false, false))) yield return step;
                 result = new { opened = path };
+                break;
+            }
+            case "new":
+            {
+                var name = request.Text("base");
+                // The start screen's base dialog (BaseSelectDialogViewModel) offers these.
+                var variant = name switch
+                {
+                    "Preset_F" => "F00",
+                    "Preset_M" => "M00",
+                    _ => throw new ArgumentException($"Unknown base {name}"),
+                };
+                foreach (var step in Load(() => Reflect.Call(Main, "InitializeCurrentFileAndMoveToEditRoot", name, variant))) yield return step;
+                result = new { created = name };
                 break;
             }
             case "categories":
@@ -800,7 +820,7 @@ public sealed partial class Plugin : BasePlugin
             {
                 _ = Root;
                 var origin = Reflect.Get(updater, "ModelOrigin")
-                    ?? throw new InvalidOperationException("The model is not loaded; open a project first");
+                    ?? throw new InvalidOperationException("The model is not loaded; open or create a character first");
                 var png = CharacterRender.Png(origin, Framing.ParseView(request.Text("view")), Framing.ParseFrame(request.Text("frame")),
                     request.Body.GetProperty("width").GetInt32(), request.Body.GetProperty("height").GetInt32());
                 var path = request.Text("path");

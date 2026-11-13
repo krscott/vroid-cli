@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Drive a real session through edit, save, render, restart, reopen, and a
-# template round trip, checking R-EDIT-1, R-EDIT-3, R-EDIT-5, R-EDIT-6,
-# R-EDIT-7, R-EDIT-8, R-EDIT-9, R-EDIT-11, R-EDIT-12, R-EDIT-13, R-VIEW-1,
-# R-VIEW-2, and R-VIEW-4.
+# template round trip, then new characters, checking R-EDIT-1, R-EDIT-3,
+# R-EDIT-5, R-EDIT-6, R-EDIT-7, R-EDIT-8, R-EDIT-9, R-EDIT-11, R-EDIT-12,
+# R-EDIT-13, R-EDIT-14, R-VIEW-1, R-VIEW-2, and R-VIEW-4.
 # Needs graphics access.
 set -euo pipefail
 shopt -s failglob
@@ -19,7 +19,8 @@ usage() {
         'cat tail, recolours the new top,' \
         'undoing that and a later change of top, saves a copy, renders' \
         'each view, draws the thumbnails of those two categories, restarts,' \
-        'checks the saved values, and applies the original template. Editor' \
+        'checks the saved values, and applies the original template. It then' \
+        'creates a character from each base twice, restarting between them. Editor' \
         'screenshots before and after the edit land in the artifact directory.' \
         'SESSION must be stopped. Set VROID_CLI to choose the vroid-cli binary.'
 }
@@ -552,7 +553,7 @@ inputs_before=$(input_events)
 if render front body 64 64 "$out/unopened.png" >/dev/null 2>"$out/unopened.err"; then
     fatal "render without an open project succeeded"
 fi
-grep -qiF 'open a project' "$out/unopened.err" || fatal "render without a project: $(<"$out/unopened.err")"
+grep -qiF 'open or create a character' "$out/unopened.err" || fatal "render without a project: $(<"$out/unopened.err")"
 shopt -u failglob
 leftovers=("$out"/unopened.png "$out"/.vroid-render-*)
 shopt -s failglob
@@ -600,5 +601,41 @@ jq -e --slurpfile original "$out/original.json" '. == $original[0]' "$out/restor
 inputs_after=$(input_events)
 ((inputs_after == inputs_before)) || fatal "input log grew from $inputs_before to $inputs_after events"
 vroid '{"method": "stop", "force": true}' >/dev/null
+
+# Each base creates a character that wears only built-in items, returns after
+# its rebuild, and dumps the same in every app instance (R-EDIT-6, R-EDIT-14).
+for round in 1 2; do
+    for base in Preset_F Preset_M; do
+        launch
+        jq -cn --arg base "$base" '{method: "new", base: $base}' | vroid - |
+            jq -e --arg base "$base" '.created == $base' >/dev/null || fatal "new $base reported another base"
+        vroid '{"method": "status"}' | jq -e '.bridge.rebuilt >= 1 and .bridge.updating == false and .bridge.modified == false' >/dev/null ||
+            fatal "new $base returned before a completed rebuild, or as unsaved"
+        dump=$out/new-$base-$round.json
+        vroid '{"method": "dump"}' >"$dump"
+        jq -e --arg base "$base" '.Body["Whole Body"].item == $base and ([.. | .item? | select(. == "custom")] | length == 0)' "$dump" >/dev/null ||
+            fatal "new $base is not on its base or wears an item that is not built in; see $dump"
+        if ((round == 1)); then
+            image=$out/new-$base.png
+            render front body 256 512 "$image" >/dev/null
+            check_png render "$image" body 256 512
+        else
+            cmp -s "$out/new-$base-1.json" "$dump" || fatal "new $base dumps differently after a restart; compare $out/new-$base-1.json and $dump"
+        fi
+        if jq -cn --arg path "$source" '{method: "open", path: $path}' | vroid - >/dev/null 2>"$out/reopen.err"; then
+            fatal "open after new $base succeeded"
+        fi
+        grep -qF 'already open' "$out/reopen.err" || fatal "open after new $base: $(<"$out/reopen.err")"
+        # An edited new character saves, and only a saved one stops without force.
+        if [[ $round == 1 && $base == Preset_M ]]; then
+            vroid "$(with_value Body 'Whole Body' 'Head Size' "$(pick "$(value_of Body 'Whole Body' 'Head Size')")" <<<'{"method": "apply"}')" >/dev/null
+            if vroid '{"method": "stop"}' >/dev/null 2>&1; then
+                fatal "stop discarded an edited new character"
+            fi
+            jq -cn --arg path "$out/new.vroid" '{method: "save", path: $path}' | vroid - >/dev/null
+        fi
+        vroid '{"method": "stop"}' >/dev/null
+    done
+done
 
 jq -n --arg project "$edited" '{ok: true, project: $project}'
