@@ -104,13 +104,21 @@ public sealed partial class Plugin
         var now = WornAccessories();
         var added = now[^1];
         // The undo file holds for the accessories from before only if VRoid lists
-        // them as before, followed by the import; otherwise take the import off.
+        // them as before, followed by the import.
         if (!now.SkipLast(1).Select(accessory => accessory.Id).SequenceEqual(worn.Select(accessory => accessory.Id))
             || added.Kind != kind || added.Item != ItemIds.Custom)
         {
-            var index = Array.FindIndex(now, accessory => !worn.Any(other => other.Id == accessory.Id));
-            if (index >= 0) foreach (var step in RemoveAccessory(index)) yield return step;
-            throw Differs($"where VRoid lists the imported {file}, which it took off again; VRoid keeps the group of its kind");
+            var ids = worn.Select(accessory => accessory.Id).ToHashSet();
+            var fresh = Enumerable.Range(0, now.Length).Where(i => !ids.Contains(now[i].Id)).ToArray();
+            var removed = fresh.Length == 1 && now[fresh[0]].Item == ItemIds.Custom && now[fresh[0]].Kind == kind;
+            if (removed)
+                foreach (var step in RemoveAccessory(fresh[0])) yield return step;
+            // Its entries could match the wrong custom accessories, so the undo
+            // file now keeps whatever is worn.
+            undo = new Dictionary<string, object> { ["method"] = "apply", ["Accessories"] = AccessoryList(WornAccessories()) };
+            rpc.WriteUndo(request, undo);
+            throw Differs($"where VRoid lists the imported {file}; "
+                + (removed ? "it was taken off again, and VRoid keeps the group of its kind" : "it may still be worn"));
         }
         result = new { imported = AccessoryEntry(added) };
     }

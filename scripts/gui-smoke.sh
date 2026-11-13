@@ -737,9 +737,11 @@ if vroid '{"method": "apply", "Accessories": [{"item": "RabbitEar"}]}' >/dev/nul
 fi
 grep -qF 'Report this VRoid limit to the user' "$out/rabbit-after-undo.err" ||
     fatal "built-in ears after an undone import: $(<"$out/rabbit-after-undo.err")"
-# The ears import again into the group VRoid kept, and a second import, while
-# the first is worn, joins it and reads back the same; its undo file removes
-# only the second (R-EDIT-11, R-EDIT-15).
+# The ears import again into the group VRoid kept, listed after a tail whose
+# group is newer, and a second import, while the first is worn, joins it and
+# reads back the same; its undo file removes only the second (R-EDIT-11,
+# R-EDIT-15).
+vroid '{"method": "apply", "Accessories": [{"item": "CatTail"}]}' >/dev/null
 import_ears=$(jq -cn --arg path "$ears_file" '{method: "import", path: $path}')
 vroid "$import_ears" | jq -e '.imported.item == "custom"' >/dev/null || fatal "the ears do not import into their kept group"
 vroid '{"method": "dump"}' >"$out/before-second-import.json"
