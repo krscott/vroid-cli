@@ -16,14 +16,9 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
+      # The flake check runs the Python and bridge protocol tests from `just test`.
       - name: Check
         run: nix develop -c just check
-
-      - name: Test
-        run: nix develop -c just test
-
-      - name: Build
-        run: nix build -L
 
       - name: Run
         run: nix run -L . -- --help
