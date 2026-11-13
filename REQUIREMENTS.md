@@ -170,7 +170,8 @@ backfill unrelated requirements.
   project. It saves at least one value of each kind `apply` can set, including
   an item in a Hair and an Outfit category, an Outfit colour, and an accessory
   with a colour, a bone other than its default, a position, rotation and scale,
-  and a shape slider, and passes only if each reads back unchanged.
+  a shape slider, a custom name, and hidden and locked set, and passes only if
+  each reads back unchanged.
 
 - **R-EDIT-2** [test] `apply` rejects a value that is not finite, or a colour
   that is not `#RRGGBB`, before contacting the app.
@@ -276,8 +277,9 @@ backfill unrelated requirements.
 
   Manual test: `just gui-smoke` applies the undo file of a value `apply`, of an
   item and accessory `apply`, and of an `apply` that removes one of two
-  accessories of one kind after moving it to another bone, placing it and
-  reshaping it, and compares `dump` with one taken before each.
+  accessories of one kind after moving it to another bone, placing it,
+  reshaping it, renaming it, and hiding and locking it, and compares `dump`
+  with one taken before each.
 
 - **R-EDIT-12** [manual] Setting the colour of a built-in outfit item keeps it
   the same built-in item.

@@ -115,13 +115,13 @@ Template = Annotated[
 
 Vector3 = Annotated[list[float], Field(min_length=3, max_length=3)]
 Quaternion = Annotated[list[float], Field(min_length=4, max_length=4)]
-# Placement keys of an accessory entry, which are not VRoid labels.
-PLACEMENT = ("bone", "position", "rotation", "scale")
+# An accessory entry's keys, besides its item, that are not VRoid labels.
+ENTRY_KEYS = ("bone", "position", "rotation", "scale", "name", "hidden", "locked")
 
 
 class Accessory(BaseModel):
-    """One worn accessory: its item, placement, and its colours and shape
-    sliders, keyed by label."""
+    """One worn accessory: its item, placement, name, visibility, and lock, and
+    its colours and shape sliders, keyed by label."""
 
     model_config = ConfigDict(
         strict=True, extra="allow", allow_inf_nan=False, frozen=True
@@ -157,20 +157,40 @@ class Accessory(BaseModel):
         description="positive [x, y, z] factors; [1, 1, 1] is the default",
         json_schema_extra=omittable,
     )
+    name: str | None = Field(
+        None,
+        description="the name VRoid's accessory list shows; null is VRoid's "
+        "default name for the item, in the app's language. Omit it to keep a worn "
+        "accessory's name, or to add one with the default name.",
+        json_schema_extra=no_default,
+    )
+    hidden: bool | None = Field(
+        None,
+        description="whether VRoid hides it, which leaves it out of `render`; "
+        "false is the default",
+        json_schema_extra=omittable,
+    )
+    locked: bool | None = Field(
+        None,
+        description="whether VRoid's editor locks it against changes; apply "
+        "still changes and removes it. false is the default",
+        json_schema_extra=omittable,
+    )
 
-    @field_validator("position", "rotation", "scale", mode="before")
+    @field_validator("position", "rotation", "scale", "hidden", "locked", mode="before")
     @classmethod
     def not_null(cls, value: Any) -> Any:
         # Unlike a null bone, null has no meaning here; omit the key instead.
         if value is None:
-            raise ValueError("give an array of numbers, or omit it to keep the value")
+            raise ValueError("give a value, or omit it to keep the current one")
         return value
 
     @model_serializer(mode="wrap")
-    def omit_unset_placement(self, handler: SerializerFunctionWrapHandler) -> Any:
-        # An omitted key keeps the current value, while a null bone is None.
+    def omit_unset_keys(self, handler: SerializerFunctionWrapHandler) -> Any:
+        # An omitted key keeps the current value, while a null bone is None and
+        # a null name is the default name.
         data = handler(self)
-        for key in PLACEMENT:
+        for key in ENTRY_KEYS:
             if key not in self.model_fields_set:
                 data.pop(key, None)
         return data

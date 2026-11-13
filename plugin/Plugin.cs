@@ -715,6 +715,7 @@ public sealed partial class Plugin : BasePlugin
                 var before = rebuilt;
                 Reflect.Call(Main, "ImportFileAndMoveToEditRoot", path, false, false);
                 while (root == null || rebuilt == before || updating) yield return true;
+                foreach (var step in RebuildAccessoryColors()) yield return step;
                 modified = false;
                 result = new { opened = path };
                 break;

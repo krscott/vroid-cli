@@ -265,13 +265,13 @@ Operations:
 
 | Method | Internal call | Completion |
 | --- | --- | --- |
-| `open` | `MainViewModel.ImportFileAndMoveToEditRoot(path, false, false)` | Edit root captured and one rebuild finished |
+| `open` | `MainViewModel.ImportFileAndMoveToEditRoot(path, false, false)`, then rebuilds hidden or locked accessories' colours, below | Edit root captured and one rebuild finished, then each such accessory restored |
 | `categories` | Edit root `set_EditMode(FaceEditor, HairEditor, BodyEditor, or ClothingEditor)`, selector `Categories.Children[].Name` | Selector captured |
 | `parameters` | Selector `set_SelectedCategory`, then the category's `Parameters[]` `Label`, `CombinedValue` or `Value`, `MinValue`, `MaxValue`, and its colours, below | No rebuild running |
 | `items` | The category's item state and presets, below | Selector captured |
 | `accessories` | Edit root `set_EditMode(AccessoryEditor)`, its `Instances` and their shape sliders' bounds, templates, and bones, below | Editor active |
 | `dump` | `parameters` and the item for every Face, Hair, Body, and Outfit category in app order, then `accessories` | No rebuild running |
-| `apply` | Items, then accessories, below; then `parameters` for each named category, and parameter `set_CombinedValue` or `set_Value`, or a colour's setter, per changed value | One rebuild finished per changed item, accessory, accessory bone, accessory placement, and value (R-EDIT-6) |
+| `apply` | Items, then accessories, below; then `parameters` for each named category, and parameter `set_CombinedValue` or `set_Value`, or a colour's setter, per changed value | One rebuild finished per changed item, accessory, accessory bone, placement, hidden or locked flag, and value (R-EDIT-6) |
 | `save` | Edit root `_mainActionHandler.SaveSync(path, true)` | Call returned true and the file is nonempty |
 | `render` | A temporary Unity camera renders `ModelOrigin`, below | PNG written to a new file |
 | `thumbnails` | The category's options' `Preview.Create()`, below | PNG written to a new file |
@@ -418,8 +418,9 @@ Selecting an index and calling `RemoveSelectedInstance` removes one. Each
 takes one rebuild.
 
 An accessory entry holds its `item`, its colours and shape sliders by label,
-and its placement under the reserved keys `bone`, `position`, `rotation`, and
-`scale`; `dump` fails if a label equals one. Each instance's
+its placement under the reserved keys `bone`, `position`, `rotation`, and
+`scale`, and its `name`, `hidden`, and `locked` keys, below; `dump` fails if a
+label equals a reserved key. Each instance's
 `Parameters` are its shape sliders, read and written like Face sliders
 (`Value`, or `CombinedValue` for a two-sided one). Fox Tail repeats "Tail Base
 Thickness", so the repeated-label rule applies. Their bounds differ by slider
@@ -475,6 +476,42 @@ before `custom`; one item's built-in accessories are ordered by their entry,
 and custom ones keep app order, so lists compare across instances whichever
 one VRoid lists first. `plugin/ItemIds.cs`, which `tests/protocol` also
 builds, holds the identifier, bone, and matching rules.
+
+VRoid's accessory list can hide, lock, and rename each accessory, and saves
+all three. An instance's `IsVisible` and `IsEditable` read the first two, and
+`dump` writes them as `hidden` and `locked`. Its display name's
+`UserDefinedString` is the user's name, which `dump` writes as `name`, or null
+for VRoid's default name, which the app shows in its own language. VRoid's
+Rename dialog keeps the display name's `LocalizationKey`, which names the
+template, so `apply` clones the display name and sets only that string; a new
+display name without the key would read as `custom`. Null builds a display
+name from the key and `FallbackString` alone, which a custom accessory without
+a key cannot have, so `apply` refuses it there. `""` is a name, which VRoid's
+dialog cannot enter but saves and reopens. `dump` always writes the three keys,
+since an omitted key keeps the worn value, so a template that left out the
+defaults could not restore them (R-EDIT-7, R-EDIT-11).
+`SetTransferableVisibilityCommand(transferableId, bool)` and
+`SetTransferableEditabilityCommand(transferableId, bool)` take one rebuild
+each; `SetTransferableDisplayNameCommand(transferableId, LocalizedString)` takes
+none and reads back at once, and the bridge raises the instance's
+`OnPropertyChanged` for its name, which the editor's list otherwise keeps
+showing. A lock stops only `RemoveSelectedInstance`, which then does nothing:
+placement, bone, colours, sliders, the other flags, and
+`DuplicateSelectedInstance`, which copies the name and flags, all work on a
+locked accessory. So `apply` unlocks an accessory before removing it, and sets
+the name, `hidden`, then `locked` after its other values. `render` leaves a
+hidden accessory out, since VRoid disables its renderers.
+
+VRoid builds an accessory instance's colour fields (`CategoryColorSelection`)
+once, when a project opens, and builds none for one that is hidden or locked
+then; showing or unlocking it later does not bring them back, and VRoid's own
+editor shows no colour for it. The colour stays in the project. So `open`
+shows and unlocks each such accessory, calls its `InitColorSelection`, and
+hides or locks it again, which takes up to four rebuilds each. The project ends
+as it opened and `modified` stays false, but VRoid's own undo history holds the
+toggles. `open` restores the editor's section afterwards. Without this, `dump`
+would drop the colour and `apply` would refuse it until the accessory was saved
+shown and unlocked and reopened.
 
 ### Colours
 
@@ -654,13 +691,16 @@ errors (R-CLI-2).
 
 `scripts/gui-smoke.sh`, run by `just gui-smoke`, drives a real session through
 open, dump, numeric and colour edits, item and accessory edits, including two
-accessories of one kind with one moved to another bone, placed, and reshaped,
+accessories of one kind with one moved to another bone, placed, reshaped,
+renamed, hidden, and locked,
 a check that an accessory slider's listed bounds match `apply`'s refusal,
 and the undo of its removal, outfit colour edits that keep the item built in
 (R-EDIT-12), refusal, save, rendering every view, drawing the
 thumbnails of the edited item categories, restart, reopen with a read-back of
-every edited number, colour, item, and accessory (R-EDIT-1) and of each
-category's item identifiers (R-EDIT-9), and reapplying the first dump, and
+every edited number, colour, item, and accessory (R-EDIT-1), of each
+category's item identifiers (R-EDIT-9), and of a `dump` equal to the one
+taken after the save, with `modified` false, a render with the hidden
+accessory shown again, which must differ, and reapplying the first dump, and
 checks the Framewisp input log and that BepInEx's log names the ready bridge's
 boot. It saves editor screenshots before and after the edits. It decodes each
 render with the Python standard library to check its size and framing, checks
