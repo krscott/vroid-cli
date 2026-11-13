@@ -531,19 +531,19 @@ to report them to the user.
 
 `import` reads the file's kind and refuses, before any change, a file that is
 not a custom item, a kind that is not one of the catalog's accessory kinds, a
-kind with a built-in group, and a project that already wears
-`MaxInstanceCount` accessories, where VRoid would show a dialog no one can
-close. It writes its undo file, an `apply` request holding the accessories
-from before with `discard_custom`, then calls
-`ImportCustomItemByTransferableType(globalBus, path, context, onError)`, whose
-task completes within a few frames. VRoid reports an error before changing
-anything; otherwise it appends the accessory to `Instances` and rebuilds
-twice. The bridge waits until rebuilds stop, finds the new accessory as the
-one whose transferable was not listed before, and returns its entry. VRoid
-lists it after every other custom accessory, which the bridge checks, and
-`custom` entries keep custom accessories in app order, so the undo's entries
-keep the accessories from before and remove the import (R-EDIT-11). The undo leaves the
-import's group, so built-in accessories of its kind stay refused.
+kind with a built-in group, and a project that already wears `MaxInstanceCount`
+accessories, where VRoid would show a dialog no one can close. It writes its
+undo file, an `apply` request holding the accessories from before with
+`discard_custom`, then calls `ImportCustomItemByTransferableType(globalBus,
+path, context, onError)`, whose task completes within a few frames. VRoid
+reports an error before changing anything; otherwise it appends the accessory
+to `Instances` and rebuilds twice. The bridge waits until rebuilds stop, finds
+the new accessory as the one VRoid lists last, and returns its entry. `custom`
+entries keep custom accessories in app order, so the undo's entries keep the
+accessories from before and remove the import (R-EDIT-11) only while VRoid
+lists those as before and the import after them. The bridge checks that, and
+otherwise takes the import off again and fails. The undo leaves the import's
+group, so built-in accessories of its kind stay refused.
 
 `export` takes an index into `accessories` `worn` and calls
 `ExportAccessoryTemplate(transferableId, groupId, globalBus, path, context,

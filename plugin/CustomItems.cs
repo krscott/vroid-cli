@@ -101,15 +101,18 @@ public sealed partial class Plugin
             if (frame > 600) throw new InvalidOperationException($"VRoid kept rebuilding after importing {file}");
             yield return true;
         }
-        var ids = worn.Select(accessory => accessory.Id).ToHashSet();
         var now = WornAccessories();
-        var added = now.Where(accessory => !ids.Contains(accessory.Id)).ToArray();
-        if (added.Length != 1 || added[0].Kind != kind) throw Differs($"which accessory VRoid added for {file}");
-        if (added[0].Item != ItemIds.Custom) throw Differs($"how VRoid marks the imported {file}");
-        if (now.Last(accessory => accessory.Item == ItemIds.Custom) != added[0])
-            throw new InvalidOperationException($"VRoid lists the imported {file} before another accessory that is not built in, so its undo "
-                + "file would remove that one instead; check the accessories before applying it");
-        result = new { imported = AccessoryEntry(added[0]) };
+        var added = now[^1];
+        // The undo file holds for the accessories from before only if VRoid lists
+        // them as before, followed by the import; otherwise take the import off.
+        if (!now.SkipLast(1).Select(accessory => accessory.Id).SequenceEqual(worn.Select(accessory => accessory.Id))
+            || added.Kind != kind || added.Item != ItemIds.Custom)
+        {
+            var index = Array.FindIndex(now, accessory => !worn.Any(other => other.Id == accessory.Id));
+            if (index >= 0) foreach (var step in RemoveAccessory(index)) yield return step;
+            throw Differs($"where VRoid lists the imported {file}, which it took off again; VRoid keeps the group of its kind");
+        }
+        result = new { imported = AccessoryEntry(added) };
     }
 
     // Writes a worn accessory, as `accessories` lists it, to a new file
