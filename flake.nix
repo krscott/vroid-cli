@@ -31,11 +31,13 @@
           ];
       };
       # Framewisp hardcodes software rendering, which is too slow for VRoid.
-      framewisp-gles2 = pkgs.framewisp.overrideAttrs (old: {
+      # Framewisp's own CI runs its test suite, so this rebuild skips it.
+      framewisp-gles2 = pkgs.framewisp.overridePythonAttrs (old: {
         postPatch = (old.postPatch or "") + ''
           substituteInPlace framewisp/lib.py \
             --replace-fail 'WLR_RENDERER="pixman"' 'WLR_RENDERER="gles2"'
         '';
+        doCheck = false;
       });
       vroid-bepinex = pkgs.callPackage ./nix/bepinex.nix { };
       vroid-bridge = pkgs.callPackage ./nix/bridge.nix { inherit vroid-bepinex; };
