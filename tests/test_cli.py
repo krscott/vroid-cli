@@ -913,9 +913,8 @@ def test_a_result_that_breaks_the_schema_is_an_error(tmp_path: Path) -> None:
 def test_accessory_sliders_must_match_the_worn_accessories(tmp_path: Path) -> None:
     rpc = bridge(tmp_path)
     listed = {"worn": [{"item": "CatEar"}], "sliders": [], "available": [], "bones": []}
-    peer, _ = answer(rpc, lambda _: {"ok": True, "result": listed, "error": None})
-    result = invoke(tmp_path, "accessories")
-    peer.join()
+    with answer(rpc, lambda _: {"ok": True, "result": listed, "error": None}):
+        result = invoke(tmp_path, "accessories")
     assert result.returncode == 1
     assert result.stdout == ""
     assert "0 slider lists for 1 accessories" in result.stderr
