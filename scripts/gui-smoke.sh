@@ -714,6 +714,12 @@ if vroid '{"method": "accessories"}' | jq -c '{method: "apply", Accessories: (.w
 fi
 grep -qF 'Report this VRoid limit to the user' "$out/rabbit.err" || fatal "built-in ears after an import: $(<"$out/rabbit.err")"
 undo "$result" "$out/before-import.json"
+# VRoid keeps the import's group, so built-in ears stay refused (R-EDIT-3).
+if vroid '{"method": "apply", "Accessories": [{"item": "RabbitEar"}]}' >/dev/null 2>"$out/rabbit-after-undo.err"; then
+    fatal "apply added built-in ears to the kept group of an undone import"
+fi
+grep -qF 'Report this VRoid limit to the user' "$out/rabbit-after-undo.err" ||
+    fatal "built-in ears after an undone import: $(<"$out/rabbit-after-undo.err")"
 inputs_after=$(input_events)
 ((inputs_after == inputs_before)) || fatal "input log grew from $inputs_before to $inputs_after events"
 vroid '{"method": "stop", "force": true}' >/dev/null

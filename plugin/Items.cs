@@ -190,21 +190,22 @@ public sealed partial class Plugin
     private static object EditContext(object instance) =>
         Reflect.Get(Reflect.Get(instance, "_engine"), "Context") ?? throw Differs("the edit context");
 
-    // Each kind of accessory the project has a group for, and whether an import
-    // started that group. VRoid keeps a kind's group after its last accessory
-    // is removed, even across a save, and adds every accessory of the kind to it.
-    private static Dictionary<string, bool> AccessoryGroups()
+    // The kinds of accessory the project has a group of built-in accessories
+    // for, and those it has a group an import started for. VRoid keeps a kind's
+    // group after its last accessory is removed, even across a save, and adds
+    // every accessory of the kind to it.
+    private static (HashSet<string> BuiltIn, HashSet<string> Imported) AccessoryGroups()
     {
         var model = Reflect.Get(EditContext(AccessoryEditor), "editingModel") ?? throw Differs("the editing model");
         var kinds = AttachmentKinds.Values.ToHashSet();
-        var groups = new Dictionary<string, bool>();
+        var groups = (BuiltIn: new HashSet<string>(), Imported: new HashSet<string>());
         foreach (var pair in Reflect.Items(Reflect.Get(model, "_transferableGroups")))
         {
             var group = Reflect.Get(pair, "Value");
             var kind = Reflect.Get(group, "TypeId") as string ?? throw Differs("the type of a transferable group");
             if (!kinds.Contains(kind)) continue;
             var resource = Reflect.Get(Reflect.Get(group, "Header"), "ResourceName") as string ?? throw Differs($"the resource of the {kind} group");
-            if (!groups.TryAdd(kind, ItemIds.Imported(resource))) throw Differs($"one group of {kind} accessories");
+            (ItemIds.Imported(resource) ? groups.Imported : groups.BuiltIn).Add(kind);
         }
         return groups;
     }
@@ -450,7 +451,7 @@ public sealed partial class Plugin
             work.Wanted.Select(wanted => new WantedAccessory(wanted.Item, wanted.HasBone, wanted.Bone,
                 AttachmentKinds.GetValueOrDefault(wanted.Item, wanted.Item))).ToList(),
             (i, j) => Satisfies(work.Wanted[i], work.WornEntries[j]),
-            AccessoryGroups().Where(group => group.Value).Select(group => group.Key).ToHashSet());
+            AccessoryGroups().Imported);
         for (var i = 0; i < work.Wanted.Count; i++)
             if (work.Wanted[i].Item != ItemIds.Custom && !available.Contains(work.Wanted[i].Item))
                 errors.Add($"Accessories[{i}]: unknown accessory {work.Wanted[i].Item}; list them with accessories");
@@ -682,12 +683,12 @@ public sealed partial class Plugin
     }
 
     // Moves the accessory listed at `index` to `bone`, which VRoid's command does
-    // only while no other accessory of its group is worn.
+    // only while no other accessory of its kind is worn.
     private static IEnumerable<bool> MoveBone(int index, string? bone, string path)
     {
         var worn = WornAccessories();
         if (worn[index].Pose.Bone == bone) yield break;
-        if (worn.Count(other => other.Group == worn[index].Group) > 1)
+        if (worn.Count(other => other.Kind == worn[index].Kind) > 1)
             throw new InvalidOperationException($"{path}: another accessory of its kind is worn, so VRoid cannot move it to {bone ?? "None"}");
         var before = rebuilt;
         modified = true;

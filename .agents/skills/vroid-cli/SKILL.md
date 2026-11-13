@@ -62,7 +62,7 @@ reshapes them, exports worn accessories to such files, renders the character
 to PNG from the front, three-quarter, side, or back, and saves projects. It
 can't change outfit or accessory textures or the colours of other custom
 items, hide, lock, or rename accessories, import outfit custom items or XWear
-(`.xwear`) items such as bags and belts, create custom items, create
+(`.xwear`) items such as bags and belts, design new custom items, create
 characters from VRoid's sample models (`open` a sample's `.vroid` instead),
 or export VRM. To see
 the character, use `render`, not screenshots of the editor window. Edits go
@@ -159,10 +159,12 @@ and tails are accessories.
   tails, all hats) even after the last one is removed. So `import` refuses a
   file whose kind the project wears or wore as a built-in accessory, and
   `apply` refuses a built-in accessory whose kind the project wears or wore
-  as an import. Both errors say "Report this VRoid limit to the user": don't
-  work around it silently. In your final report, tell the user the kind and
-  what you wanted to do, such as importing ears into a project that wore
-  built-in cat ears.
+  as an import. An import's `undo` doesn't lift this, so `save` a copy
+  before trying an import in a project that may need built-in accessories of
+  its kind. Both errors say "Report this VRoid limit to the user": don't work
+  around it silently. In your final report, tell the user the kind and what
+  you wanted to do, such as importing ears into a project that wore built-in
+  cat ears.
 - `accessories` `sliders` holds one list per `worn` entry, in the same order:
   its shape sliders with `label`, `value`, `min`, and `max`, as `parameters`
   lists them. Bounds differ by slider, such as 0 to 100 for "Ear Size
@@ -174,9 +176,9 @@ and tails are accessories.
   interchangeable, and `dump` orders them by their values. Within a kind,
   only copies of one item may leave the default bone, all on one bone;
   `apply` refuses other combinations.
-- `categories`, `parameters`, `items`, `accessories`, `dump`, and `apply`
-  change which section VRoid's editor shows (`thumbnails` and `render` do
-  not), and `parameters`, `dump`, and
+- `categories`, `parameters`, `items`, `accessories`, `dump`, `apply`,
+  `import`, and `export` change which section VRoid's editor shows
+  (`thumbnails` and `render` do not), and `parameters`, `dump`, and
   `apply` change its category, even when they change no value. `accessories`
   and accessory edits also add the hidden accessories to the editor's list.
   For comparable editor screenshots, run the same `parameters` request before

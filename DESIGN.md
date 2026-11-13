@@ -198,8 +198,8 @@ temporary file renamed over its target, so readers never see partial files.
 - `results/ID.json`: `{"ok", "result", "error"}`, written by the bridge before
   it removes the request. Results are never deleted (R-RPC-6).
 - `undo/ID.json`: an `apply` or `import` request's undo template, written by
-  the bridge before the first change (R-EDIT-11). Like results, undo files are never
-  deleted.
+  the bridge before the first change (R-EDIT-11). Like results, undo files are
+  never deleted.
 
 A request command takes the lock, requires a fresh
 heartbeat with the same protocol (R-RPC-4), refuses if `request.json` exists
@@ -419,7 +419,10 @@ names no built-in template is `custom`. So is every instance whose group's
 resource (`transferableInfo.GroupResourceName`) is a
 `user/VRoid/CustomItem/...` one, which `import` starts, below: an imported
 accessory keeps its template's key, and a built-in one added later joins the
-import's group. Each instance has its own colours in
+import's group. An accessory imported with VRoid's own button into a kind
+that already had a built-in group still reads as its built-in item, since
+nothing marks it; `apply` treats it as one, so a dump or undo drops its
+texture. Each instance has its own colours in
 its `CategoryColorSelection`, read and written like Face colours but never
 shared. Every built-in accessory has one, labelled "Color", so the first pass
 refuses other labels for accessories the request adds, and the second checks
@@ -471,30 +474,31 @@ same item, bone, placement, colours, and shape. So the accessories of one kind
 sit on their default bone, except copies of one item on one other bone, and
 `apply` refuses any other combination before any change (R-EDIT-3).
 
-`Accessories` in a template is every accessory to wear. Built-in accessories
-of one item are interchangeable, so `apply` keeps for each wanted one the
-first unmatched worn one of its item whose entry already holds what it names,
-then one on its wanted bone, then for one that names no bone one on the
-default bone, then any of its item; `custom` matches any worn
-accessory that is not built in, in order. It removes the other worn ones from
-the end, moves a kept one that is alone in its kind, then adds the rest and
-sets their placement, colours, and shape sliders, reading each back. When a
-kept one must move while others of its kind stay, or an added one must start
-away from its default bone while others are worn, `apply` rebuilds that kind:
-it removes every one, adds the first one that is away from its default and
-moves it while alone, duplicates it for the others on that bone, and adds the
-rest; each takes over the values of the one it replaced. This reaches every
-arrangement VRoid's own controls can make, so dumps and undo files restore
-exactly (R-EDIT-7, R-EDIT-11). A custom accessory moves only while alone in
-its group. `apply` refuses an unknown item or bone, `custom` with no other
-worn accessory that is not built in, more than the editor's
+`Accessories` in a template is every accessory to wear. Built-in accessories of
+one item are interchangeable, so `apply` keeps for each wanted one the first
+unmatched worn one of its item whose entry already holds what it names, then
+one on its wanted bone, then for one that names no bone one on the default
+bone, then any of its item; `custom` keeps the first worn accessory that is not
+built in whose entry holds what it names, then any, in order. It removes the
+other worn ones from the end, moves a kept one that is alone in its kind, then
+adds the rest and sets their placement, colours, and shape sliders, reading
+each back. When a kept one must move while others of its kind stay, or an added
+one must start away from its default bone while others are worn, `apply`
+rebuilds that kind: it removes every one, adds the first one that is away from
+its default and moves it while alone, duplicates it for the others on that
+bone, and adds the rest; each takes over the values of the one it replaced.
+This reaches every arrangement VRoid's own controls can make, so dumps and undo
+files restore exactly (R-EDIT-7, R-EDIT-11). A custom accessory moves only
+while alone in its kind. `apply` refuses an unknown item or bone, `custom`
+with no other worn accessory that is not built in, more than the editor's
 `MaxInstanceCount`, and removing one that is not built in without
 `discard_custom`. It also refuses to add a built-in accessory to a kind whose
-group an import started, worn or not, below (R-EDIT-3). `dump` and `accessories` list accessories by item, built-in
-before `custom`; one item's built-in accessories are ordered by their entry,
-and custom ones keep app order, so lists compare across instances whichever
-one VRoid lists first. `plugin/ItemIds.cs`, which `tests/protocol` also
-builds, holds the identifier, bone, and matching rules.
+group an import started, worn or not, below (R-EDIT-3). `dump` and
+`accessories` list accessories by item, built-in before `custom`; one item's
+built-in accessories are ordered by their entry, and custom ones keep app
+order, so lists compare across instances whichever one VRoid lists first.
+`plugin/ItemIds.cs`, which `tests/protocol` also builds, holds the identifier,
+bone, and matching rules.
 
 ### Custom item files
 
@@ -506,9 +510,10 @@ buttons wrap these calls in file dialogs. Both take an error callback, an
 builds from a managed delegate, so errors such as `Incompatible` reach the
 bridge and VRoid shows no dialog. A `.vroidcustomitem` is a zip archive;
 `v1customitem/meta.json`'s `rootTransferableGroupTypeId` names its kind, such
-as `TransferableGroupType.N00.Level1.AnimalEar`, which `plugin/CustomItemFile.cs`,
-also built by `tests/protocol`, reads. The file carries the accessory's mesh,
-textures, colours, shape sliders, bone, and placement.
+as `TransferableGroupType.N00.Level1.AnimalEar`, which
+`plugin/CustomItemFile.cs`, also built by `tests/protocol`, reads; it refuses
+a `meta.json` over 1 MiB, which would stall the main thread. The file carries
+the accessory's mesh, textures, colours, shape sliders, bone, and placement.
 
 VRoid keeps a kind's group in the model (the editing model's
 `_transferableGroups`, keyed by group with its `TypeId` and header
@@ -532,10 +537,12 @@ close. It writes its undo file, an `apply` request holding the accessories
 from before with `discard_custom`, then calls
 `ImportCustomItemByTransferableType(globalBus, path, context, onError)`, whose
 task completes within a few frames. VRoid reports an error before changing
-anything; otherwise it appends the accessory to `Instances` after two
-rebuilds. The new accessory comes last, and custom ones keep app order, so the
-undo's `custom` entries keep the ones from before and remove the import
-(R-EDIT-11). The result is the new accessory's entry.
+anything; otherwise it appends the accessory to `Instances` and rebuilds
+twice. The bridge waits until rebuilds stop, finds the new accessory as the
+one whose transferable was not listed before, and returns its entry. The
+undo's `custom` entries hold every value of the accessories from before, so
+they keep those and remove the import (R-EDIT-11). The undo leaves the
+import's group, so built-in accessories of its kind stay refused.
 
 `export` takes an index into `accessories` `worn` and calls
 `ExportAccessoryTemplate(transferableId, groupId, globalBus, path, context,
@@ -670,18 +677,20 @@ gives it a hidden `.vroid-render-HEX.png` beside the destination, publishes it
 with `os.link`, which is atomic and fails if the destination exists, and
 removes the hidden file in a `finally`, so a destination is never replaced or
 partly written (R-VIEW-3). `export` works the same way with a hidden
-`.vroid-export-HEX.vroidcustomitem` (R-EDIT-16). A CLI that stops waiting before the bridge answers,
-because it was killed, interrupted, or timed out, can leave one.
+`.vroid-export-HEX.vroidcustomitem` (R-EDIT-16). A CLI that stops waiting
+before the bridge answers, because it was killed, interrupted, or timed out,
+can leave one.
 
 IL2CPP reflection must convert native objects to their most derived proxy type.
 `Reflect.Concrete` maps `System.*` class names to `Il2CppSystem.*` proxies and
 closes generic proxies, such as `ImmutableArray<T>`, over the runtime type's
 arguments. `Reflect.Items` iterates by `Count`/`Length` and an integer
-`get_Item`, else by enumerator, which yields a dictionary's key-value pairs. `plugin/Render.cs` and `plugin/Thumbnails.cs` alone call instance
-members of Unity engine objects through C# `dynamic`, using the loader's
-bundled `Microsoft.CSharp`, so their engine calls read like Unity code; static
-members, which `dynamic` cannot reach on types found at runtime, and every
-VRoid type go through `Reflect`.
+`get_Item`, else by enumerator, which yields a dictionary's key-value pairs.
+`plugin/Render.cs` and `plugin/Thumbnails.cs` alone call instance members of
+Unity engine objects through C# `dynamic`, using the loader's bundled
+`Microsoft.CSharp`, so their engine calls read like Unity code; static members,
+which `dynamic` cannot reach on types found at runtime, and every VRoid type go
+through `Reflect`.
 
 ## Command line
 
@@ -724,26 +733,26 @@ errors (R-CLI-2).
 
 `scripts/gui-smoke.sh`, run by `just gui-smoke`, drives a real session through
 open, dump, numeric and colour edits, item and accessory edits, including two
-accessories of one kind with one moved to another bone, placed, and reshaped,
-a check that an accessory slider's listed bounds match `apply`'s refusal,
-and the undo of its removal, outfit colour edits that keep the item built in
+accessories of one kind with one moved to another bone, placed, and reshaped, a
+check that an accessory slider's listed bounds match `apply`'s refusal, and the
+undo of its removal, outfit colour edits that keep the item built in
 (R-EDIT-12), refusal, save, an export of the moved cat ears that changes
-nothing and refuses an existing destination (R-EDIT-16), rendering every
-view, drawing the thumbnails of the edited item categories, restart, reopen
-with a read-back of every edited number, colour, item, and accessory
-(R-EDIT-1) and of each category's item identifiers (R-EDIT-9), refused
-imports of a file that is not an accessory and of the ears while built-in
-ears are worn, and reapplying the first dump, and checks the Framewisp input
-log and that BepInEx's log names the ready bridge's boot. It then creates a
-character from each base in two app instances (R-EDIT-6, R-EDIT-14), with a
-render, and an edit that `stop` refuses until it is saved (R-SES-4), and in a
-last instance imports the exported ears into a new character, compares their
-values, edits them, checks that built-in ears are refused, and undoes the
-import (R-EDIT-3, R-EDIT-11, R-EDIT-15). It saves editor screenshots before and after the first
-edits. It decodes each render with the Python standard library to check its
-size and framing, checks each thumbnail sheet's size and items, and compares
-`dump` and an editor screenshot before and after rendering and drawing
-thumbnails. It needs graphics access.
+nothing and refuses an existing destination (R-EDIT-16), rendering every view,
+drawing the thumbnails of the edited item categories, restart, reopen with a
+read-back of every edited number, colour, item, and accessory (R-EDIT-1) and of
+each category's item identifiers (R-EDIT-9), refused imports of a file that is
+not an accessory and of the ears while built-in ears are worn, and reapplying
+the first dump, and checks the Framewisp input log and that BepInEx's log names
+the ready bridge's boot. It then creates a character from each base in two app
+instances (R-EDIT-6, R-EDIT-14), with a render, and an edit that `stop` refuses
+until it is saved (R-SES-4), and in a last instance imports the exported ears
+into a new character, compares their values, edits them, checks that built-in
+ears are refused, and undoes the import (R-EDIT-3, R-EDIT-11, R-EDIT-15). It
+saves editor screenshots before and after the first edits. It decodes each
+render with the Python standard library to check its size and framing, checks
+each thumbnail sheet's size and items, and compares `dump` and an editor
+screenshot before and after rendering and drawing thumbnails. It needs graphics
+access.
 
 R-EDIT-14's offline check is by hand: for each base, launch a session without
 network access, then run `new` as usual; the app keeps the namespaces `launch`

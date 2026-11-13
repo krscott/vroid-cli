@@ -7,6 +7,8 @@ namespace VroidBridge;
 
 public static class CustomItemFile
 {
+    private const long MaxMeta = 1 << 20;
+
     /// A `.vroidcustomitem` file is a zip archive whose `v1customitem/meta.json`
     /// names the type of the item's root group, such as
     /// `TransferableGroupType.N00.Level1.AnimalEar` for a pair of animal ears.
@@ -17,6 +19,8 @@ public static class CustomItemFile
         {
             using var zip = new ZipArchive(file, ZipArchiveMode.Read, leaveOpen: true);
             var meta = zip.GetEntry("v1customitem/meta.json") ?? throw new InvalidDataException("it has no v1customitem/meta.json");
+            // VRoid's is a few hundred bytes; a huge one would stall the app's main thread.
+            if (meta.Length > MaxMeta) throw new InvalidDataException($"its meta.json holds {meta.Length} bytes");
             using var stream = meta.Open();
             using var json = JsonDocument.Parse(stream);
             return json.RootElement.TryGetProperty("rootTransferableGroupTypeId", out var kind) && kind.GetString() is { Length: > 0 } text

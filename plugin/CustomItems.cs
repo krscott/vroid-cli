@@ -19,11 +19,21 @@ public sealed partial class Plugin
             Reflect.Get(engine, "Context") ?? throw Differs("the edit context"));
     }
 
+    // The latest error callback; VRoid may still call it after a request times out.
+    private static object? errorCallback;
+
     // VRoid's error callback, which records each error it reports instead of
     // showing a dialog.
-    private static object OnError(List<string> errors) =>
+    private static object OnError(List<string> errors) => errorCallback =
         Reflect.Callback(Reflect.Type("Il2CppSystem.Action`2").MakeGenericType(Reflect.Type("VRoid.Studio.GlobalBus"), Reflect.Type(ErrorType)),
             args => errors.Add(args[1]?.ToString() ?? "unknown error"));
+
+    // The kind a custom item file holds; ArgumentException says why a file is not one.
+    private static string KindOf(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return CustomItemFile.Kind(stream);
+    }
 
     // Wears the accessory in a file as a new one (R-EDIT-15). VRoid adds it to
     // the group of its kind, so a kind with a group of built-in accessories,
@@ -36,27 +46,26 @@ public sealed partial class Plugin
         string kind;
         try
         {
-            using var stream = File.OpenRead(path);
-            kind = CustomItemFile.Kind(stream);
+            kind = KindOf(path);
         }
         catch (ArgumentException error)
         {
             throw new ArgumentException($"{file} is {error.Message.TrimEnd('.')}. Nothing changed");
         }
-        foreach (var step in EnterAccessories()) yield return step;
         if (!AttachmentKinds.ContainsValue(kind))
             throw new ArgumentException($"{file} holds an item of kind {ItemIds.Kind(kind)}, which is not an accessory. Nothing changed");
-        var worn = WornAccessories();
-        if (AccessoryGroups().TryGetValue(kind, out var imported) && !imported)
+        foreach (var step in EnterAccessories()) yield return step;
+        if (AccessoryGroups().BuiltIn.Contains(kind))
             throw new ArgumentException($"{file} holds an accessory of kind {ItemIds.Kind(kind)}, and VRoid keeps a group of built-in "
                 + $"{ItemIds.Kind(kind)} accessories in this project, even after the last one is removed. VRoid would add the import to it, where "
                 + $"it would read as a built-in item, so vroid-cli cannot import an accessory of kind {ItemIds.Kind(kind)} into this project. "
                 + "Report this VRoid limit to the user. Nothing changed");
+        var worn = WornAccessories();
         // Beyond its limit VRoid shows a dialog no one can close on the private display.
         var max = Convert.ToInt32(Reflect.StaticProperty("VRoid.Studio.AccessoryEditor.ViewModel", "MaxInstanceCount").GetValue(null));
         if (worn.Length >= max) throw new ArgumentException($"VRoid allows at most {max} accessories, and the project wears {worn.Length}. Nothing changed");
-        // Removing the import needs discard_custom; custom ones keep app order and
-        // the import comes last, so the ones listed here keep the earlier ones.
+        // Removing the import needs discard_custom; the custom entries listed here
+        // keep the accessories from before.
         var restore = new Dictionary<string, object>
         {
             ["method"] = "apply",
@@ -67,11 +76,10 @@ public sealed partial class Plugin
         undo = restore;
         var registry = CustomItemRegistry();
         var errors = new List<string>();
-        var callback = OnError(errors);
         var before = rebuilt;
         var unsaved = modified;
         modified = true;
-        var task = Reflect.Call(registry.Self, "ImportCustomItemByTransferableType", registry.Bus, path, registry.Context, callback)!;
+        var task = Reflect.Call(registry.Self, "ImportCustomItemByTransferableType", registry.Bus, path, registry.Context, OnError(errors))!;
         while (Reflect.Get(task, "IsCompleted") is not true) yield return true;
         if (Reflect.Get(task, "IsFaulted") is true)
             throw new InvalidOperationException($"VRoid failed to import {file}: {Reflect.Get(task, "Exception")}");
@@ -83,10 +91,20 @@ public sealed partial class Plugin
         }
         Changed.Add($"Accessories/{file}");
         foreach (var step in WaitForAccessories(before, worn.Length + 1)) yield return step;
-        var added = WornAccessories()[^1];
-        if (added.Item != ItemIds.Custom) throw Differs($"how VRoid marks the imported {file}");
-        GC.KeepAlive(callback);
-        result = new { imported = AccessoryEntry(added) };
+        // VRoid rebuilds more than once; read the accessory once rebuilds stop.
+        var settled = rebuilt;
+        for (int frame = 0, stable = 0; stable < SettledFrames; frame++)
+        {
+            stable = updating || rebuilt != settled ? 0 : stable + 1;
+            settled = rebuilt;
+            if (frame > 600) throw new InvalidOperationException($"VRoid kept rebuilding after importing {file}");
+            yield return true;
+        }
+        var ids = worn.Select(accessory => accessory.Id).ToHashSet();
+        var added = WornAccessories().Where(accessory => !ids.Contains(accessory.Id)).ToArray();
+        if (added.Length != 1 || added[0].Kind != kind) throw Differs($"which accessory VRoid added for {file}");
+        if (added[0].Item != ItemIds.Custom) throw Differs($"how VRoid marks the imported {file}");
+        result = new { imported = AccessoryEntry(added[0]) };
     }
 
     // Writes a worn accessory, as `accessories` lists it, to a new file
@@ -115,8 +133,7 @@ public sealed partial class Plugin
         string kind;
         try
         {
-            using var stream = File.OpenRead(path);
-            kind = CustomItemFile.Kind(stream);
+            kind = KindOf(path);
         }
         catch (ArgumentException error)
         {

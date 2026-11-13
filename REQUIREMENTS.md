@@ -358,9 +358,9 @@ backfill unrelated requirements.
 
 - **R-EDIT-16** [manual] `export` writes a worn accessory to a new
   `.vroidcustomitem` file without a file dialog and changes nothing in the
-  app. `import` of that file in any project adds an accessory with the same
-  colours, shape sliders, and placement. `export` refuses an existing
-  destination and leaves it unchanged.
+  project. `import` of that file in any project that R-EDIT-15 allows adds an
+  accessory with the same colours, shape sliders, and placement. `export`
+  refuses an existing destination and leaves it unchanged.
 
   Rationale: An accessory that is not built in has no identifier, so a
   template cannot carry it to another project; a file can. The destination

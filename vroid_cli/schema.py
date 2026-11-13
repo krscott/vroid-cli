@@ -318,8 +318,8 @@ class Apply(Model):
 
     @model_serializer(mode="wrap")
     def omit_defaults(self, handler: SerializerFunctionWrapHandler) -> Any:
-        # Dumped and undo templates leave accessories alone unless they list
-        # them, and never discard anything.
+        # Dumped and apply's undo templates leave accessories alone unless they
+        # list them, and never discard anything.
         data = handler(self)
         if self.Accessories is None:
             data.pop("Accessories", None)
@@ -355,8 +355,9 @@ class Import(Model):
 
     It reads as "custom" in `accessories` and `dump`; place, recolour, and
     reshape it with apply. Refused for a file that holds no accessory, and for
-    an accessory of a kind the project wears a built-in one of, such as cat
-    ears from a file while rabbit ears are worn.
+    an accessory of a kind the project wears or wore a built-in one of, such as
+    ears from a file in a project that wore cat ears. Afterwards, apply refuses
+    built-in accessories of its kind in this project, even after its undo.
     """
 
     method: Literal["import"]
@@ -370,8 +371,8 @@ class Import(Model):
 
 class Export(Model):
     """Write a worn accessory to a new .vroidcustomitem file in an existing
-    directory, with its colours, shape sliders, and placement. `import` wears
-    it in any project."""
+    directory, with its colours, shape sliders, and placement, which `import`
+    wears in another project."""
 
     method: Literal["export"]
     index: NonNegativeInt = Field(
