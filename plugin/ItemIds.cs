@@ -138,11 +138,12 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
     /// item are interchangeable: a wanted one keeps a worn one that `same` says
     /// already matches it, among those on the default bone if it names no bone;
     /// then one that names its bone keeps one on that bone, and one that names no
-    /// bone keeps one on the default bone, then any. When a kept
+    /// bone keeps one on the default bone, then one `same` says matches it, then
+    /// any. When a kept
     /// one cannot move, every one of that kind is removed and added again: one
     /// first, moved while alone, then copies of it and new ones. "custom" matches
-    /// a worn accessory that is not built in that `same` says matches it, then any,
-    /// in order, and moves only while alone in its group.
+    /// any worn accessory that is not built in, in order, which is its only
+    /// identity, and moves only while alone in its group.
     public static AccessoryPlan Of(IReadOnlyList<WornAccessory> worn, IReadOnlyList<WantedAccessory> wanted,
         Func<int, int, bool>? same = null)
     {
@@ -161,10 +162,11 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
         bool BuiltIn(int i) => wanted[i].Item != ItemIds.Custom;
         foreach (var pass in new Func<int, int, bool>[]
                  {
-                     (i, j) => same != null && same(i, j)
-                         && (!BuiltIn(i) || wanted[i].HasBone || worn[j].Bone == Bones.Default(wanted[i].Item)),
+                     (i, j) => BuiltIn(i) && same != null && same(i, j)
+                         && (wanted[i].HasBone || worn[j].Bone == Bones.Default(wanted[i].Item)),
                      (i, j) => BuiltIn(i) && wanted[i].HasBone && worn[j].Bone == wanted[i].Bone,
                      (i, j) => BuiltIn(i) && !wanted[i].HasBone && worn[j].Bone == Bones.Default(wanted[i].Item),
+                     (i, j) => BuiltIn(i) && !wanted[i].HasBone && same != null && same(i, j),
                      (i, j) => BuiltIn(i) && !wanted[i].HasBone,
                      (_, _) => true,
                  })

@@ -465,7 +465,6 @@ public sealed partial class Plugin
                 errors.Add($"{path}/bone: unknown bone {spec.Bone}; list them with accessories");
             var bone = spec.HasBone ? spec.Bone : matched != null ? matched.Pose.Bone : Bones.Default(spec.Item);
             if (bone == null && spec.Places) errors.Add($"{path}: has no bone, so it takes no position, rotation, or scale");
-            // A built-in accessory's name always has a key; a custom one may have only the user's name.
             foreach (var (key, vector, check) in new (string, float[]?, Func<IReadOnlyList<float>, string?>)[]
                      {
                          ("position", spec.Position, _ => null), ("rotation", spec.Rotation, Placement.Rotation), ("scale", spec.Scale, Placement.Scale),
@@ -495,11 +494,11 @@ public sealed partial class Plugin
         // A value beyond float range becomes infinite, which the checks refuse.
         float[]? Vector(string key) =>
             entry.TryGetProperty(key, out var value) ? value.EnumerateArray().Select(part => (float)part.GetDouble()).ToArray() : null;
-        bool? Flag(string key) => entry.TryGetProperty(key, out var value) ? value.GetBoolean() : null;
+        bool? Bool(string key) => entry.TryGetProperty(key, out var value) ? value.GetBoolean() : null;
         var hasBone = entry.TryGetProperty("bone", out var bone);
         var hasName = entry.TryGetProperty("name", out var name);
         return new AccessorySpec(entry.GetProperty("item").GetString()!, hasBone, hasBone ? bone.GetString() : null,
-            Vector("position"), Vector("rotation"), Vector("scale"), hasName, hasName ? name.GetString() : null, Flag("hidden"), Flag("locked"),
+            Vector("position"), Vector("rotation"), Vector("scale"), hasName, hasName ? name.GetString() : null, Bool("hidden"), Bool("locked"),
             WantedValues(entry, EntryKeys));
     }
 
@@ -794,7 +793,7 @@ public sealed partial class Plugin
             foreach (var (index, key) in Enumerable.Reverse(restore))
                 try
                 {
-                    FlagCommand(Instances()[index], key, true);
+                    if (!Flag(Instances()[index], key)) FlagCommand(Instances()[index], key, true);
                 }
                 catch (Exception error)
                 {

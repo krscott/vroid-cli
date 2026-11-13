@@ -476,12 +476,16 @@ Test("accessories of one item reach every arrangement of bones VRoid can make", 
     var dumped = AccessoryPlan.Of(new[] { Worn("CatEar", Head), Worn("CatEar", Head) }, new[] { On("CatEar", Head), On("CatEar", Head) },
         (i, j) => i != j);
     Check(dumped.Kept.SequenceEqual(new[] { (1, 0), (0, 1) }) && dumped.Removed.Count == 0, Show(dumped));
-    // So does one that names no bone, such as one named or hidden, and "custom".
+    // So does one that names no bone, such as one named or hidden, preferring the
+    // default bone, then copies on another bone.
     var named = AccessoryPlan.Of(new[] { Worn("CatEar", Head), Worn("CatEar", Head) }, new[] { Any("CatEar"), Any("CatEar") }, (i, j) => i != j);
     Check(named.Kept.SequenceEqual(new[] { (1, 0), (0, 1) }) && named.Removed.Count == 0, Show(named));
+    var copies = AccessoryPlan.Of(new[] { Worn("CatEar", Neck), Worn("CatEar", Neck) }, new[] { Any("CatEar") }, (_, j) => j == 1);
+    Check(copies.Kept.SequenceEqual(new[] { (1, 0) }) && copies.Removed.SequenceEqual(new[] { 0 }), Show(copies));
+    // "custom" keeps app order, its only identity, so undo files restore it.
     var customs = AccessoryPlan.Of(new[] { Worn("custom", Head, "user"), Worn("custom", Head, "user") }, new[] { Any("custom"), Any("custom") },
         (i, j) => i != j);
-    Check(customs.Kept.SequenceEqual(new[] { (1, 0), (0, 1) }) && customs.Removed.Count == 0, Show(customs));
+    Check(customs.Kept.SequenceEqual(new[] { (0, 0), (1, 1) }) && customs.Removed.Count == 0, Show(customs));
     // "None" is a bone too.
     var none = AccessoryPlan.Of(new[] { Worn("CatTail", Hips) }, new[] { On("CatTail", null) });
     Check(none.Rebone.SequenceEqual(new (int, string?)[] { (0, null) }), Show(none));

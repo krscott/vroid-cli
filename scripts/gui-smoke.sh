@@ -20,8 +20,8 @@ usage() {
         'cat ears and a refused cat tail, recolours the new top, undoing that' \
         'and a later change of top, saves a copy, renders each view, draws the' \
         'thumbnails of those two categories, restarts, checks the saved values,' \
-        'renders the hidden cat ears shown and named by default, and applies' \
-        'the original template. It then creates a character from each base' \
+        'renders the cat ears hidden, then shown with their default name, and' \
+        'applies the original template. It then creates a character from each base' \
         'twice, restarting between them. Editor screenshots before and after' \
         'the edit land in the artifact directory.' \
         'SESSION must be stopped. Set VROID_CLI to choose the vroid-cli binary.'
