@@ -314,7 +314,19 @@ def test_bridge_from_an_older_protocol_is_refused(tmp_path: Path) -> None:
         ),
         (
             '{"method": "apply", "Accessories": [{"item": "CatEar", "position": null}]}',
-            "Accessories.0.position: give an array of numbers",
+            "Accessories.0.position: give a value, or omit it",
+        ),
+        (
+            '{"method": "apply", "Accessories": [{"item": "CatEar", "hidden": null}]}',
+            "Accessories.0.hidden: give a value, or omit it",
+        ),
+        (
+            '{"method": "apply", "Accessories": [{"item": "CatEar", "locked": 1}]}',
+            "Accessories.0.locked: Input should be a valid boolean",
+        ),
+        (
+            '{"method": "apply", "Accessories": [{"item": "CatEar", "name": 3}]}',
+            "Accessories.0.name: Input should be a valid string",
         ),
         (
             '{"method": "apply", "Accessories": [{"item": "CatEar", "bone": 3}]}',
@@ -790,13 +802,18 @@ ITEM_DUMP = {
             "position": [0.012345679, -0.0314159, 0],
             "rotation": [0.0871557, 0.0436194, -0.0038053, 0.9952465],
             "scale": [1.23456, 0.98765, 1],
+            "name": "Left ear",
+            "hidden": True,
+            "locked": True,
         },
-        {"item": "CatEar", "Color": "#FF0000"},
+        {"item": "CatEar", "Color": "#FF0000", "name": "", "hidden": False},
         {
             "item": "FoxTail",
             "Color": "#FFFFFF",
             "Tail Base Thickness": [0, -12.5],
             "bone": None,
+            "name": None,
+            "locked": False,
         },
         {"item": "custom"},
     ],

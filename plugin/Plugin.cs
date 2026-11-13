@@ -726,6 +726,8 @@ public sealed partial class Plugin : BasePlugin
                 var path = request.Text("path");
                 if (!File.Exists(path)) throw new ArgumentException("Project must be an existing file");
                 foreach (var step in Load(() => Reflect.Call(Main, "ImportFileAndMoveToEditRoot", path, false, false))) yield return step;
+                foreach (var step in RebuildAccessoryColors()) yield return step;
+                modified = false;
                 result = new { opened = path };
                 break;
             }

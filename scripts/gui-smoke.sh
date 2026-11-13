@@ -15,14 +15,15 @@ usage() {
         'Opens SOURCE in SESSION, dumps its template, edits one Body and two Face' \
         'parameters and four colours (orange hair, green eyes) in one request,' \
         'then selects other Hair Front and Outfit Tops items and adds cat and' \
-        'rabbit ears, moving, placing and reshaping the cat ears, undoing and' \
-        'redoing both edits, undoes a removal of the cat ears and a refused' \
-        'cat tail, recolours the new top,' \
-        'undoing that and a later change of top, saves a copy, renders' \
-        'each view, draws the thumbnails of those two categories, restarts,' \
-        'checks the saved values, and applies the original template. It then' \
-        'creates a character from each base twice, restarting between them. Editor' \
-        'screenshots before and after the edit land in the artifact directory.' \
+        'rabbit ears, moving, placing, reshaping, renaming, hiding, and locking' \
+        'the cat ears, undoing and redoing both edits, undoes a removal of the' \
+        'cat ears and a refused cat tail, recolours the new top, undoing that' \
+        'and a later change of top, saves a copy, renders each view, draws the' \
+        'thumbnails of those two categories, restarts, checks the saved values,' \
+        'renders the cat ears hidden, then shown with their default name, and' \
+        'applies the original template. It then creates a character from each base' \
+        'twice, restarting between them. Editor screenshots before and after' \
+        'the edit land in the artifact directory.' \
         'SESSION must be stopped. Set VROID_CLI to choose the vroid-cli binary.'
 }
 
@@ -271,10 +272,12 @@ colours=(
 items=('Hair|Front' 'Outfit|Tops')
 # Two accessories of one kind, which VRoid keeps in one group. The cat ears
 # hang from another bone, which VRoid allows only while no other ears are worn,
-# and are placed and reshaped.
+# and are placed, reshaped, renamed, hidden, and locked. VRoid removes a locked
+# accessory only once it is unlocked.
 ears='[{"item": "CatEar", "Color": "#3A2A20", "bone": "J_Bip_C_Neck", "position": [0, 0.01, -0.005],
-    "rotation": [0.0871557, 0, 0, 0.9961947], "scale": [1.25, 1.25, 1.25], "Ear Size (Bigger)": 50},
-    {"item": "RabbitEar", "Color": "#F0F0F0"}]'
+    "rotation": [0.0871557, 0, 0, 0.9961947], "scale": [1.25, 1.25, 1.25], "Ear Size (Bigger)": 50,
+    "name": "Smoke Ears", "hidden": true, "locked": true},
+    {"item": "RabbitEar", "Color": "#F0F0F0", "name": null}]'
 
 launch
 # The first launch creates a new session's directory.
@@ -562,6 +565,7 @@ for leftover in "${leftovers[@]}"; do
     [[ ! -e $leftover ]] || fatal "a failed render left $leftover"
 done
 jq -cn --arg path "$edited" '{method: "open", path: $path}' | vroid - >/dev/null
+[[ $(modified) == false ]] || fatal "open marked the project modified"
 # Every edited value, numbers and colours alike, reads back after the save,
 # restart, and reopen (R-EDIT-1).
 for edit in "${edits[@]}"; do
@@ -580,6 +584,10 @@ done
 # The edited project dumps, with each colour under the category it was set in,
 # and the hair colour is shared by every hair category.
 vroid '{"method": "dump"}' >"$out/edited.json"
+# The reopened project dumps as it did when saved, including the colour of the
+# cat ears, which open hidden and locked.
+jq -e --slurpfile saved "$out/before-render.json" '. == $saved[0]' "$out/edited.json" >/dev/null ||
+    fatal "dump after reopening differs from $out/before-render.json; see $out/edited.json"
 for colour in "${colours[@]}"; do
     IFS='|' read -r section category label _ <<<"$colour"
     edit="$section|$category|$label"
@@ -592,6 +600,17 @@ jq -e --argjson want "$outfit_colours" '.Outfit.Tops as $tops | all($want | keys
 front='Hair|Front|Main Color'
 actual=$(value_of Hair Back 'Main Color')
 same "$actual" "${expected[$front]}" || fatal "Hair/Back Main Color is $actual, not Front's"
+# A hidden accessory is left out of renders, as VRoid's editor leaves it out.
+# Showing the cat ears also gives them their default name back.
+render front body 256 512 "$out/hidden-ears.png" >/dev/null
+vroid '{"method": "accessories"}' |
+    jq -c '{method: "apply", Accessories: [.worn[] | if .item == "CatEar" then {item, hidden: false, name: null} else {item} end]}' |
+    vroid - >/dev/null
+vroid '{"method": "accessories"}' | jq -e '[.worn[] | select(.item == "CatEar") | .name == null and .hidden == false] == [true]' >/dev/null ||
+    fatal "the cat ears are not shown with their default name"
+render front body 256 512 "$out/shown-ears.png" >/dev/null
+! cmp -s "$out/hidden-ears.png" "$out/shown-ears.png" ||
+    fatal "rendering the cat ears hidden and shown gives one image; see $out/hidden-ears.png"
 
 # The template dumped before the edits restores every value, item, and
 # accessory in a new app instance.
