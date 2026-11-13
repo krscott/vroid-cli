@@ -326,6 +326,11 @@ def test_bridge_from_an_older_protocol_is_refused(tmp_path: Path) -> None:
         ),
         ('{"method": "apply", "discard_custom": 1}', "discard_custom"),
         ('{"method": "items", "section": "Shoes", "category": "x"}', "section"),
+        ('{"method": "new"}', "base: Field required"),
+        (
+            '{"method": "new", "base": "Preset_N"}',
+            "base: Input should be 'Preset_F' or 'Preset_M'",
+        ),
         ("status", "REQUEST must be a JSON object, @PATH, or -"),
     ],
 )
@@ -1017,6 +1022,17 @@ def test_paths_are_sent_as_wine_paths(tmp_path: Path) -> None:
     assert json.loads(result.stdout) == {"opened": str(tmp_path / "source.vroid")}
 
 
+def test_new_sends_the_base_and_prints_the_result(tmp_path: Path) -> None:
+    rpc = bridge(tmp_path)
+    with answer(
+        rpc, lambda r: {"ok": True, "result": {"created": r["base"]}, "error": None}
+    ) as received:
+        result = invoke(tmp_path, "new", base="Preset_M")
+    assert result.returncode == 0, result.stderr
+    assert received[0]["base"] == "Preset_M"
+    assert json.loads(result.stdout) == {"created": "Preset_M"}
+
+
 def test_status_of_a_new_session_is_one_json_value(tmp_path: Path) -> None:
     # R-CLI-1
     result = invoke(tmp_path, "status")
@@ -1162,7 +1178,7 @@ def test_images_never_replace_a_destination_created_meanwhile(
 @pytest.mark.parametrize("method", IMAGES)
 def test_failed_images_leave_no_file(tmp_path: Path, method: str) -> None:
     # R-VIEW-3
-    error = "Open a project first"
+    error = "Open or create a character first"
     rpc = bridge(tmp_path)
     with answer(rpc, writes_image(b"\x89PNG partial", error=error)):
         result = invoke(tmp_path, method, path="image.png", **IMAGES[method])

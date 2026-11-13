@@ -266,6 +266,7 @@ Operations:
 | Method | Internal call | Completion |
 | --- | --- | --- |
 | `open` | `MainViewModel.ImportFileAndMoveToEditRoot(path, false, false)` | Edit root captured and one rebuild finished |
+| `new` | `MainViewModel.InitializeCurrentFileAndMoveToEditRoot(base, variant)`, below | Edit root captured and one rebuild finished |
 | `categories` | Edit root `set_EditMode(FaceEditor, HairEditor, BodyEditor, or ClothingEditor)`, selector `Categories.Children[].Name` | Selector captured |
 | `parameters` | Selector `set_SelectedCategory`, then the category's `Parameters[]` `Label`, `CombinedValue` or `Value`, `MinValue`, `MaxValue`, and its colours, below | No rebuild running |
 | `items` | The category's item state and presets, below | Selector captured |
@@ -276,8 +277,20 @@ Operations:
 | `render` | A temporary Unity camera renders `ModelOrigin`, below | PNG written to a new file |
 | `thumbnails` | The category's options' `Preview.Create()`, below | PNG written to a new file |
 
-`open` refuses once a project is open; changing projects needs a restart.
-Successful `open` and `save` clear `modified`.
+`open` and `new` refuse once either has started in the app instance, even
+one that failed or timed out while VRoid was still loading; changing
+characters needs a restart. Successful `open`, `new`, and `save` clear
+`modified`.
+
+`new` makes the call that VRoid's base dialog (`BaseSelectDialogViewModel`)
+makes for "Create New": `Preset_F` with model variant `F00`, or `Preset_M`
+with `M00`. The bridge holds those pairs. The bases are assets in the install,
+so `new` works offline, and each base gives the same `dump` in every session
+and wears only built-in items (R-EDIT-14). VRoid does not count the new
+character as unsaved and gives it no path; `save` always passes one. The
+bridge does not use VRoid's sample models, which VRoid downloads on first use
+from pixiv's CDN through a remote catalog that the pinned version does not
+fix.
 
 A template is an `apply` request: `Face`, `Hair`, `Body`, and `Outfit` map
 category names to labels to values, and `Accessories` lists accessories,
@@ -662,8 +675,22 @@ thumbnails of the edited item categories, restart, reopen with a read-back of
 every edited number, colour, item, and accessory (R-EDIT-1) and of each
 category's item identifiers (R-EDIT-9), and reapplying the first dump, and
 checks the Framewisp input log and that BepInEx's log names the ready bridge's
-boot. It saves editor screenshots before and after the edits. It decodes each
-render with the Python standard library to check its size and framing, checks
-each thumbnail sheet's size and items, and compares `dump` and an editor
-screenshot before and after rendering and drawing thumbnails. It needs graphics
-access.
+boot. It then creates a character from each base in two app instances
+(R-EDIT-6, R-EDIT-14), with a render, and an edit that `stop` refuses until
+it is saved (R-SES-4). It saves editor screenshots before and after the first
+edits. It decodes each render with the Python standard library to check its
+size and framing, checks each thumbnail sheet's size and items, and compares
+`dump` and an editor screenshot before and after rendering and drawing
+thumbnails. It needs graphics access.
+
+R-EDIT-14's offline check is by hand: for each base, launch a session without
+network access, then run `new` as usual; the app keeps the namespaces `launch`
+started it in. In this unprivileged launch, the outer user
+namespace may mount a tmpfs, which gives Xwayland a socket directory it owns,
+and the inner one restores the user that owns the session:
+
+```sh
+unshare -r --net --mount sh -c 'mount -t tmpfs tmpfs /tmp/.X11-unix &&
+  exec unshare --user --map-user="$1" --map-group="$2" vroid-cli "$3" "{\"method\": \"launch\"}"' \
+  - "$(id -u)" "$(id -g)" SESSION
+```

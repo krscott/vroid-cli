@@ -12,9 +12,9 @@ mouse or keyboard input, OCR, MCP server, or account login.
 > session it launches. Using vroid-cli assumes you have read and accepted them,
 > and VRoid Studio's [guidelines](https://vroid.com/en/studio/guidelines).
 
-It opens existing `.vroid` projects, changes them, and saves them. The agent
-skill's [Scope](.agents/skills/vroid-cli/SKILL.md#scope) lists what it can do
-so far.
+It opens existing `.vroid` projects or creates new characters, changes them,
+and saves them. The agent skill's
+[Scope](.agents/skills/vroid-cli/SKILL.md#scope) lists what it can do so far.
 
 ## Requirements
 

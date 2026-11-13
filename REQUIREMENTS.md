@@ -218,12 +218,15 @@ backfill unrelated requirements.
   Rationale: Synthetic input depends on the exact screen layout and fails
   silently when it changes.
 
-- **R-EDIT-6** [manual: `just gui-smoke` checks that each `apply` returns after
-  a completed rebuild and that values read back after `open`] `open` and
-  `apply` succeed only after the model has finished rebuilding with the result.
+- **R-EDIT-6** [manual] `open`, `new`, and `apply` succeed only after the
+  model has finished rebuilding with the result.
 
   Rationale: Commands that run during a rebuild read stale values or save a
   half-rebuilt model.
+
+  Manual test: `just gui-smoke` checks that `status` reports a higher
+  `rebuilt` count and no rebuild running right after each `apply` and `new`,
+  and that values read back after `open`.
 
 - **R-EDIT-7** [manual: `just gui-smoke` applies a template dumped before its
   edits after a restart and compares a new dump with it, including items and
@@ -306,6 +309,22 @@ backfill unrelated requirements.
   with more colours than it has, and one that adds an accessory with a shape
   slider above its maximum. It checks that each error names the undo file, and
   that applying the undo file restores a `dump` taken before.
+
+- **R-EDIT-14** [manual] `new` creates a character from VRoid's built-in
+  feminine or masculine base without network access. Each base gives the same
+  character in every session, and it wears only built-in items.
+
+  Rationale: Agents start characters from scratch, often in sandboxes and
+  evals without network access. A base that differed between sessions would
+  make templates and renders from one session misleading in another, and an
+  item that is not built in would need `discard_custom` (R-EDIT-10) before any
+  item change in its section.
+
+  Manual test: `just gui-smoke` creates a character from each base, checks
+  that `dump` names no `"custom"` item and that it matches a `dump` of the
+  same base taken after a restart, and renders it. After a change to the
+  VRoid pin, also check by hand that `new` succeeds with each base in a
+  session launched without network access.
 
 ## Views (VIEW)
 
