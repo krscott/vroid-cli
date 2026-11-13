@@ -158,8 +158,9 @@ and tails are accessories.
 - `import` wears the accessory in a `.vroidcustomitem` file as a new one,
   such as a bow the user bought or made; vroid-cli has none of its own. It
   reads as `"custom"` in `accessories` and `dump`; place, recolour, and
-  reshape it through `apply` with a `"custom"` entry, which keeps it. Its
-  `undo` removes it. A dump cannot carry it to another project; `export` it
+  reshape it through `apply` with a `"custom"` entry, which keeps it. It
+  keeps the file's `name`, `hidden`, and `locked`; set `"hidden": false`
+  through `apply` to show it. Its `undo` removes it. A dump cannot carry it to another project; `export` it
   by its index in `accessories` `worn` and `import` the file there.
 - VRoid keeps a kind's group of accessories (all glasses, all ears, all
   tails, all hats) even after the last one is removed. So `import` refuses a

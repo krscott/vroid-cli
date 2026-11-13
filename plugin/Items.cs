@@ -775,11 +775,11 @@ public sealed partial class Plugin
     }
 
     // VRoid 2.16.0 builds an accessory's colour fields once, when the project
-    // opens, and builds none for one that is hidden or locked then, which its own
-    // editor shows too. So `open` briefly shows and unlocks each such accessory while
-    // it builds them again, then restores both; the project ends as it opened.
-    // Only these reads run for every accessory, so an accessory `dump` cannot read
-    // does not stop `open`.
+    // opens or the accessory is imported, and builds none for one that is hidden
+    // or locked then, which its own editor shows too. So `open` and `import`
+    // briefly show and unlock each such accessory while they build them again,
+    // then restore both; the accessories end as they were. Only these reads run
+    // for every accessory, so an accessory `dump` cannot read does not stop them.
     private static IEnumerable<bool> RebuildAccessoryColors()
     {
         var mode = Reflect.Get(Root, "EditMode") ?? throw Differs("the editor's section");
@@ -840,7 +840,8 @@ public sealed partial class Plugin
     }
 
     // Sets `hidden` or `locked` of the accessory listed at `index`, one rebuild each.
-    // It reads only that instance, so `open` can use it on any accessory.
+    // It reads only that instance, so `open` and `import` can use it on any
+    // accessory.
     private static IEnumerable<bool> SetFlag(int index, string key, bool value, string path)
     {
         if (Flag(Instances()[index], key) == value) yield break;

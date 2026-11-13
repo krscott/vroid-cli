@@ -101,6 +101,9 @@ public sealed partial class Plugin
             if (frame > 600) throw new InvalidOperationException($"VRoid kept rebuilding after importing {file}");
             yield return true;
         }
+        // VRoid builds no colour fields for an accessory imported hidden or locked,
+        // so they are built as `open` builds them.
+        foreach (var step in RebuildAccessoryColors()) yield return step;
         var now = WornAccessories();
         var added = now[^1];
         // The undo file holds for the accessories from before only if VRoid lists
@@ -116,10 +119,7 @@ public sealed partial class Plugin
                 + (kept ? "its undo file now keeps what is worn and cannot take it off" : "do not apply its undo file")
                 + ". Report this to the user");
         }
-        // VRoid builds no colour fields for an accessory imported hidden or locked,
-        // so they are built as `open` builds them.
-        foreach (var step in RebuildAccessoryColors()) yield return step;
-        result = new { imported = AccessoryEntry(WornAccessories()[^1]) };
+        result = new { imported = AccessoryEntry(added) };
     }
 
     // Writes a worn accessory, as `accessories` lists it, to a new file

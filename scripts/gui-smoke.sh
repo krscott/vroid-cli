@@ -496,8 +496,9 @@ if vroid "$save" >/dev/null 2>&1; then
     fatal "second save to $edited succeeded"
 fi
 
-# Exporting the moved, placed, and reshaped cat ears changes nothing in the
-# app, and an existing destination is refused and left unchanged (R-EDIT-16).
+# Exporting the moved, placed, reshaped, renamed, hidden, and locked cat ears
+# changes nothing in the app, and an existing destination is refused and left
+# unchanged (R-EDIT-16).
 ears_file=$out/ears.vroidcustomitem
 accessories=$(vroid '{"method": "accessories"}')
 ears_index=$(jq -e '[.worn[].item] | index("CatEar")' <<<"$accessories") || fatal "the cat ears are not worn: $accessories"

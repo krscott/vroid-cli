@@ -501,6 +501,11 @@ Test("accessories of one item reach every arrangement of bones VRoid can make", 
     var customs = AccessoryPlan.Of(new[] { Worn("custom", Head, "user"), Worn("custom", Head, "user") }, new[] { Any("custom"), Any("custom") },
         (i, j) => i != j);
     Check(customs.Kept.SequenceEqual(new[] { (0, 0), (1, 1) }) && customs.Removed.Count == 0, Show(customs));
+    // As an import's undo does, the earlier ones are kept and the last one goes,
+    // even where values match others: two imports may differ in texture.
+    var undone = AccessoryPlan.Of(new[] { Worn("custom", Head, "ears"), Worn("custom", Neck, "ears"), Worn("custom", Hips, "tail") },
+        new[] { On("custom", Head), On("custom", Hips) }, (i, j) => (i, j) is (0, 1) or (1, 0));
+    Check(undone.Kept.SequenceEqual(new[] { (0, 0), (1, 1) }) && undone.Removed.SequenceEqual(new[] { 2 }), Show(undone));
     // "None" is a bone too.
     var none = AccessoryPlan.Of(new[] { Worn("CatTail", Hips) }, new[] { On("CatTail", null) });
     Check(none.Rebone.SequenceEqual(new (int, string?)[] { (0, null) }), Show(none));

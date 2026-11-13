@@ -273,7 +273,7 @@ Operations:
 | `accessories` | Edit root `set_EditMode(AccessoryEditor)`, its `Instances` and their shape sliders' bounds, templates, and bones, below | Editor active |
 | `dump` | `parameters` and the item for every Face, Hair, Body, and Outfit category in app order, then `accessories` | No rebuild running |
 | `apply` | Items, then accessories, below; then `parameters` for each named category, and parameter `set_CombinedValue` or `set_Value`, or a colour's setter, per changed value | One rebuild finished per changed item, accessory, accessory bone, placement, hidden or locked flag, and value (R-EDIT-6) |
-| `import` | The custom item registry's `ImportCustomItemByTransferableType`, below | Task completed, one more instance listed, and its rebuild finished |
+| `import` | The custom item registry's `ImportCustomItemByTransferableType`, below | Task completed, one more instance listed, its rebuilds finished, and its colour fields built |
 | `export` | The custom item registry's `ExportAccessoryTemplate`, below | Call returned and the file names the accessory's kind |
 | `save` | Edit root `_mainActionHandler.SaveSync(path, true)` | Call returned true and the file is nonempty |
 | `render` | A temporary Unity camera renders `ModelOrigin`, below | PNG written to a new file |
@@ -539,16 +539,15 @@ undo file, an `apply` request holding the accessories from before with
 `discard_custom`, then calls `ImportCustomItemByTransferableType(globalBus,
 path, context, onError)`, whose task completes within a few frames. VRoid
 reports an error before changing anything; otherwise it appends the accessory
-to `Instances` and rebuilds twice. The bridge waits until rebuilds stop, finds
-the new accessory as the one VRoid lists last, and returns its entry. `custom`
-entries keep custom accessories in app order, so the undo's entries keep the
-accessories from before and remove the import (R-EDIT-11) only while VRoid
-lists those as before and the import after them. The bridge checks that, and
-otherwise replaces the undo file with one that keeps what is worn and fails,
-leaving the import worn. VRoid builds no colour fields for an accessory
-imported hidden or locked, as for one that opens so, so `import` then builds
-them as `open` does. The undo leaves the import's group, so built-in
-accessories of its kind stay refused.
+to `Instances` and rebuilds twice. The bridge waits until rebuilds stop, builds
+the colour fields VRoid leaves out for an accessory imported hidden or locked,
+as `open` does (below), finds the new accessory as the one VRoid lists last,
+and returns its entry. `custom` entries keep custom accessories in app order,
+so the undo's entries keep the accessories from before and remove the import
+(R-EDIT-11) only while VRoid lists those as before and the import after them.
+The bridge checks that, and otherwise replaces the undo file with one that
+keeps what is worn and fails, leaving the import worn. The undo leaves the
+import's group, so built-in accessories of its kind stay refused.
 
 `export` takes an index into `accessories` `worn` and calls
 `ExportAccessoryTemplate(transferableId, groupId, globalBus, path, context,
@@ -583,15 +582,16 @@ the name, `hidden`, then `locked` after its other values. `render` leaves a
 hidden accessory out, since VRoid disables its renderers.
 
 VRoid builds an accessory instance's colour fields (`CategoryColorSelection`)
-once, when a project opens, and builds none for one that is hidden or locked
-then; showing or unlocking it later does not bring them back, and VRoid's own
-editor shows no colour for it. The colour stays in the project. So `open`
-shows and unlocks each such accessory, calls its `InitColorSelection`, and
-hides or locks it again, which takes up to four rebuilds each. The project ends
-as it opened and `modified` stays false, but VRoid's own undo history holds the
-toggles. `open` restores the editor's section afterwards. Without this, `dump`
-would drop the colour and `apply` would refuse it until the accessory was saved
-shown and unlocked and reopened.
+once, when a project opens or the accessory is imported, and builds none for
+one that is hidden or locked then; showing or unlocking it later does not bring
+them back, and VRoid's own editor shows no colour for it. The colour stays in
+the project. So `open`, and `import` for the accessory it adds, show and
+unlocks each such accessory, call its `InitColorSelection`, and hide or lock it
+again, which takes up to four rebuilds each. The project ends as it opened and
+`modified` stays false, but VRoid's own undo history holds the toggles. `open`
+restores the editor's section afterwards. Without this, `dump` would drop the
+colour and `apply` would refuse it until the accessory was saved shown and
+unlocked and reopened.
 
 ### Colours
 
