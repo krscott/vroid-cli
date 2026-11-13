@@ -474,11 +474,24 @@ class AvailableAccessory(Model):
 
 class AccessoryList(Model):
     worn: list[Accessory] = Field(description="in the order `dump` lists them")
+    sliders: list[list[Parameter]] = Field(
+        description="one list per `worn` entry, in the same order: its shape "
+        "sliders in app order with their bounds, which differ by slider. An "
+        "accessory's sliders are known only once it is worn."
+    )
     available: list[AvailableAccessory] = Field(
         description="built-in accessories, including ones VRoid's editor does not "
         "offer, such as animal ears and tails"
     )
     bones: list[str] = Field(description="the bones an accessory can hang from")
+
+    @model_validator(mode="after")
+    def sliders_per_accessory(self) -> "AccessoryList":
+        if len(self.sliders) != len(self.worn):
+            raise ValueError(
+                f"{len(self.sliders)} slider lists for {len(self.worn)} accessories"
+            )
+        return self
 
 
 class Applied(Model):

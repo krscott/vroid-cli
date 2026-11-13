@@ -206,10 +206,13 @@ public sealed partial class Plugin
         return entry;
     }
 
-    // Accessory entries in dump order, so lists compare across instances.
-    private static Dictionary<string, object?>[] AccessoryList(IReadOnlyList<Dictionary<string, object?>> entries) =>
+    // The indexes of accessory entries in dump order, so lists compare across instances.
+    private static int[] AccessoryOrder(IReadOnlyList<Dictionary<string, object?>> entries) =>
         AccessoryPlan.DumpOrder(entries.Select(entry => (string)entry["item"]!).ToList(), entries.Select(entry => JsonSerializer.Serialize(entry)).ToList())
-            .Select(index => entries[index]).ToArray();
+            .ToArray();
+
+    private static Dictionary<string, object?>[] AccessoryList(IReadOnlyList<Dictionary<string, object?>> entries) =>
+        AccessoryOrder(entries).Select(index => entries[index]).ToArray();
 
     private static Dictionary<string, object?>[] AccessoryList(Worn[] worn) => AccessoryList(worn.Select(AccessoryEntry).ToArray());
 

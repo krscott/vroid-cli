@@ -269,7 +269,7 @@ Operations:
 | `categories` | Edit root `set_EditMode(FaceEditor, HairEditor, BodyEditor, or ClothingEditor)`, selector `Categories.Children[].Name` | Selector captured |
 | `parameters` | Selector `set_SelectedCategory`, then the category's `Parameters[]` `Label`, `CombinedValue` or `Value`, `MinValue`, `MaxValue`, and its colours, below | No rebuild running |
 | `items` | The category's item state and presets, below | Selector captured |
-| `accessories` | Edit root `set_EditMode(AccessoryEditor)`, its `Instances`, templates, and bones, below | Editor active |
+| `accessories` | Edit root `set_EditMode(AccessoryEditor)`, its `Instances` and their shape sliders' bounds, templates, and bones, below | Editor active |
 | `dump` | `parameters` and the item for every Face, Hair, Body, and Outfit category in app order, then `accessories` | No rebuild running |
 | `apply` | Items, then accessories, below; then `parameters` for each named category, and parameter `set_CombinedValue` or `set_Value`, or a colour's setter, per changed value | One rebuild finished per changed item, accessory, accessory bone, accessory placement, and value (R-EDIT-6) |
 | `save` | Edit root `_mainActionHandler.SaveSync(path, true)` | Call returned true and the file is nonempty |
@@ -422,7 +422,12 @@ and its placement under the reserved keys `bone`, `position`, `rotation`, and
 `scale`; `dump` fails if a label equals one. Each instance's
 `Parameters` are its shape sliders, read and written like Face sliders
 (`Value`, or `CombinedValue` for a two-sided one). Fox Tail repeats "Tail Base
-Thickness", so the repeated-label rule applies. Placement is the instance's
+Thickness", so the repeated-label rule applies. Their bounds differ by slider
+(Cat Ears 0 to 100, Tail Length -1 to 1 in 2.16.0), and an entry holds only
+values, so `accessories` also lists `sliders`: for each entry of `worn`, in
+the same order, its sliders as `parameters` lists a category's. Only a worn
+instance has sliders, so an accessory that is not worn has no bounds to list
+until `apply` adds it (R-EDIT-13). Placement is the instance's
 `PartOrigin`, read with `GetPartOriginQuery(transferableId)` on the editing
 model: a parent bone, VRoid's joint name such as `J_Bip_C_Head`, and a
 position, rotation quaternion, and scale relative to it, which are the
@@ -650,6 +655,7 @@ errors (R-CLI-2).
 `scripts/gui-smoke.sh`, run by `just gui-smoke`, drives a real session through
 open, dump, numeric and colour edits, item and accessory edits, including two
 accessories of one kind with one moved to another bone, placed, and reshaped,
+a check that an accessory slider's listed bounds match `apply`'s refusal,
 and the undo of its removal, outfit colour edits that keep the item built in
 (R-EDIT-12), refusal, save, rendering every view, drawing the
 thumbnails of the edited item categories, restart, reopen with a read-back of

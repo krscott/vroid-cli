@@ -250,6 +250,15 @@ public sealed partial class Plugin : BasePlugin
     private static float Read(object parameter) => Convert.ToSingle(Reflect.Get(parameter, Member(parameter))
         ?? throw new InvalidOperationException($"Parameter {Label(parameter)} has no value"));
 
+    // A numeric parameter with its bounds, as `parameters` and `accessories` list it.
+    private static object Slider(object parameter) => new
+    {
+        label = Label(parameter),
+        value = Read(parameter),
+        min = Convert.ToSingle(Reflect.Get(parameter, "MinValue")),
+        max = Convert.ToSingle(Reflect.Get(parameter, "MaxValue")),
+    };
+
     private static object Selector(string section) => Selectors.Values.FirstOrDefault(
         value => value.GetType().FullName!.Contains("." + Editor(section) + ".")) ?? throw new InvalidOperationException("No selector");
 
@@ -725,13 +734,7 @@ public sealed partial class Plugin : BasePlugin
                 foreach (var category in Visit(request.Text("section"), new[] { request.Text("category") }, errors))
                 {
                     if (category == null) yield return true;
-                    else result = category.Parameters.Select(value => (object)new
-                    {
-                        label = Label(value),
-                        value = Read(value),
-                        min = Convert.ToSingle(Reflect.Get(value, "MinValue")),
-                        max = Convert.ToSingle(Reflect.Get(value, "MaxValue")),
-                    }).Concat(category.Swatches.Select(swatch => (object)new
+                    else result = category.Parameters.Select(Slider).Concat(category.Swatches.Select(swatch => (object)new
                     {
                         label = swatch.Label,
                         value = ReadHex(swatch, $"{request.Text("section")}/{category.Name}/{swatch.Label}"),
@@ -758,9 +761,12 @@ public sealed partial class Plugin : BasePlugin
             {
                 foreach (var step in EnterAccessories()) yield return step;
                 var worn = WornAccessories();
+                var entries = worn.Select(AccessoryEntry).ToArray();
+                var order = AccessoryOrder(entries);
                 result = new
                 {
-                    worn = AccessoryList(worn),
+                    worn = order.Select(index => entries[index]).ToArray(),
+                    sliders = order.Select(index => worn[index].Parameters.Select(Slider).ToArray()).ToArray(),
                     available = AvailableAccessories().Select(accessory => new { item = accessory.Item, name = accessory.Name }).ToArray(),
                     bones = AccessoryBones(worn),
                 };
