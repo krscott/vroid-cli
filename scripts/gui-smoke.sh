@@ -699,6 +699,23 @@ launch
 inputs_before=$(input_events)
 vroid '{"method": "new", "base": "Preset_F"}' >/dev/null
 vroid '{"method": "dump"}' >"$out/before-import.json"
+# VRoid itself refuses ears without their payload through its error callback,
+# shows no dialog, and changes nothing, not even the unsaved state (R-EDIT-15).
+python3 - "$out/hollow.vroidcustomitem" <<'EOF'
+import json
+import sys
+import zipfile
+
+with zipfile.ZipFile(sys.argv[1], "w") as item:
+    meta = {"rootTransferableGroupTypeId": "TransferableGroupType.N00.Level1.AnimalEar"}
+    item.writestr("v1customitem/meta.json", json.dumps(meta))
+EOF
+if jq -cn --arg path "$out/hollow.vroidcustomitem" '{method: "import", path: $path}' | vroid - >/dev/null 2>"$out/import-hollow.err"; then
+    fatal "import of ears without their payload succeeded"
+fi
+grep -qF 'VRoid cannot import hollow.vroidcustomitem' "$out/import-hollow.err" || fatal "import of hollow ears: $(<"$out/import-hollow.err")"
+[[ $(modified) == false ]] || fatal "a refused import marked the new character modified"
+vroid '{"method": "dump"}' | cmp -s - "$out/before-import.json" || fatal "a refused import changed the new character"
 result=$(jq -cn --arg path "$ears_file" '{method: "import", path: $path}' | vroid -)
 jq -e --slurpfile exported "$out/exported.json" '.imported == ($exported[0] | .item = "custom")' <<<"$result" >/dev/null ||
     fatal "the imported ears differ from the exported $(<"$out/exported.json"): $result"
