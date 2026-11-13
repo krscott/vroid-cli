@@ -66,6 +66,13 @@
         # shell's builds in PYTHONPATH, ahead of newer store commands' sites.
         packages = with pkgs; [
           (writeShellScriptBin "framewisp" ''exec ${lib.getExe framewisp-gles2} "$@"'')
+          # Shadows any inherited vroid-cli when the shell hook finds no checkout.
+          (writeShellScriptBin "vroid-cli" ''
+            printf '%s\n' \
+              "vroid-cli: this dev shell was entered outside a vroid-cli checkout, so it has no working tree to run." \
+              "Enter it from the checkout instead: cd CHECKOUT && nix develop" >&2
+            exit 1
+          '')
           vroid-studio
           git
           python
@@ -81,8 +88,6 @@
         shellHook = ''
           if root=$(git rev-parse --show-toplevel 2>/dev/null) && [[ -x $root/scripts/dev/vroid-cli ]]; then
             PATH=$root/scripts/dev:$PATH
-          else
-            echo "vroid-cli dev shell: not in a vroid-cli checkout, so vroid-cli is not on PATH" >&2
           fi
         '';
       };

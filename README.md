@@ -151,7 +151,8 @@ just check      # formatting, lint, type checks, nix flake check
 just gui-smoke SESSION SOURCE.vroid
 ```
 
-In the dev shell, `vroid-cli` runs the working tree's Python. VRoid, the
+In the dev shell, `vroid-cli` runs the working tree's Python. Enter the
+shell from inside the checkout; elsewhere its `vroid-cli` refuses to run. VRoid, the
 bridge, and Framewisp are the shell's builds; re-enter the shell (or
 `direnv reload`) after changing them.
 
