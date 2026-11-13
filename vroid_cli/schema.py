@@ -48,6 +48,8 @@ def one_error(value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
 
 
 Value = Annotated[float | list[float] | Color | list[Color], WrapValidator(one_error)]
+# VRoid's built-in bases, as Body Whole Body items name them.
+Base = Literal["Preset_F", "Preset_M"]
 # Marks an item that is not one of VRoid's built-in items.
 CUSTOM = "custom"
 ItemId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_]+$")]
@@ -254,6 +256,16 @@ class Open(Model):
         return path
 
 
+class New(Model):
+    """Create a character from one of VRoid's built-in bases."""
+
+    method: Literal["new"]
+    base: Base = Field(
+        description="VRoid's feminine (Preset_F) or masculine (Preset_M) base, "
+        "named as Body Whole Body `items` lists it"
+    )
+
+
 class Categories(Model):
     """List a section's categories."""
 
@@ -418,6 +430,7 @@ Request = Annotated[
     | Status
     | Stop
     | Open
+    | New
     | Categories
     | Parameters
     | Items
@@ -431,6 +444,7 @@ Request = Annotated[
 ]
 BridgeRequest = (
     Open
+    | New
     | Categories
     | Parameters
     | Items
@@ -461,6 +475,10 @@ class Stopped(Model):
 
 class Opened(Model):
     opened: str
+
+
+class Created(Model):
+    created: Base
 
 
 class Parameter(Model):
@@ -573,6 +591,7 @@ RESULTS: dict[str, TypeAdapter[Any]] = {
     "status": TypeAdapter(SessionStatus),
     "stop": TypeAdapter(Stopped),
     "open": TypeAdapter(Opened),
+    "new": TypeAdapter(Created),
     "categories": TypeAdapter(list[str]),
     "parameters": TypeAdapter(list[Parameter | ColorParameter]),
     "items": TypeAdapter(ItemList),
