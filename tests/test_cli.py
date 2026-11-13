@@ -186,6 +186,27 @@ def test_nonfinite_values_are_rejected_without_state(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    "entry",
+    [
+        '"position": [0, NaN, 0]',
+        '"rotation": [0, 0, 0, Infinity]',
+        '"scale": [1, 1e999, 1]',
+        '"Ear Size (Bigger)": NaN',
+    ],
+)
+def test_non_finite_accessory_values_are_rejected_without_state(
+    tmp_path: Path, entry: str
+) -> None:
+    # R-EDIT-2
+    request = '{"method": "apply", "Accessories": [{"item": "CatEar", %s}]}' % entry
+    result = run_cli(tmp_path, "test", request)
+    assert result.returncode == 2
+    assert "Accessories.0." in result.stderr
+    assert "finite" in result.stderr
+    assert not (tmp_path / "state").exists()
+
+
+@pytest.mark.parametrize(
     "color", ['"#12345"', '"123456"', '"#12345678"', '"#GGGGGG"', '"#FAEBDE\\n"']
 )
 def test_malformed_colours_are_rejected_without_state(
@@ -266,6 +287,30 @@ def test_bridge_from_an_older_protocol_is_refused(tmp_path: Path) -> None:
         (
             '{"method": "apply", "Accessories": [{"item": "CatEar", "Color": "red"}]}',
             "Accessories.0.Color",
+        ),
+        (
+            '{"method": "apply", "Accessories": [{"item": "CatEar", "position": [0, 0]}]}',
+            "Accessories.0.position: List should have at least 3 items",
+        ),
+        (
+            '{"method": "apply", "Accessories": [{"item": "CatEar", "rotation": [0, 0, 1]}]}',
+            "Accessories.0.rotation: List should have at least 4 items",
+        ),
+        (
+            '{"method": "apply", "Accessories": [{"item": "CatEar", "scale": "1"}]}',
+            "Accessories.0.scale",
+        ),
+        (
+            '{"method": "apply", "Accessories": [{"item": "CatEar", "position": null}]}',
+            "Accessories.0.position: give an array of numbers",
+        ),
+        (
+            '{"method": "apply", "Accessories": [{"item": "CatEar", "bone": 3}]}',
+            "Accessories.0.bone",
+        ),
+        (
+            '{"method": "apply", "Accessories": [{"item": "CatEar", "bone": ""}]}',
+            "Accessories.0.bone",
         ),
         ('{"method": "apply", "discard_custom": 1}', "discard_custom"),
         ('{"method": "items", "section": "Shoes", "category": "x"}', "section"),
@@ -723,8 +768,22 @@ ITEM_DUMP = {
         "Shoes": {"item": "018", "Base Color": "#FFFFFF", "Shade Color": "#CFD6F7"},
     },
     "Accessories": [
-        {"item": "CatEar", "Color": "#825A46"},
+        {
+            "item": "CatEar",
+            "Color": "#825A46",
+            "Ear Size (Bigger)": 50.5,
+            "bone": "J_Bip_C_Head",
+            "position": [0.012345679, -0.0314159, 0],
+            "rotation": [0.0871557, 0.0436194, -0.0038053, 0.9952465],
+            "scale": [1.23456, 0.98765, 1],
+        },
         {"item": "CatEar", "Color": "#FF0000"},
+        {
+            "item": "FoxTail",
+            "Color": "#FFFFFF",
+            "Tail Base Thickness": [0, -12.5],
+            "bone": None,
+        },
         {"item": "custom"},
     ],
 }
@@ -784,8 +843,19 @@ def test_items_and_accessories_are_listed(tmp_path: Path) -> None:
     rpc = bridge(tmp_path)
     items = {"selected": None, "removable": True, "set": False, "items": ["001", "159"]}
     accessories = {
-        "worn": [{"item": "CatEar", "Color": "#825A46"}],
+        "worn": [
+            {
+                "item": "CatEar",
+                "Color": "#825A46",
+                "Fur Volume": 0,
+                "bone": "J_Bip_C_Head",
+                "position": [0, 0, 0],
+                "rotation": [0, 0, 0, 1],
+                "scale": [1, 1, 1],
+            }
+        ],
         "available": [{"item": "CatEar", "name": "Cat Ears"}],
+        "bones": ["J_Bip_C_Hips", "J_Bip_C_Head"],
     }
     peer, received = answer(
         rpc,

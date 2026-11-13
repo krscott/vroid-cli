@@ -68,6 +68,13 @@ internal static class Reflect
             .Where(method => method.Name == name && method.GetParameters().Length == args.Length).ToArray();
         if (candidates.Length != 1)
             throw new InvalidOperationException($"Expected one {value.GetType().FullName}.{name}/{args.Length}; found {candidates.Length}");
+        // A native object passed for an interface, such as a command for
+        // ISyncCommand, needs that interface's proxy.
+        var parameters = candidates[0].GetParameters();
+        for (var i = 0; i < args.Length; i++)
+            if (args[i] is Il2CppObjectBase native && !parameters[i].ParameterType.IsInstanceOfType(native)
+                && parameters[i].ParameterType.GetConstructor(new[] { typeof(IntPtr) }) is { } proxy)
+                args[i] = proxy.Invoke(new object[] { native.Pointer });
         return candidates[0].Invoke(value, args);
     }
 
