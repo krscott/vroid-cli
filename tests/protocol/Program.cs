@@ -480,8 +480,9 @@ Test("accessories of one item reach every arrangement of bones VRoid can make", 
     // default bone, then copies on another bone.
     var named = AccessoryPlan.Of(new[] { Worn("CatEar", Head), Worn("CatEar", Head) }, new[] { Any("CatEar"), Any("CatEar") }, (i, j) => i != j);
     Check(named.Kept.SequenceEqual(new[] { (1, 0), (0, 1) }) && named.Removed.Count == 0, Show(named));
-    var copies = AccessoryPlan.Of(new[] { Worn("CatEar", Neck), Worn("CatEar", Neck) }, new[] { Any("CatEar") }, (_, j) => j == 1);
-    Check(copies.Kept.SequenceEqual(new[] { (1, 0) }) && copies.Removed.SequenceEqual(new[] { 0 }), Show(copies));
+    var copies = AccessoryPlan.Of(new[] { Worn("CatEar", Head), Worn("CatEar", Neck), Worn("CatEar", Neck) }, new[] { Any("CatEar") },
+        (_, j) => j == 1);
+    Check(copies.Kept.SequenceEqual(new[] { (1, 0) }) && copies.Removed.SequenceEqual(new[] { 0, 2 }), Show(copies));
     // "custom" keeps app order, its only identity, so undo files restore it.
     var customs = AccessoryPlan.Of(new[] { Worn("custom", Head, "user"), Worn("custom", Head, "user") }, new[] { Any("custom"), Any("custom") },
         (i, j) => i != j);

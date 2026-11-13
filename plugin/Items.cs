@@ -793,7 +793,8 @@ public sealed partial class Plugin
             foreach (var (index, key) in Enumerable.Reverse(restore))
                 try
                 {
-                    if (!Flag(Instances()[index], key)) FlagCommand(Instances()[index], key, true);
+                    // Its own command may still be waiting for its rebuild, so it is sent again.
+                    FlagCommand(Instances()[index], key, true);
                 }
                 catch (Exception error)
                 {

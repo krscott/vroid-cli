@@ -136,10 +136,9 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
     /// item and bone. So the accessories of one group sit on their default bone,
     /// except copies of one item on one other bone. Built-in accessories of one
     /// item are interchangeable: a wanted one keeps a worn one that `same` says
-    /// already matches it, among those on the default bone if it names no bone;
-    /// then one that names its bone keeps one on that bone, and one that names no
-    /// bone keeps one on the default bone, then one `same` says matches it, then
-    /// any. When a kept
+    /// already matches it, first among those on the default bone if it names no
+    /// bone; then one that names its bone keeps one on that bone, and one that
+    /// names no bone keeps one on the default bone, then any. When a kept
     /// one cannot move, every one of that kind is removed and added again: one
     /// first, moved while alone, then copies of it and new ones. "custom" matches
     /// any worn accessory that is not built in, in order, which is its only
@@ -164,9 +163,9 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
                  {
                      (i, j) => BuiltIn(i) && same != null && same(i, j)
                          && (wanted[i].HasBone || worn[j].Bone == Bones.Default(wanted[i].Item)),
+                     (i, j) => BuiltIn(i) && same != null && same(i, j),
                      (i, j) => BuiltIn(i) && wanted[i].HasBone && worn[j].Bone == wanted[i].Bone,
                      (i, j) => BuiltIn(i) && !wanted[i].HasBone && worn[j].Bone == Bones.Default(wanted[i].Item),
-                     (i, j) => BuiltIn(i) && !wanted[i].HasBone && same != null && same(i, j),
                      (i, j) => BuiltIn(i) && !wanted[i].HasBone,
                      (_, _) => true,
                  })

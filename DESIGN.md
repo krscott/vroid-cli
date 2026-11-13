@@ -469,13 +469,13 @@ sit on their default bone, except copies of one item on one other bone, and
 `Accessories` in a template is every accessory to wear. Built-in accessories
 of one item are interchangeable, so `apply` keeps for each wanted one the
 first unmatched worn one of its item whose entry already holds what it names
-(on the default bone, for one that names no bone), then one on its wanted
-bone, then for one that names no bone one on the default bone, then one whose
-entry holds what it names, then any of its item; `custom` matches any worn
-accessory that is not built in, in order, its only identity. It removes the other worn ones from the end,
-moves a kept one that is alone in its kind, then adds the rest and sets their
-placement, colours, shape sliders, name, and flags, reading each back. When a
-kept one must move while others of its kind stay, or an added one must start
+(on the default bone first, for one that names no bone), then one on its
+wanted bone, then for one that names no bone one on the default bone, then any
+of its item; `custom` matches worn accessories that are not built in by their
+order, which is all that identifies them. It removes the other worn ones from
+the end, moves a kept one that is alone in its kind, then adds the rest and
+sets their placement, colours, shape sliders, name, and flags, reading each
+back. When a kept one must move while others of its kind stay, or an added one must start
 away from its default bone while others are worn, `apply` rebuilds that kind:
 it removes every one, adds the first one that is away from its default and
 moves it while alone, duplicates it for the others on that bone, and adds the
