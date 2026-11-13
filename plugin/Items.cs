@@ -190,6 +190,25 @@ public sealed partial class Plugin
     private static object EditContext(object instance) =>
         Reflect.Get(Reflect.Get(instance, "_engine"), "Context") ?? throw Differs("the edit context");
 
+    // Each kind of accessory the project has a group for, and whether an import
+    // started that group. VRoid keeps a kind's group after its last accessory
+    // is removed, even across a save, and adds every accessory of the kind to it.
+    private static Dictionary<string, bool> AccessoryGroups()
+    {
+        var model = Reflect.Get(EditContext(AccessoryEditor), "editingModel") ?? throw Differs("the editing model");
+        var kinds = AttachmentKinds.Values.ToHashSet();
+        var groups = new Dictionary<string, bool>();
+        foreach (var pair in Reflect.Items(Reflect.Get(model, "_transferableGroups")))
+        {
+            var group = Reflect.Get(pair, "Value");
+            var kind = Reflect.Get(group, "TypeId") as string ?? throw Differs("the type of a transferable group");
+            if (!kinds.Contains(kind)) continue;
+            var resource = Reflect.Get(Reflect.Get(group, "Header"), "ResourceName") as string ?? throw Differs($"the resource of the {kind} group");
+            if (!groups.TryAdd(kind, ItemIds.Imported(resource))) throw Differs($"one group of {kind} accessories");
+        }
+        return groups;
+    }
+
     // An accessory as a template entry: its item, colours, and shape sliders by
     // label, and its placement.
     private static Dictionary<string, object?> AccessoryEntry(Worn worn)
@@ -430,7 +449,8 @@ public sealed partial class Plugin
         var plan = work.Plan = AccessoryPlan.Of(worn.Select(accessory => new WornAccessory(accessory.Item, accessory.Pose.Bone, accessory.Kind)).ToList(),
             work.Wanted.Select(wanted => new WantedAccessory(wanted.Item, wanted.HasBone, wanted.Bone,
                 AttachmentKinds.GetValueOrDefault(wanted.Item, wanted.Item))).ToList(),
-            (i, j) => Satisfies(work.Wanted[i], work.WornEntries[j]));
+            (i, j) => Satisfies(work.Wanted[i], work.WornEntries[j]),
+            AccessoryGroups().Where(group => group.Value).Select(group => group.Key).ToHashSet());
         for (var i = 0; i < work.Wanted.Count; i++)
             if (work.Wanted[i].Item != ItemIds.Custom && !available.Contains(work.Wanted[i].Item))
                 errors.Add($"Accessories[{i}]: unknown accessory {work.Wanted[i].Item}; list them with accessories");

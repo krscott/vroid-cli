@@ -34,6 +34,8 @@ vroid-cli alice '{"method": "apply", "Outfit": {"Tops": {"item": "159"}}}'
 vroid-cli alice '{"method": "apply", "Outfit": {"Tops": {"Base Color": ["#B22222", "#FFFFFF"]}}}'
 vroid-cli alice '{"method": "accessories"}'
 vroid-cli alice '{"method": "apply", "Accessories": [{"item": "CatEar", "Color": "#3A2A20", "scale": [1.2, 1.2, 1.2]}]}'
+vroid-cli alice '{"method": "import", "path": "./bow.vroidcustomitem"}'
+vroid-cli alice '{"method": "export", "index": 0, "path": "./ears.vroidcustomitem"}'
 vroid-cli alice '{"method": "dump"}' > alice.json
 vroid-cli alice @alice.json
 vroid-cli alice '{"method": "save", "path": "./alice-v2.vroid"}'
@@ -54,11 +56,15 @@ VRoid's built-in items (hairstyle parts, face parts and presets, body presets,
 outfit items), draws a category's built-in item thumbnails labelled with their
 identifiers, adds, removes, recolours, places, and reshapes built-in
 accessories (glasses, cat and rabbit ears, cat, fox, and rabbit tails, hats),
-including their bone and shape sliders, renders the character to PNG from the
-front, three-quarter, side, or back, and saves projects. It can't change
-outfit textures or the colours of custom items, hide, lock, or rename
-accessories, import or create custom items, create characters from VRoid's
-sample models (`open` a sample's `.vroid` instead), or export VRM. To see
+including their bone and shape sliders, imports accessories from
+`.vroidcustomitem` files the user provides and places, recolours, and
+reshapes them, exports worn accessories to such files, renders the character
+to PNG from the front, three-quarter, side, or back, and saves projects. It
+can't change outfit or accessory textures or the colours of other custom
+items, hide, lock, or rename accessories, import outfit custom items or XWear
+(`.xwear`) items such as bags and belts, create custom items, create
+characters from VRoid's sample models (`open` a sample's `.vroid` instead),
+or export VRM. To see
 the character, use `render`, not screenshots of the editor window. Edits go
 through `vroid-cli`, never Framewisp input. When a request needs anything
 vroid-cli can't do, do the parts it can and tell the user which parts you
@@ -143,6 +149,20 @@ and tails are accessories.
   `[sin(θ/2), 0, 0, cos(θ/2)]`. `"bone": null` is VRoid's None, with no
   placement. An omitted key keeps a worn accessory's value, or VRoid's default
   for an added one, whose sliders are checked only once it is worn.
+- `import` wears the accessory in a `.vroidcustomitem` file as a new one,
+  such as a bow the user bought or made; vroid-cli has none of its own. It
+  reads as `"custom"` in `accessories` and `dump`; place, recolour, and
+  reshape it through `apply` with a `"custom"` entry, which keeps it. Its
+  `undo` removes it. A dump cannot carry it to another project; `export` it
+  by its index in `accessories` `worn` and `import` the file there.
+- VRoid keeps a kind's group of accessories (all glasses, all ears, all
+  tails, all hats) even after the last one is removed. So `import` refuses a
+  file whose kind the project wears or wore as a built-in accessory, and
+  `apply` refuses a built-in accessory whose kind the project wears or wore
+  as an import. Both errors say "Report this VRoid limit to the user": don't
+  work around it silently. In your final report, tell the user the kind and
+  what you wanted to do, such as importing ears into a project that wore
+  built-in cat ears.
 - `accessories` `sliders` holds one list per `worn` entry, in the same order:
   its shape sliders with `label`, `value`, `min`, and `max`, as `parameters`
   lists them. Bounds differ by slider, such as 0 to 100 for "Ear Size

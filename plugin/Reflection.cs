@@ -114,8 +114,10 @@ internal static class Reflect
         if (value == null) yield break;
         value = Concrete(value);
         var count = Get(value, "Count") ?? Get(value, "Length");
-        // Collection interfaces such as IReadOnlyCollection have a count but no indexer.
-        var indexed = value.GetType().GetMethods(Instance).Any(method => method.Name == "get_Item" && method.GetParameters().Length == 1);
+        // Collection interfaces such as IReadOnlyCollection have a count but no
+        // indexer, and a dictionary's indexer takes a key.
+        var indexed = value.GetType().GetMethods(Instance)
+            .Any(method => method.Name == "get_Item" && method.GetParameters() is [{ ParameterType: var type }] && type == typeof(int));
         if (count != null && indexed)
         {
             for (var i = 0; i < Convert.ToInt32(count); i++)

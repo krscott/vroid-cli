@@ -420,6 +420,7 @@ Test("item identifiers come from VRoid's resource names", _ =>
         "a built-in accessory in an imported one's group keeps its identifier");
     Check(ItemIds.Accessory("Model.N00.Transferable.FoxTail", ears, builtIn) == "custom", "an accessory the catalog lacks is built in");
     Check(ItemIds.Accessory(null, ears, builtIn) == "custom", "an accessory without a key is built in");
+    Check(ItemIds.Imported("user/VRoid/CustomItem/ea62.transferablegroup") && !ItemIds.Imported(ears), "imported groups");
     // Selectors list conflicts as transferable types, categories as group types.
     Check(ItemIds.Kind("TransferableType.N00.Onepiece") == ItemIds.Kind("TransferableGroupType.N00.Level1.Onepiece"), "kinds differ");
 });
@@ -513,13 +514,17 @@ Test("apply refuses bones VRoid cannot combine, built-in accessories that would 
     Check(crowded.Errors.Single().Contains("only while no other accessory of its kind is worn") && crowded.Rebone.Count == 0, Show(crowded));
     var alone = AccessoryPlan.Of(new[] { Worn("custom", Head, "user"), Worn("custom", Head, "other") }, new[] { On("custom", Chest), Any("custom") });
     Check(alone.Errors.Count == 0 && alone.Rebone.SequenceEqual(new (int, string?)[] { (0, Chest) }), Show(alone));
-    // A built-in accessory added to the kind of a custom one that stays would join
-    // its group and read as custom; once that one goes, the kind is free.
-    var joins = AccessoryPlan.Of(new[] { Worn("custom", Head, "ears") }, new[] { Any("custom"), Any("RabbitEar"), Any("FoxTail") });
-    Check(joins.Errors.Single().StartsWith("Accessories[1]: VRoid would add RabbitEar to the group of a worn accessory of its kind that is not built in")
+    // A built-in accessory added to a kind whose group an import started would read
+    // as custom, even once no accessory of the kind is worn, since VRoid keeps the group.
+    var imported = new HashSet<string> { "ears" };
+    var joins = AccessoryPlan.Of(new[] { Worn("custom", Head, "ears") }, new[] { Any("custom"), Any("RabbitEar"), Any("FoxTail") }, null, imported);
+    Check(joins.Errors.Single().StartsWith("Accessories[1]: VRoid keeps the group of ears accessories that an import started")
+        && joins.Errors.Single().EndsWith("Report this VRoid limit to the user")
         && joins.Added.SequenceEqual(new[] { new Addition(2, null, false, Hips) }), Show(joins));
-    var replaces = AccessoryPlan.Of(new[] { Worn("custom", Head, "ears") }, new[] { Any("RabbitEar") });
-    Check(replaces.Errors.Count == 0 && replaces.Removed.SequenceEqual(new[] { 0 }), Show(replaces));
+    var empty = AccessoryPlan.Of(Array.Empty<WornAccessory>(), new[] { Any("RabbitEar") }, null, imported);
+    Check(empty.Errors.Count == 1, Show(empty));
+    var free = AccessoryPlan.Of(new[] { Worn("custom", Head, "ears") }, new[] { Any("RabbitEar") });
+    Check(free.Errors.Count == 0 && free.Removed.SequenceEqual(new[] { 0 }), Show(free));
     Check(Placement.Rotation(new[] { 0f, 0f, 0f, 1f }) == null && Placement.Rotation(new[] { 0.1f, 0.2f, 0.3f, 0.9273618f }) == null, "a unit rotation");
     Check(Placement.Rotation(new[] { 0f, 0f, 0f, 2f }) != null && Placement.Rotation(new[] { 0f, 0f, 0f, 1.001f }) != null, "a long rotation");
     Check(Placement.Scale(new[] { 1f, 0.5f, 2f }) == null && Placement.Scale(new[] { 1f, 0f, 1f }) != null && Placement.Scale(new[] { -1f, 1f, 1f }) != null,

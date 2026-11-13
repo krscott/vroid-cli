@@ -183,9 +183,10 @@ backfill unrelated requirements.
   outside its parameter's bounds or of the wrong kind, names a category,
   parameter, item or bone that is unknown or ambiguous, gives the wrong number
   of values for a label, sets one shared colour more than once, selects items
-  that VRoid cannot wear together, or puts accessories of one kind on bones
-  that VRoid cannot combine, and changes nothing. Values that R-EDIT-13 covers
-  are checked as R-EDIT-13 says.
+  that VRoid cannot wear together, puts accessories of one kind on bones that
+  VRoid cannot combine, or adds a built-in accessory to a kind that wears or
+  wore an accessory that is not built in, and changes nothing. Values that
+  R-EDIT-13 covers are checked as R-EDIT-13 says.
 
   Rationale: VRoid's own controls never produce out-of-range values, so the
   app's behaviour for them is unknown. A partly applied template leaves a
@@ -197,7 +198,10 @@ backfill unrelated requirements.
   worn, and gives every other one the default bone or a copy of another's, so
   some combinations of bones cannot be built. A rotation that is not a unit
   quaternion, or a scale that is not positive, distorts the accessory; VRoid's
-  own controls never produce one.
+  own controls never produce one. VRoid adds a built-in accessory to the group
+  of a kind's imported one, so it would read as `custom` and lose its
+  identifier. VRoid keeps that group after the last accessory of the kind is
+  removed.
 
   Manual test: `just gui-smoke` applies one valid value, one above its
   maximum, an unknown parameter, an unknown category, a number for a colour,
@@ -268,10 +272,11 @@ backfill unrelated requirements.
   means to discard one says so, and saves a copy of the project first if it may
   want the item back.
 
-- **R-EDIT-11** [manual] Before `apply` changes anything, it writes a template
-  to a new file that restores everything the request changes, including what
-  VRoid changes with an item, except what its result names in `discarded`
-  (R-EDIT-10). Its result, and its error after a change, name the file.
+- **R-EDIT-11** [manual] Before `apply` or `import` changes anything, it
+  writes a template to a new file that restores everything the request
+  changes, including what VRoid changes with an item, except what its result
+  names in `discarded` (R-EDIT-10). Its result, and its error after a change,
+  name the file.
 
   Rationale: Agents try edits and back out the ones that don't match a
   reference. The file survives a failed or interrupted `apply`, and keeping the
@@ -325,6 +330,47 @@ backfill unrelated requirements.
   same base taken after a restart, and renders it. After a change to the
   VRoid pin, also check by hand that `new` succeeds with each base in a
   session launched without network access.
+
+- **R-EDIT-15** [manual] `import` adds the accessory in a `.vroidcustomitem`
+  file to the character without a file dialog and changes nothing else. The
+  accessory reads as `custom`, and `apply` recolours, reshapes, and places it
+  like a built-in accessory. `import` refuses a file that VRoid cannot import
+  or that holds no accessory, and an accessory that VRoid's accessory limits
+  or a built-in accessory of its kind that the project wears or wore does not
+  allow, and then changes nothing.
+
+  Rationale: Reference characters wear accessories that VRoid does not ship,
+  such as bows, which users buy or make as custom item files. VRoid's file
+  dialog, and the dialog it shows at its accessory limit, would block the
+  private display, where no one can close them. VRoid puts an accessory
+  imported next to a built-in one of its kind into the built-in's group, where
+  nothing marks it as imported, so it would read as the built-in item, and
+  templates and undo files would silently drop its texture. VRoid keeps that
+  group after the last accessory of the kind is removed.
+
+  Manual test: `just gui-smoke` exports an accessory it recoloured, reshaped,
+  and moved, imports the file into a new character, and checks that the new
+  accessory reads as `custom` with the same values and that `apply` changes
+  its colour and placement. It checks that a file that holds no accessory,
+  and an accessory of a kind that wears a built-in one, are refused with
+  `dump` unchanged, and that the import's undo file restores a `dump` taken
+  before it.
+
+- **R-EDIT-16** [manual] `export` writes a worn accessory to a new
+  `.vroidcustomitem` file without a file dialog and changes nothing in the
+  app. `import` of that file in any project adds an accessory with the same
+  colours, shape sliders, and placement. `export` refuses an existing
+  destination and leaves it unchanged.
+
+  Rationale: An accessory that is not built in has no identifier, so a
+  template cannot carry it to another project; a file can. The destination
+  may be an earlier deliverable.
+
+  Manual test: `just gui-smoke` exports a recoloured, reshaped, and moved
+  accessory, checks that `dump` and `modified` are unchanged, imports the file
+  into another project, and compares the new accessory's entry with the
+  exported one. It checks that an existing destination is refused and left
+  unchanged.
 
 ## Views (VIEW)
 

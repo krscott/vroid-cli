@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Drive a real session through edit, save, render, restart, reopen, and a
-# template round trip, then new characters, checking R-EDIT-1, R-EDIT-3,
-# R-EDIT-5, R-EDIT-6, R-EDIT-7, R-EDIT-8, R-EDIT-9, R-EDIT-11, R-EDIT-12,
-# R-EDIT-13, R-EDIT-14 except its by-hand offline check, R-SES-4, R-VIEW-1,
-# R-VIEW-2, and R-VIEW-4.
+# template round trip, then new characters and an imported accessory,
+# checking R-EDIT-1, R-EDIT-3, R-EDIT-5, R-EDIT-6, R-EDIT-7, R-EDIT-8,
+# R-EDIT-9, R-EDIT-11, R-EDIT-12, R-EDIT-13, R-EDIT-14 except its by-hand
+# offline check, R-EDIT-15, R-EDIT-16, R-SES-4, R-VIEW-1, R-VIEW-2, and
+# R-VIEW-4.
 # Needs graphics access.
 set -euo pipefail
 shopt -s failglob
@@ -21,7 +22,8 @@ usage() {
         'undoing that and a later change of top, saves a copy, renders' \
         'each view, draws the thumbnails of those two categories, restarts,' \
         'checks the saved values, and applies the original template. It then' \
-        'creates a character from each base twice, restarting between them. Editor' \
+        'creates a character from each base twice, restarting between them, and' \
+        'imports the cat ears exported before the restart into a new one. Editor' \
         'screenshots before and after the edit land in the artifact directory.' \
         'SESSION must be stopped. Set VROID_CLI to choose the vroid-cli binary.'
 }
@@ -491,6 +493,24 @@ if vroid "$save" >/dev/null 2>&1; then
     fatal "second save to $edited succeeded"
 fi
 
+# Exporting the moved, placed, and reshaped cat ears changes nothing in the
+# app, and an existing destination is refused and left unchanged (R-EDIT-16).
+ears_file=$out/ears.vroidcustomitem
+accessories=$(vroid '{"method": "accessories"}')
+ears_index=$(jq -e '[.worn[].item] | index("CatEar")' <<<"$accessories") || fatal "the cat ears are not worn: $accessories"
+jq -c --argjson index "$ears_index" '.worn[$index]' <<<"$accessories" >"$out/exported.json"
+vroid '{"method": "dump"}' >"$out/before-export.json"
+export_ears=$(jq -cn --argjson index "$ears_index" --arg path "$ears_file" '{method: "export", index: $index, path: $path}')
+vroid "$export_ears" >/dev/null
+[[ -s $ears_file ]] || fatal "export wrote no $ears_file"
+[[ $(modified) == false ]] || fatal "export marked the project modified"
+vroid '{"method": "dump"}' | cmp -s - "$out/before-export.json" || fatal "dump changed while exporting the cat ears"
+cp "$ears_file" "$out/ears.copy"
+if vroid "$export_ears" >/dev/null 2>&1; then
+    fatal "second export to $ears_file succeeded"
+fi
+cmp -s "$ears_file" "$out/ears.copy" || fatal "a refused export changed $ears_file"
+
 # Rendering shows the whole character (R-VIEW-1) and changes nothing in the
 # app: values, unsaved state, and the editor's view stay the same (R-VIEW-2).
 # The editor shows the Body section while thumbnails are drawn for the Hair and
@@ -593,6 +613,34 @@ front='Hair|Front|Main Color'
 actual=$(value_of Hair Back 'Main Color')
 same "$actual" "${expected[$front]}" || fatal "Hair/Back Main Color is $actual, not Front's"
 
+# A refused import changes nothing (R-EDIT-15): the cat ears while built-in
+# ears are worn, a custom item of a kind that is no accessory, and a file that
+# is no custom item.
+python3 - "$out/top.vroidcustomitem" <<'EOF'
+import json
+import sys
+import zipfile
+
+with zipfile.ZipFile(sys.argv[1], "w") as item:
+    meta = {"rootTransferableGroupTypeId": "TransferableGroupType.N00.Level1.Tops"}
+    item.writestr("v1customitem/meta.json", json.dumps(meta))
+EOF
+printf 'not a custom item\n' >"$out/garbage.vroidcustomitem"
+vroid '{"method": "dump"}' >"$out/before-imports.json"
+refusals=(
+    "ears|$ears_file|Report this VRoid limit to the user"
+    "top|$out/top.vroidcustomitem|which is not an accessory"
+    "garbage|$out/garbage.vroidcustomitem|is not a VRoid custom item file"
+)
+for refusal in "${refusals[@]}"; do
+    IFS='|' read -r name file reason <<<"$refusal"
+    if jq -cn --arg path "$file" '{method: "import", path: $path}' | vroid - >/dev/null 2>"$out/import-$name.err"; then
+        fatal "import of $file succeeded"
+    fi
+    grep -qF "$reason" "$out/import-$name.err" || fatal "import of $file: $(<"$out/import-$name.err")"
+done
+vroid '{"method": "dump"}' | cmp -s - "$out/before-imports.json" || fatal "a refused import changed the project"
+
 # The template dumped before the edits restores every value, item, and
 # accessory in a new app instance.
 vroid "@$out/original.json" >/dev/null
@@ -641,5 +689,33 @@ for round in 1 2; do
         vroid '{"method": "stop"}' >/dev/null
     done
 done
+
+# The exported ears, imported into a new character, read as custom with the
+# values they were exported with, and apply recolours and moves them
+# (R-EDIT-15, R-EDIT-16). Built-in ears are refused, since VRoid would add them
+# to the import's group (R-EDIT-3), and the import's undo file takes the
+# import off again (R-EDIT-11).
+launch
+inputs_before=$(input_events)
+vroid '{"method": "new", "base": "Preset_F"}' >/dev/null
+vroid '{"method": "dump"}' >"$out/before-import.json"
+result=$(jq -cn --arg path "$ears_file" '{method: "import", path: $path}' | vroid -)
+jq -e --slurpfile exported "$out/exported.json" '.imported == ($exported[0] | .item = "custom")' <<<"$result" >/dev/null ||
+    fatal "the imported ears differ from the exported $(<"$out/exported.json"): $result"
+vroid '{"method": "accessories"}' |
+    jq -c '{method: "apply", Accessories: [.worn[] | if .item == "custom" then .Color = "#C03030" | .position = [0, 0.05, 0] else . end]}' |
+    vroid - >/dev/null
+vroid '{"method": "accessories"}' |
+    jq -e '[.worn[] | select(.item == "custom")] | length == 1 and .[0].Color == "#C03030" and .[0].position == [0, 0.05, 0]' >/dev/null ||
+    fatal "apply did not recolour and move the imported ears"
+if vroid '{"method": "accessories"}' | jq -c '{method: "apply", Accessories: (.worn + [{item: "RabbitEar"}])}' |
+    vroid - >/dev/null 2>"$out/rabbit.err"; then
+    fatal "apply added built-in ears to the imported ears' group"
+fi
+grep -qF 'Report this VRoid limit to the user' "$out/rabbit.err" || fatal "built-in ears after an import: $(<"$out/rabbit.err")"
+undo "$result" "$out/before-import.json"
+inputs_after=$(input_events)
+((inputs_after == inputs_before)) || fatal "input log grew from $inputs_before to $inputs_after events"
+vroid '{"method": "stop", "force": true}' >/dev/null
 
 jq -n --arg project "$edited" '{ok: true, project: $project}'

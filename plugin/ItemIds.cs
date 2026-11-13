@@ -51,7 +51,10 @@ public static class ItemIds
     /// group an imported accessory started is a `user/VRoid/CustomItem/...`
     /// resource, so every accessory in such a group is custom.
     public static string Accessory(string? localizationKey, string groupResourceName, IReadOnlySet<string> builtIn) =>
-        AccessoryKey(localizationKey) is { } key && builtIn.Contains(key) && !groupResourceName.StartsWith(CustomItems) ? key : Custom;
+        AccessoryKey(localizationKey) is { } key && builtIn.Contains(key) && !Imported(groupResourceName) ? key : Custom;
+
+    /// Whether an import started the accessory group with this resource name.
+    public static bool Imported(string groupResourceName) => groupResourceName.StartsWith(CustomItems);
 
     /// What a category wears, such as `Onepiece`: the last part of its group
     /// type (`TransferableGroupType.N00.Level1.Onepiece`) or of a conflicting
@@ -150,11 +153,11 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
     /// one cannot move, every one of that kind is removed and added again: one
     /// first, moved while alone, then copies of it and new ones. "custom" matches
     /// any worn accessory that is not built in, in order, and moves only while
-    /// alone in its group. A built-in one is not added to a kind that keeps a
-    /// custom one, since VRoid would add it to that one's group, where it reads
-    /// as custom.
+    /// alone in its group. VRoid keeps a kind's group after its last accessory
+    /// is removed, and adds a built-in one to a group an import started, where
+    /// it reads as custom, so none is added to the `imported` kinds.
     public static AccessoryPlan Of(IReadOnlyList<WornAccessory> worn, IReadOnlyList<WantedAccessory> wanted,
-        Func<int, int, bool>? same = null)
+        Func<int, int, bool>? same = null, IReadOnlySet<string>? imported = null)
     {
         var matched = new int?[wanted.Count];
         var plan = new AccessoryPlan(new(), new(), new(), new(), new(), matched, new());
@@ -195,17 +198,17 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
                     plan.Errors.Add($"Accessories[{i}]: VRoid moves an accessory to another bone only while no other accessory of its kind is worn");
                 else plan.Rebone.Add((j, wanted[i].Bone));
             }
-        var custom = Enumerable.Range(0, worn.Count).Where(j => used[j] && worn[j].Item == ItemIds.Custom).Select(j => worn[j].Kind).ToHashSet();
         foreach (var kind in wanted.Where(entry => entry.Item != ItemIds.Custom).Select(entry => entry.Kind).Distinct())
         {
             var entries = Enumerable.Range(0, wanted.Count).Where(i => wanted[i].Item != ItemIds.Custom && wanted[i].Kind == kind).ToList();
             var kept = entries.Where(i => matched[i] != null).ToList();
-            if (custom.Contains(kind))
+            if (imported != null && imported.Contains(kind))
             {
-                // A built-in one of this kind would read as custom, so none is worn or kept.
+                // A built-in one of this kind would read as custom, so none is worn.
                 foreach (var i in entries)
-                    plan.Errors.Add($"Accessories[{i}]: VRoid would add {wanted[i].Item} to the group of a worn accessory of its kind that is not "
-                        + "built in, where it would read as custom; remove that one first");
+                    plan.Errors.Add($"Accessories[{i}]: VRoid keeps the group of {ItemIds.Kind(kind)} accessories that an import started, even "
+                        + $"after the last one is removed, and would add {wanted[i].Item} to it, where it would read as custom, so vroid-cli cannot "
+                        + $"add a built-in accessory of kind {ItemIds.Kind(kind)} to this project. Report this VRoid limit to the user");
                 continue;
             }
             // An item VRoid does not offer, which the caller refuses.
