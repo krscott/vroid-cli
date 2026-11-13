@@ -541,11 +541,10 @@ to `Instances` and rebuilds twice. The bridge waits until rebuilds stop, finds
 the new accessory as the one VRoid lists last, and returns its entry. `custom`
 entries keep custom accessories in app order, so the undo's entries keep the
 accessories from before and remove the import (R-EDIT-11) only while VRoid
-lists those as before and the import after them. The bridge checks that.
-Otherwise it takes off the new accessory if it finds exactly one, custom and of
-the file's kind, replaces the undo file with one that keeps what is worn, and
-fails. The undo leaves the import's group, so built-in accessories of its kind
-stay refused.
+lists those as before and the import after them. The bridge checks that, and
+otherwise replaces the undo file with one that keeps what is worn and fails,
+leaving the import worn. The undo leaves the import's group, so built-in
+accessories of its kind stay refused.
 
 `export` takes an index into `accessories` `worn` and calls
 `ExportAccessoryTemplate(transferableId, groupId, globalBus, path, context,

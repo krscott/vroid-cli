@@ -108,17 +108,13 @@ public sealed partial class Plugin
         if (!now.SkipLast(1).Select(accessory => accessory.Id).SequenceEqual(worn.Select(accessory => accessory.Id))
             || added.Kind != kind || added.Item != ItemIds.Custom)
         {
-            var ids = worn.Select(accessory => accessory.Id).ToHashSet();
-            var fresh = Enumerable.Range(0, now.Length).Where(i => !ids.Contains(now[i].Id)).ToArray();
-            var removed = fresh.Length == 1 && now[fresh[0]].Item == ItemIds.Custom && now[fresh[0]].Kind == kind;
-            if (removed)
-                foreach (var step in RemoveAccessory(fresh[0])) yield return step;
             // Its entries could match the wrong custom accessories, so the undo
-            // file now keeps whatever is worn.
-            undo = new Dictionary<string, object> { ["method"] = "apply", ["Accessories"] = AccessoryList(WornAccessories()) };
-            rpc.WriteUndo(request, undo);
-            throw Differs($"where VRoid lists the imported {file}; "
-                + (removed ? "it was taken off again, and VRoid keeps the group of its kind" : "it may still be worn"));
+            // file now keeps what is worn, the import too.
+            undo = new Dictionary<string, object> { ["method"] = "apply", ["Accessories"] = AccessoryList(now) };
+            var kept = Try(() => rpc.WriteUndo(request, undo), "replace the undo file");
+            throw Differs($"where VRoid lists the imported {file}, which is still worn; "
+                + (kept ? "its undo file now keeps what is worn and cannot take it off" : "do not apply its undo file")
+                + ". Report this to the user");
         }
         result = new { imported = AccessoryEntry(added) };
     }
