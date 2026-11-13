@@ -8,7 +8,8 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -88,18 +89,23 @@ def bridge(tmp_path: Path, *, terms: bool = True, **fields: Any) -> Path:
     return rpc
 
 
-def heartbeats(rpc: Path, seconds: float) -> threading.Thread:
-    """Write fresh heartbeats like a running bridge."""
+@contextmanager
+def heartbeats(rpc: Path) -> Generator[None]:
+    """Write fresh heartbeats like a running bridge during the block."""
+    done = threading.Event()
 
     def beat() -> None:
-        deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline:
+        while not done.is_set():
             write_status(rpc)
-            time.sleep(0.2)
+            done.wait(0.2)
 
     thread = threading.Thread(target=beat, daemon=True)
     thread.start()
-    return thread
+    try:
+        yield
+    finally:
+        done.set()
+        thread.join()
 
 
 def fake_framewisp(tmp_path: Path, script: str) -> dict[str, str]:
@@ -128,19 +134,20 @@ def running_desktop(tmp_path: Path) -> dict[str, str]:
     )
 
 
+@contextmanager
 def answer(
     rpc: Path,
     reply: Callable[[dict[str, Any]], dict[str, Any]],
     *,
     removal_delay: float = 0,
-) -> tuple[threading.Thread, list[dict[str, Any]]]:
-    """Act as the bridge for the next requests until none arrives for 2s."""
+) -> Generator[list[dict[str, Any]]]:
+    """Act as the bridge for requests sent in the block, and any left after it."""
     received: list[dict[str, Any]] = []
+    done = threading.Event()
 
     def peer() -> None:
         request = rpc / "request.json"
-        deadline = time.monotonic() + 2
-        while time.monotonic() < deadline:
+        while True:
             if request.exists():
                 packet = json.loads(request.read_text())
                 received.append(packet)
@@ -149,12 +156,18 @@ def answer(
                 response.with_suffix(".tmp").replace(response)
                 time.sleep(removal_delay)
                 request.unlink()
-                deadline = time.monotonic() + 2
-            time.sleep(0.01)
+            elif done.is_set():
+                return
+            else:
+                time.sleep(0.01)
 
     thread = threading.Thread(target=peer, daemon=True)
     thread.start()
-    return thread, received
+    try:
+        yield received
+    finally:
+        done.set()
+        thread.join()
 
 
 def applied(
@@ -246,9 +259,8 @@ def test_colour_labels_may_repeat_across_categories(tmp_path: Path) -> None:
         "Tops": {"Base Color": ["#B22222", "#FFFFFF"]},
         "Shoes": {"Base Color": "#000000"},
     }
-    peer, received = answer(rpc, lambda packet: applied(rpc, packet, changed=5))
-    result = invoke(tmp_path, "apply", Face=face, Outfit=outfit)
-    peer.join()
+    with answer(rpc, lambda packet: applied(rpc, packet, changed=5)) as received:
+        result = invoke(tmp_path, "apply", Face=face, Outfit=outfit)
     assert result.returncode == 0, result.stderr
     assert received[0]["Face"] == face
     assert received[0]["Outfit"] == outfit
@@ -439,9 +451,8 @@ def test_launch_reports_an_app_an_older_build_left_at_the_terms(
     # R-SES-8
     rpc = bridge(tmp_path, terms=False)
     env = running_desktop(tmp_path)
-    beating = heartbeats(rpc, 3)
-    launched = invoke(tmp_path, "launch", timeout=8, env=env)
-    beating.join()
+    with heartbeats(rpc):
+        launched = invoke(tmp_path, "launch", timeout=8, env=env)
     assert launched.returncode == 1
     assert "started by an older vroid-cli" in launched.stderr
     assert "run stop, then launch" in launched.stderr
@@ -573,9 +584,8 @@ def test_launch_refuses_outdated_interop_from_this_boot_only(
         f"[Info   :VroidBridge] {BRIDGE_LOADED.format(boot=logged_boot)}\n"
     )
     env = running_desktop(tmp_path)
-    beating = heartbeats(rpc, 3)
-    result = invoke(tmp_path, "launch", timeout=8, env=env)
-    beating.join()
+    with heartbeats(rpc):
+        result = invoke(tmp_path, "launch", timeout=8, env=env)
     if logged_boot == "test-boot":
         assert result.returncode == 1
         assert "do not match its VRoid" in result.stderr
@@ -706,9 +716,8 @@ def test_request_roundtrip(tmp_path: Path, outcome: str) -> None:
             return {"ok": False, "result": None, "error": error}
         return result
 
-    peer, received = answer(rpc, reply)
-    result = invoke(tmp_path, "apply", Body=template)
-    peer.join()
+    with answer(rpc, reply) as received:
+        result = invoke(tmp_path, "apply", Body=template)
     assert len(received) == 1
     request = received[0]
     assert request["boot"] == "test-boot"
@@ -793,7 +802,7 @@ ITEM_DUMP = {
 def test_dump_output_is_valid_apply_input(tmp_path: Path, dump: dict[str, Any]) -> None:
     # R-EDIT-7
     rpc = bridge(tmp_path)
-    peer, received = answer(
+    with answer(
         rpc,
         lambda request: (
             {
@@ -804,16 +813,15 @@ def test_dump_output_is_valid_apply_input(tmp_path: Path, dump: dict[str, Any]) 
             if request["method"] == "dump"
             else applied(rpc, request, changed=0)
         ),
-    )
-    dumped = invoke(tmp_path, "dump")
-    assert dumped.returncode == 0, dumped.stderr
-    sections: dict[str, Any] = {"Hair": {}, "Outfit": {}}
-    # Items, including null ones, and accessories pass through unchanged.
-    assert json.loads(dumped.stdout) == sections | dump
-    # Templates dumped before colours or items existed still apply unchanged.
-    (tmp_path / "template.json").write_text(json.dumps(dump))
-    reapplied = run_cli(tmp_path, "test", "@template.json")
-    peer.join()
+    ) as received:
+        dumped = invoke(tmp_path, "dump")
+        assert dumped.returncode == 0, dumped.stderr
+        sections: dict[str, Any] = {"Hair": {}, "Outfit": {}}
+        # Items, including null ones, and accessories pass through unchanged.
+        assert json.loads(dumped.stdout) == sections | dump
+        # Templates dumped before colours or items existed still apply unchanged.
+        (tmp_path / "template.json").write_text(json.dumps(dump))
+        reapplied = run_cli(tmp_path, "test", "@template.json")
     assert reapplied.returncode == 0, reapplied.stderr
     assert received[1] | {"id": "", "boot": "", "timeout_ms": 0} == sections | dump | {
         "id": "",
@@ -825,14 +833,13 @@ def test_dump_output_is_valid_apply_input(tmp_path: Path, dump: dict[str, Any]) 
 def test_apply_sends_discard_custom_only_when_set(tmp_path: Path) -> None:
     # R-EDIT-10: the opt-in reaches the bridge, and the result names what it discarded.
     rpc = bridge(tmp_path)
-    peer, received = answer(
+    with answer(
         rpc,
         lambda packet: applied(rpc, packet, changed=2, discarded=["Hair/Overall Hair"]),
-    )
-    hair = {"Overall Hair": {"item": "215"}}
-    plain = invoke(tmp_path, "apply", Hair=hair)
-    forced = invoke(tmp_path, "apply", Hair=hair, discard_custom=True)
-    peer.join()
+    ) as received:
+        hair = {"Overall Hair": {"item": "215"}}
+        plain = invoke(tmp_path, "apply", Hair=hair)
+        forced = invoke(tmp_path, "apply", Hair=hair, discard_custom=True)
     assert plain.returncode == forced.returncode == 0, plain.stderr + forced.stderr
     assert "discard_custom" not in received[0]
     assert received[1]["discard_custom"] is True
@@ -857,17 +864,16 @@ def test_items_and_accessories_are_listed(tmp_path: Path) -> None:
         "available": [{"item": "CatEar", "name": "Cat Ears"}],
         "bones": ["J_Bip_C_Hips", "J_Bip_C_Head"],
     }
-    peer, received = answer(
+    with answer(
         rpc,
         lambda request: {
             "ok": True,
             "result": items if request["method"] == "items" else accessories,
             "error": None,
         },
-    )
-    listed = invoke(tmp_path, "items", section="Outfit", category="Tops")
-    worn = invoke(tmp_path, "accessories")
-    peer.join()
+    ) as received:
+        listed = invoke(tmp_path, "items", section="Outfit", category="Tops")
+        worn = invoke(tmp_path, "accessories")
     assert listed.returncode == worn.returncode == 0, listed.stderr + worn.stderr
     assert (received[0]["section"], received[0]["category"]) == ("Outfit", "Tops")
     assert json.loads(listed.stdout) == items
@@ -883,22 +889,20 @@ def test_parameters_list_numbers_and_colours(tmp_path: Path) -> None:
         {"label": "Base Color", "value": "#B22222"},
         {"label": "Base Color", "value": "#FFFFFF"},
     ]
-    peer, _ = answer(rpc, lambda _: {"ok": True, "result": listed, "error": None})
-    result = invoke(tmp_path, "parameters", section="Body", category="Whole Body")
-    peer.join()
+    with answer(rpc, lambda _: {"ok": True, "result": listed, "error": None}):
+        result = invoke(tmp_path, "parameters", section="Body", category="Whole Body")
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == listed
 
 
 def test_a_result_that_breaks_the_schema_is_an_error(tmp_path: Path) -> None:
     rpc = bridge(tmp_path)
-    peer, _ = answer(
+    with answer(
         rpc,
         lambda _: {"ok": True, "result": {"saved": "x", "bytes": "1"}, "error": None},
-    )
-    (tmp_path / "saved.vroid").unlink(missing_ok=True)
-    result = invoke(tmp_path, "save", path="saved.vroid")
-    peer.join()
+    ):
+        (tmp_path / "saved.vroid").unlink(missing_ok=True)
+        result = invoke(tmp_path, "save", path="saved.vroid")
     assert result.returncode == 1
     assert result.stdout == ""
     assert "does not match the schema" in result.stderr
@@ -969,9 +973,8 @@ def test_an_undo_file_that_does_not_apply_is_an_error(tmp_path: Path) -> None:
         (rpc / "undo" / f"{packet['id']}.json").write_text('{"method": "dump"}')
         return result
 
-    peer, received = answer(rpc, reply)
-    result = invoke(tmp_path, "apply", Body={"Whole Body": {"Head Size": 0.5}})
-    peer.join()
+    with answer(rpc, reply) as received:
+        result = invoke(tmp_path, "apply", Body={"Whole Body": {"Head Size": 0.5}})
     undo = rpc.resolve() / "undo" / f"{received[0]['id']}.json"
     assert result.returncode == 1
     assert result.stdout == ""
@@ -983,23 +986,21 @@ def test_an_undo_file_that_does_not_apply_is_an_error(tmp_path: Path) -> None:
 def test_command_returns_after_the_bridge_removes_its_request(tmp_path: Path) -> None:
     # R-RPC-3
     rpc = bridge(tmp_path)
-    peer, _ = answer(
+    with answer(
         rpc, lambda _: {"ok": True, "result": [], "error": None}, removal_delay=1
-    )
-    result = invoke(tmp_path, "categories", section="Body")
-    assert result.returncode == 0, result.stderr
-    assert not (rpc / "request.json").exists()
-    peer.join()
+    ):
+        result = invoke(tmp_path, "categories", section="Body")
+        assert result.returncode == 0, result.stderr
+        assert not (rpc / "request.json").exists()
 
 
 def test_paths_are_sent_as_wine_paths(tmp_path: Path) -> None:
     rpc = bridge(tmp_path)
     (tmp_path / "source.vroid").write_bytes(b"project")
-    peer, received = answer(
+    with answer(
         rpc, lambda r: {"ok": True, "result": {"opened": r["path"]}, "error": None}
-    )
-    result = invoke(tmp_path, "open", path="source.vroid")
-    peer.join()
+    ) as received:
+        result = invoke(tmp_path, "open", path="source.vroid")
     assert result.returncode == 0, result.stderr
     assert received[0]["path"] == f"Z:{tmp_path / 'source.vroid'}"
     assert json.loads(result.stdout) == {"opened": str(tmp_path / "source.vroid")}
@@ -1108,9 +1109,8 @@ def writes_image(
 def test_images_are_published_at_the_callers_path(tmp_path: Path, method: str) -> None:
     # R-VIEW-3
     rpc = bridge(tmp_path)
-    peer, received = answer(rpc, writes_image(b"\x89PNG image"))
-    result = invoke(tmp_path, method, path="image.png", **IMAGES[method])
-    peer.join()
+    with answer(rpc, writes_image(b"\x89PNG image")) as received:
+        result = invoke(tmp_path, method, path="image.png", **IMAGES[method])
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == image_result(
         {"method": method, "path": str(tmp_path / "image.png")}, 10
@@ -1134,14 +1134,13 @@ def test_images_never_replace_a_destination_created_meanwhile(
     # R-VIEW-3
     rpc = bridge(tmp_path)
     destination = tmp_path / "image.png"
-    peer, _ = answer(
+    with answer(
         rpc,
         writes_image(
             b"\x89PNG new", then=lambda: destination.write_bytes(b"earlier image")
         ),
-    )
-    result = invoke(tmp_path, method, path="image.png", **IMAGES[method])
-    peer.join()
+    ):
+        result = invoke(tmp_path, method, path="image.png", **IMAGES[method])
     assert result.returncode == 1
     assert result.stdout == ""
     assert "refusing to overwrite" in result.stderr
@@ -1154,9 +1153,8 @@ def test_failed_images_leave_no_file(tmp_path: Path, method: str) -> None:
     # R-VIEW-3
     error = "Open a project first"
     rpc = bridge(tmp_path)
-    peer, _ = answer(rpc, writes_image(b"\x89PNG partial", error=error))
-    result = invoke(tmp_path, method, path="image.png", **IMAGES[method])
-    peer.join()
+    with answer(rpc, writes_image(b"\x89PNG partial", error=error)):
+        result = invoke(tmp_path, method, path="image.png", **IMAGES[method])
     assert result.returncode == 1
     assert error in result.stderr
     assert render_files(tmp_path) == []
@@ -1165,11 +1163,10 @@ def test_failed_images_leave_no_file(tmp_path: Path, method: str) -> None:
 @pytest.mark.parametrize("method", IMAGES)
 def test_images_report_a_missing_bridge_file(tmp_path: Path, method: str) -> None:
     rpc = bridge(tmp_path)
-    peer, _ = answer(
+    with answer(
         rpc, lambda r: {"ok": True, "result": image_result(r, 1), "error": None}
-    )
-    result = invoke(tmp_path, method, path="image.png", **IMAGES[method])
-    peer.join()
+    ):
+        result = invoke(tmp_path, method, path="image.png", **IMAGES[method])
     assert result.returncode == 1
     assert "cannot link .vroid-render-" in result.stderr
     assert "No such file or directory" in result.stderr
