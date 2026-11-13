@@ -9,7 +9,7 @@ from typing import Any, cast
 
 # Change together with Bridge.Protocol whenever the file protocol or the
 # request methods change incompatibly.
-PROTOCOL = 7
+PROTOCOL = 8
 # The bridge writes a heartbeat about once a second from Unity's main thread.
 HEARTBEAT_STALE_MS = 5000
 # The bridge stops waiting on an operation after this long...

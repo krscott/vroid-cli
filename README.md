@@ -60,7 +60,8 @@ vroid-cli demo '{"method": "dump"}' > template.json
 vroid-cli other @template.json
 ```
 
-`apply` checks every item and value before changing any, except colours of a
+`apply` checks every item and value before changing any, against the bounds
+`parameters` lists, or for a worn accessory's shape sliders `accessories`, except colours of a
 category whose item the request may change and the shape sliders of an added
 accessory, which it checks once the new item or accessory is worn. Before the first change it writes an `undo` file, an `apply` request that restores the previous
 ones; its result names the file. A category's
@@ -151,7 +152,8 @@ just check      # formatting, lint, type checks, nix flake check
 just gui-smoke SESSION SOURCE.vroid
 ```
 
-In the dev shell, `vroid-cli` runs the working tree's Python. VRoid, the
+In the dev shell, `vroid-cli` runs the working tree's Python. Enter the
+shell from inside the checkout; elsewhere its `vroid-cli` refuses to run. VRoid, the
 bridge, and Framewisp are the shell's builds; re-enter the shell (or
 `direnv reload`) after changing them.
 

@@ -861,6 +861,7 @@ def test_items_and_accessories_are_listed(tmp_path: Path) -> None:
                 "scale": [1, 1, 1],
             }
         ],
+        "sliders": [[{"label": "Fur Volume", "value": 0, "min": 0, "max": 100}]],
         "available": [{"item": "CatEar", "name": "Cat Ears"}],
         "bones": ["J_Bip_C_Hips", "J_Bip_C_Head"],
     }
@@ -907,6 +908,17 @@ def test_a_result_that_breaks_the_schema_is_an_error(tmp_path: Path) -> None:
     assert result.stdout == ""
     assert "does not match the schema" in result.stderr
     assert "bytes: Input should be a valid integer" in result.stderr
+
+
+def test_accessory_sliders_must_match_the_worn_accessories(tmp_path: Path) -> None:
+    rpc = bridge(tmp_path)
+    listed = {"worn": [{"item": "CatEar"}], "sliders": [], "available": [], "bones": []}
+    peer, _ = answer(rpc, lambda _: {"ok": True, "result": listed, "error": None})
+    result = invoke(tmp_path, "accessories")
+    peer.join()
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "0 slider lists for 1 accessories" in result.stderr
 
 
 def test_an_apply_without_a_result_names_its_undo_file(tmp_path: Path) -> None:

@@ -81,7 +81,8 @@ and tails are accessories.
   part, so an item with several parts takes an array of colours; `render` to
   see which part each one colours. A new item's parts are known only once it
   is worn: select it, list its `parameters`, then set its colours.
-- `apply` accepts finite values within each parameter's `min..max`, and
+- `apply` accepts finite values within each parameter's `min..max`, as
+  `parameters` lists them, or `accessories` `sliders` for accessories, and
   colours as `"#RRGGBB"` where `parameters` lists a colour. It checks every
   value before changing any, and one bad value refuses the whole request,
   except a new item's colours and an added accessory's shape sliders, which
@@ -132,7 +133,7 @@ and tails are accessories.
   it to `worn` from `accessories`, as the example's list would otherwise
   remove the rest. A pair of ears is one accessory; VRoid allows five.
 - An accessory entry has an `item` from `accessories`, its "Color", its shape
-  sliders by label (list them from `worn` once it is worn), and its
+  sliders by label, and its
   placement: `bone`, one of `accessories` `bones` such as `J_Bip_C_Head`;
   `position` `[x, y, z]` in metres; `rotation`, a unit quaternion
   `[x, y, z, w]`; and `scale` `[x, y, z]`, all relative to the bone and the
@@ -140,6 +141,11 @@ and tails are accessories.
   `[sin(θ/2), 0, 0, cos(θ/2)]`. `"bone": null` is VRoid's None, with no
   placement. An omitted key keeps a worn accessory's value, or VRoid's default
   for an added one, whose sliders are checked only once it is worn.
+- `accessories` `sliders` holds one list per `worn` entry, in the same order:
+  its shape sliders with `label`, `value`, `min`, and `max`, as `parameters`
+  lists them. Bounds differ by slider, such as 0 to 100 for "Ear Size
+  (Bigger)" and -1 to 1 for "Tail Length". An accessory that is not worn has
+  no sliders yet: add it with `apply`, then list `accessories`.
 - VRoid moves an accessory to another bone only while no other of its kind
   (all glasses, all ears, all tails, all hats) is worn, so `apply` may remove
   and re-add that kind to reach a template. Accessories of one item are

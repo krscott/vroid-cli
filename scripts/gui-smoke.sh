@@ -430,7 +430,14 @@ IFS='|' read -r other_section other_category other_label <<<"${edits[1]}"
 # Pipeline stages run at once, so each request they need runs first.
 dress=$(pick_item Outfit Dresses)
 top=$(pick_item Outfit Tops)
-worn=$(vroid '{"method": "accessories"}' | jq -c .worn)
+accessories=$(vroid '{"method": "accessories"}')
+worn=$(jq -c .worn <<<"$accessories")
+# The bounds `accessories` lists for a cat ear slider, which the refusal names.
+ear_bounds=$(jq -ce '[.worn, .sliders] | transpose | [.[] | select(.[0].item == "CatEar") | .[1][]
+    | select(.label == "Ear Size (Bigger)")] | if length > 0 then .[0] else error("no CatEar Ear Size (Bigger)") end' <<<"$accessories") ||
+    fatal "accessories lists no bounds for the cat ears' Ear Size (Bigger): $accessories"
+# Arithmetic drops the CLI's ".0", which the bridge's refusal omits.
+ear_refusal=$(jq -r '"/Ear Size (Bigger): \(.max + 1) is outside \(.min + 0)..\(.max + 0)"' <<<"$ear_bounds")
 max=$(jq -cn --arg section "$section" --arg category "$category" \
     '{method: "parameters", section: $section, category: $category}' |
     vroid - | jq --arg label "$label" '.[] | select(.label == $label) | .max')
@@ -446,8 +453,8 @@ refused=$(with_value "$section" "$category" "$label" "$(jq -n --argjson max "$ma
     with_value Outfit Dresses item "$dress" |
     with_value Outfit Tops item "$top" |
     with_value Outfit Shoes 'Base Color' '["#123456", "#123456", "#123456", "#123456", "#123456", "#123456"]' |
-    jq -c --argjson worn "$worn" '.Accessories = [$worn[] | if .item == "CatEar"
-        then .rotation = [0, 0, 0, 2] | .scale = [1, 0, 1] | .bone = "J_No_Such_Bone" | .["Ear Size (Bigger)"] = 101
+    jq -c --argjson worn "$worn" --argjson ear "$ear_bounds" '.Accessories = [$worn[] | if .item == "CatEar"
+        then .rotation = [0, 0, 0, 2] | .scale = [1, 0, 1] | .bone = "J_No_Such_Bone" | .["Ear Size (Bigger)"] = $ear.max + 1
         elif .item == "RabbitEar" then .bone = "J_Bip_C_Chest" else . end]')
 if vroid "$refused" >/dev/null 2>"$out/bounds.err"; then
     fatal "apply above the maximum succeeded"
@@ -456,7 +463,7 @@ for reason in 'is outside' 'No Such Parameter: unknown parameter' 'No Such Categ
     'Face/Irises/R Eye: is a colour' 'Face/Skin/Color and Body/Whole Body/Color set the same colour' \
     'Face/Irises/Both Eyes: sets R Eye and L Eye together' 'Hair/Back: unknown item NoSuchItem' \
     'VRoid cannot wear these together' '/rotation: has length 2, not 1' '/bone: unknown bone J_No_Such_Bone' \
-    '/scale: every factor must be positive' '/Ear Size (Bigger): 101 is outside' 'only as copies of one' 'Nothing changed'; do
+    '/scale: every factor must be positive' "$ear_refusal" 'only as copies of one' 'Nothing changed'; do
     grep -qF "$reason" "$out/bounds.err" || fatal "refusal lacks '$reason': $(<"$out/bounds.err")"
 done
 grep -qE 'Outfit/Shoes/Base Color: (give one colour|[0-9]+ colours have this label)' "$out/bounds.err" ||
