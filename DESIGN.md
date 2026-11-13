@@ -479,19 +479,20 @@ one item are interchangeable, so `apply` keeps for each wanted one the first
 unmatched worn one of its item whose entry already holds what it names, then
 one on its wanted bone, then for one that names no bone one on the default
 bone, then any of its item; `custom` keeps the first worn accessory that is not
-built in whose entry holds what it names, then any, in order. It removes the
-other worn ones from the end, moves a kept one that is alone in its kind, then
-adds the rest and sets their placement, colours, and shape sliders, reading
-each back. When a kept one must move while others of its kind stay, or an added
-one must start away from its default bone while others are worn, `apply`
-rebuilds that kind: it removes every one, adds the first one that is away from
-its default and moves it while alone, duplicates it for the others on that
-bone, and adds the rest; each takes over the values of the one it replaced.
-This reaches every arrangement VRoid's own controls can make, so dumps and undo
-files restore exactly (R-EDIT-7, R-EDIT-11). A custom accessory moves only
-while alone in its kind. `apply` refuses an unknown item or bone, `custom`
-with no other worn accessory that is not built in, more than the editor's
-`MaxInstanceCount`, and removing one that is not built in without
+built in whose values it names in full, as a dump or undo file does, then any,
+in order, so one naming only a bone moves the one listed in its place. It
+removes the other worn ones from the end, moves a kept one that is alone in its
+kind, then adds the rest and sets their placement, colours, and shape sliders,
+reading each back. When a kept one must move while others of its kind stay, or
+an added one must start away from its default bone while others are worn,
+`apply` rebuilds that kind: it removes every one, adds the first one that is
+away from its default and moves it while alone, duplicates it for the others on
+that bone, and adds the rest; each takes over the values of the one it
+replaced. This reaches every arrangement VRoid's own controls can make, so
+dumps and undo files restore exactly (R-EDIT-7, R-EDIT-11). A custom accessory
+moves only while alone in its kind. `apply` refuses an unknown item or bone,
+`custom` with no other worn accessory that is not built in, more than the
+editor's `MaxInstanceCount`, and removing one that is not built in without
 `discard_custom`. It also refuses to add a built-in accessory to a kind whose
 group an import started, worn or not, below (R-EDIT-3). `dump` and
 `accessories` list accessories by item, built-in before `custom`; one item's

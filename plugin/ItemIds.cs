@@ -153,7 +153,8 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
     /// one cannot move, every one of that kind is removed and added again: one
     /// first, moved while alone, then copies of it and new ones. "custom" keeps a
     /// worn accessory that is not built in that `same` says matches it, then any,
-    /// in order, and moves only while alone in its kind. VRoid keeps a kind's group after its last accessory
+    /// in order, and moves only while alone in its kind; the caller's `same`
+    /// matches a custom one only for an entry that names all its values. VRoid keeps a kind's group after its last accessory
     /// is removed, and adds a built-in one to a group an import started, where
     /// it reads as custom, so none is added to the `imported` kinds.
     public static AccessoryPlan Of(IReadOnlyList<WornAccessory> worn, IReadOnlyList<WantedAccessory> wanted,
