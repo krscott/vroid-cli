@@ -323,8 +323,8 @@ backfill unrelated requirements.
   Manual test: `just gui-smoke` creates a character from each base, checks
   that `dump` names no `"custom"` item and that it matches a `dump` of the
   same base taken after a restart, and renders it. After a change to the
-  VRoid pin, also launch a session with no network access, run `new` with
-  each base, and check that it succeeds.
+  VRoid pin, also check by hand that `new` succeeds with each base in a
+  session launched without network access.
 
 ## Views (VIEW)
 

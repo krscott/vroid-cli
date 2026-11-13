@@ -58,8 +58,9 @@ including their bone and shape sliders, renders the character to PNG from the
 front, three-quarter, side, or back, and saves projects. It can't change
 outfit textures or the colours of custom items, hide, lock, or rename
 accessories, import or create custom items, create characters from VRoid's
-sample models (`open` a sample's `.vroid` instead), or export VRM. To see the character, use `render`, not screenshots of the editor window. Edits
-go through `vroid-cli`, never Framewisp input. When a request needs anything
+sample models (`open` a sample's `.vroid` instead), or export VRM. To see
+the character, use `render`, not screenshots of the editor window. Edits go
+through `vroid-cli`, never Framewisp input. When a request needs anything
 vroid-cli can't do, do the parts it can and tell the user which parts you
 couldn't.
 
@@ -183,15 +184,15 @@ and tails are accessories.
   changes the scale and can move the ground line.
   `width` and `height` default to 1024.
 - `{"method": "new", "base": "Preset_F"}` (or `"Preset_M"`) starts a character
-  from VRoid's feminine (or masculine) base instead of `open`, offline. It
-  wears only built-in items. It has no file until `save`, and one without edits
+  from VRoid's feminine (or masculine) base instead of `open`; it works
+  offline and wears only built-in items. It has no file until `save`, and one without edits
   stops without `force`, since `new` recreates it exactly.
 - Opening or creating another character requires `save`, `stop`, and `launch`
   first.
 - `stop` refuses while there are unsaved changes or a pending request. Save
   or wait first; send `{"method": "stop", "force": true}` only when discarding
   them is intended.
-- Never repeat a timed-out `open`, `apply`, or `save` automatically. Inspect
+- Never repeat a timed-out `open`, `new`, `apply`, or `save` automatically. Inspect
   `status` and the result file named in the error first.
 
 ## Timing and sandboxes

@@ -277,8 +277,9 @@ Operations:
 | `render` | A temporary Unity camera renders `ModelOrigin`, below | PNG written to a new file |
 | `thumbnails` | The category's options' `Preview.Create()`, below | PNG written to a new file |
 
-`open` and `new` refuse once a character is open; changing characters needs a
-restart. Successful `open`, `new`, and `save` clear `modified`.
+`open` and `new` refuse once either has started in the app instance, even
+one that failed or timed out while VRoid was still loading; changing
+characters needs a restart. Successful `open`, `new`, and `save` clear `modified`.
 
 `new` makes the call that VRoid's base dialog (`BaseSelectDialogViewModel`)
 makes for "Create New": `Preset_F` with model variant `F00`, or `Preset_M`
@@ -671,19 +672,19 @@ and the undo of its removal, outfit colour edits that keep the item built in
 (R-EDIT-12), refusal, save, rendering every view, drawing the
 thumbnails of the edited item categories, restart, reopen with a read-back of
 every edited number, colour, item, and accessory (R-EDIT-1) and of each
-category's item identifiers (R-EDIT-9), reapplying the first dump, and
-creating a character from each base in two app instances, with a render, an
-edit and save, and a `stop` that refuses only while it is unsaved (R-EDIT-14),
-and checks the Framewisp input log and that BepInEx's log names the ready bridge's
-boot. It saves editor screenshots before and after the edits. It decodes each
+category's item identifiers (R-EDIT-9), and reapplying the first dump, and
+checks the Framewisp input log and that BepInEx's log names the ready bridge's
+boot. It then creates a character from each base in two app instances each
+(R-EDIT-6, R-EDIT-14), with a render, and an edit and save that `stop` waits
+for (R-SES-4). It saves editor screenshots before and after the edits. It decodes each
 render with the Python standard library to check its size and framing, checks
 each thumbnail sheet's size and items, and compares `dump` and an editor
 screenshot before and after rendering and drawing thumbnails. It needs graphics
 access.
 
-R-EDIT-14's offline check is by hand: launch a session without network
-access, then run `new` with each base as usual. The app stays in the network
-namespace that `launch` starts in. In this unprivileged launch, the outer user
+R-EDIT-14's offline check is by hand: for each base, launch a session without
+network access, then run `new` as usual; the app keeps the namespaces `launch`
+started it in. In this unprivileged launch, the outer user
 namespace may mount a tmpfs, which gives Xwayland a socket directory it owns,
 and the inner one restores the user that owns the session:
 

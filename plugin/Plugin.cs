@@ -19,6 +19,9 @@ public sealed partial class Plugin : BasePlugin
     // Holds ModelOrigin, the root transform of the model on screen.
     private static object? updater;
     private static bool modified;
+    // Whether a request has started opening or creating a character in this
+    // app instance; VRoid holds one per instance, even while it loads.
+    private static bool loaded;
     private static long rebuilt;
     private static int frame = -1;
     private static readonly Dictionary<string, object> Selectors = new();
@@ -705,7 +708,8 @@ public sealed partial class Plugin : BasePlugin
     // Opens or creates the character, then waits for its editor and first rebuild.
     private static IEnumerable<bool> Load(Action start)
     {
-        if (root != null) throw new InvalidOperationException("A character is already open; save, then restart the session to open or create another");
+        if (loaded) throw new InvalidOperationException("A character is already open or loading; save, then restart the session to open or create another");
+        loaded = true;
         var before = rebuilt;
         start();
         while (root == null || rebuilt == before || updating) yield return true;

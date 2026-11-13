@@ -2,7 +2,8 @@
 # Drive a real session through edit, save, render, restart, reopen, and a
 # template round trip, then new characters, checking R-EDIT-1, R-EDIT-3,
 # R-EDIT-5, R-EDIT-6, R-EDIT-7, R-EDIT-8, R-EDIT-9, R-EDIT-11, R-EDIT-12,
-# R-EDIT-13, R-EDIT-14, R-VIEW-1, R-VIEW-2, and R-VIEW-4.
+# R-EDIT-13, R-EDIT-14 except its by-hand offline check, R-SES-4, R-VIEW-1,
+# R-VIEW-2, and R-VIEW-4.
 # Needs graphics access.
 set -euo pipefail
 shopt -s failglob
@@ -607,10 +608,11 @@ vroid '{"method": "stop", "force": true}' >/dev/null
 for round in 1 2; do
     for base in Preset_F Preset_M; do
         launch
+        before=$(rebuilt)
         jq -cn --arg base "$base" '{method: "new", base: $base}' | vroid - |
             jq -e --arg base "$base" '.created == $base' >/dev/null || fatal "new $base reported another base"
-        vroid '{"method": "status"}' | jq -e '.bridge.rebuilt >= 1 and .bridge.updating == false and .bridge.modified == false' >/dev/null ||
-            fatal "new $base returned before a completed rebuild, or as unsaved"
+        vroid '{"method": "status"}' | jq -e --argjson before "$before" '.bridge.rebuilt > $before and .bridge.updating == false' >/dev/null ||
+            fatal "new $base returned before a completed rebuild"
         dump=$out/new-$base-$round.json
         vroid '{"method": "dump"}' >"$dump"
         jq -e --arg base "$base" '.Body["Whole Body"].item == $base and ([.. | .item? | select(. == "custom")] | length == 0)' "$dump" >/dev/null ||
@@ -626,12 +628,13 @@ for round in 1 2; do
             fatal "open after new $base succeeded"
         fi
         grep -qF 'already open' "$out/reopen.err" || fatal "open after new $base: $(<"$out/reopen.err")"
-        # An edited new character saves, and only a saved one stops without force.
+        # An edited new character refuses to stop until it is saved.
         if [[ $round == 1 && $base == Preset_M ]]; then
             vroid "$(with_value Body 'Whole Body' 'Head Size' "$(pick "$(value_of Body 'Whole Body' 'Head Size')")" <<<'{"method": "apply"}')" >/dev/null
-            if vroid '{"method": "stop"}' >/dev/null 2>&1; then
+            if vroid '{"method": "stop"}' >/dev/null 2>"$out/stop.err"; then
                 fatal "stop discarded an edited new character"
             fi
+            grep -qF 'unsaved changes' "$out/stop.err" || fatal "stop after editing new $base: $(<"$out/stop.err")"
             jq -cn --arg path "$out/new.vroid" '{method: "save", path: $path}' | vroid - >/dev/null
         fi
         vroid '{"method": "stop"}' >/dev/null
