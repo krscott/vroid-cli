@@ -88,7 +88,9 @@ and tails are accessories.
   `parameters` order. Outfit items have a "Base Color" and "Shade Color" per
   part, so an item with several parts takes an array of colours; `render` to
   see which part each one colours. A new item's parts are known only once it
-  is worn: select it, list its `parameters`, then set its colours.
+  is worn: select it, list its `parameters`, then set its colours. Inner Top
+  and Inner Bottom items are flat black and have no colours; VRoid changes
+  them only with Edit Texture, which vroid-cli can't use.
 - `apply` accepts finite values within each parameter's `min..max`, as
   `parameters` lists them, or `accessories` `sliders` for accessories, and
   colours as `"#RRGGBB"` where `parameters` lists a colour. It checks every
@@ -115,11 +117,14 @@ and tails are accessories.
   thumbnail of each item, 10 per row in `items` order, labelled with its
   identifier. It takes about 2 s, changes nothing, and shows items in VRoid's
   default colours. Then select candidates and `render` them to compare.
-  Selecting an item keeps every colour except the Outfit item's own, which
-  start at the item's defaults, and resets Face Irises and Eyebrows values,
-  so `apply` changes items first, then values. Setting an outfit colour keeps
-  the item built in. `"item": null` takes
-  off the item where `items` reports `removable`.
+  Inner Top and Inner Bottom thumbnails, like VRoid's picker, show flat black
+  shapes, with the items' insides dark red; choose them by shape. `render`
+  shows them only where other outfit items leave them uncovered. Selecting
+  an item keeps every colour except the Outfit item's own, which start at
+  the item's defaults, and resets Face Irises and Eyebrows values, so `apply`
+  changes items first, then values. Setting an outfit colour keeps the item
+  built in. `"item": null` takes off the item where `items` reports
+  `removable`.
 - VRoid takes off conflicting items itself, such as the dress when a top is
   selected; a request naming both is refused. Each Hair Back item also brings
   its own Base Hair item, or none: Back `146` selects Base Hair `001`, `326`
