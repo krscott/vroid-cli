@@ -4,6 +4,7 @@ import fcntl
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 from collections.abc import Generator
@@ -24,6 +25,17 @@ PREFERRED_GPU_VENDORS = {"0x1002", "0x8086"}
 OUTDATED_INTEROP = "Interop assemblies are possibly out of date"
 # Logged by the bridge in plugin/Plugin.cs when it loads.
 BRIDGE_LOADED = "vroid-cli bridge loaded; boot {boot}"
+# One app run's logs, relative to the session directory.
+RUN_LOGS = (
+    "player.log",
+    "desktop/app.log",
+    "bepinex/LogOutput.log",
+    "bepinex/preloader.log",
+    "bepinex/ErrorLog.log",
+)
+# A starting app whose logs are quiet this long has stalled; a cold first start
+# writes no log line for about 12 s while it creates the Wine prefix.
+STALL_S = 30
 
 
 class Desktop(Enum):
@@ -129,8 +141,8 @@ def tail(path: Path, lines: int = 10) -> str:
 
 def exited(session: Session, *, since_ms: float = 0) -> str:
     """Explain why the private desktop or VRoid stopped (R-SES-11)."""
-    # app.log belongs to the last run that started VRoid, which is this run
-    # only if Framewisp recorded VRoid's exit during it.
+    # VRoid ran in this launch only if Framewisp recorded its exit during it;
+    # the record can remain from an earlier run.
     record = session.desktop / "app-exit.json"
     if record.exists() and record.stat().st_mtime * 1000 >= since_ms:
         log = session.desktop / "app.log"
@@ -141,9 +153,25 @@ def exited(session: Session, *, since_ms: float = 0) -> str:
     return f"The private desktop exited. Last lines of {log}:\n{tail(log)}"
 
 
+def keep_previous_logs(session: Session) -> None:
+    """Move the last app run's logs to previous/, replacing an older run's, so
+    every log left in place belongs to the app the desktop is about to run."""
+    previous = session.directory / "previous"
+    if previous.exists():
+        shutil.rmtree(previous)
+    for name in RUN_LOGS:
+        log = session.directory / name
+        if log.exists():
+            (previous / name).parent.mkdir(parents=True, exist_ok=True)
+            log.rename(previous / name)
+
+
+def last_lines(log: Path) -> str:
+    return f"Last lines of {log}:\n{tail(log)}" if log.exists() else ""
+
+
 def bepinex_logs(session: Session) -> tuple[Path, Path]:
-    """BepInEx's startup failure log and main log. launch removes both before
-    it starts the desktop, so either one belongs to the app that desktop runs."""
+    """BepInEx's startup failure log and main log of the current app run."""
     root = session.directory / "bepinex"
     return root / "preloader.log", root / "LogOutput.log"
 
@@ -166,7 +194,33 @@ def bepinex_log(session: Session) -> str:
     if failure := bepinex_failed(session) or logged_mismatch(session):
         return failure
     _, log = bepinex_logs(session)
-    return f"Last lines of {log}:\n{tail(log)}" if log.exists() else ""
+    return last_lines(log)
+
+
+def not_ready(session: Session, *, timeout_s: float, started_ms: float) -> str:
+    """Explain a launch timeout, and whether waiting longer can help (R-SES-11)."""
+    player = session.directory / "player.log"
+    _, bepinex = bepinex_logs(session)
+    changed = [log.stat().st_mtime for log in (player, bepinex) if log.exists()]
+    quiet_s = time.time() - max(changed, default=started_ms / 1000)
+    if quiet_s >= STALL_S:
+        advice = (
+            f"Its logs have not changed for {quiet_s:.0f}s, so it has probably "
+            "stalled. Run stop, then launch; launch keeps this run's logs in "
+            f"{session.directory / 'previous'}"
+        )
+    else:
+        advice = "It keeps starting; run launch again to keep waiting"
+    return "\n".join(
+        filter(
+            None,
+            [
+                f"VRoid is not ready after {timeout_s:.0f}s. {advice}.",
+                last_lines(player),
+                bepinex_log(session),
+            ],
+        )
+    )
 
 
 def logged_mismatch(session: Session) -> str | None:
@@ -259,8 +313,7 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
                 "again; if this persists, run stop"
             )
         if desktop is Desktop.STOPPED:
-            for stale in bepinex_logs(session):
-                stale.unlink(missing_ok=True)
+            keep_previous_logs(session)
             with (session.directory / "runner.log").open("ab") as log:
                 runner = subprocess.Popen(
                     [
@@ -313,11 +366,7 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
                 if outdated := logged_mismatch(session):
                     raise RuntimeError(outdated)
                 raise RuntimeError(
-                    f"VRoid is not ready after {timeout_s:.0f}s and keeps starting. "
-                    "Run launch again to keep waiting; inspect "
-                    f"{session.directory / 'player.log'} and "
-                    f"{session.directory / 'bepinex/LogOutput.log'}\n"
-                    + bepinex_log(session)
+                    not_ready(session, timeout_s=timeout_s, started_ms=started_ms)
                 )
             time.sleep(0.2)
 

@@ -113,8 +113,9 @@ project's skills directory.
 ### First launch
 
 A new session's first `launch` creates its Wine prefix and is ready in about
-15 seconds; later launches take a few seconds. If `launch` times out, the app
-keeps starting; run `launch` again to keep waiting.
+15 seconds; later launches take a few seconds. If `launch` times out, its
+error says whether the app keeps starting, and `launch` again keeps waiting,
+or has stalled, and `stop` then `launch` restarts it.
 
 ## Recovery
 
@@ -122,7 +123,8 @@ keeps starting; run `launch` again to keep waiting.
 it is ready, any pending request, and unsaved changes (`bridge.modified`).
 Logs are in the session directory: `runner.log`, `player.log`,
 `desktop/app.log`, `bepinex/LogOutput.log`, and, if BepInEx failed to start,
-`bepinex/preloader.log`.
+`bepinex/preloader.log`. `launch` moves the previous run's logs to
+`previous/`.
 
 - **Timed-out request:** do not repeat it. It stays pending and blocks other
   commands until its result appears in `rpc/results/ID.json`. Restarting the
@@ -133,6 +135,19 @@ Logs are in the session directory: `runner.log`, `player.log`,
 - **Another project:** save, `stop`, and `launch` before opening it.
 - **Unclean desktop shutdown:** run `framewisp ABSOLUTE/SESSION/desktop recover`
   as the error message says, then launch again.
+- **Stalled launch:** before `stop`, save a backtrace of every thread of the
+  session's Wine processes with the Wine build that runs them, and attach it
+  with the logs to a bug report:
+
+  ```sh
+  session=ABSOLUTE/SESSION
+  for pid in $(pgrep -x wineserver); do
+      grep -qxzF "WINEPREFIX=$session/wine" "/proc/$pid/environ" &&
+          WINEDEBUG=-all WINEPREFIX=$session/wine \
+              "$(dirname "$(readlink "/proc/$pid/exe")")/winedbg" \
+              --command 'bt all' >"$session/backtrace.txt"
+  done
+  ```
 - **Upgrades:** `launch` runs the VRoid and bridge of the vroid-cli build
   that ran it. A running session keeps working with a newer CLI unless the
   file protocol changed; then save with the older build or stop and launch

@@ -498,21 +498,22 @@ def test_launch_reports_why_the_app_exited(tmp_path: Path) -> None:
     [
         (
             "[Error  :   BepInEx] plugin failed\n",
-            ["not ready after 2s", "plugin failed"],
+            ["not ready after 2s", "plugin failed", "Direct3D:", "keeps starting"],
         ),
         (f"[Warning:InteropManager] {OUTDATED_INTEROP}.\n", ["do not match its VRoid"]),
     ],
 )
-def test_launch_timeout_explains_the_bepinex_log(
+def test_launch_timeout_explains_the_logs(
     tmp_path: Path, log: str, shown: list[str]
 ) -> None:
     # R-SES-11
-    target = tmp_path / "state/test/bepinex/LogOutput.log"
+    session = tmp_path / "state/test"
     env = fake_framewisp(
         tmp_path,
-        f"target = Path({str(target)!r})\n"
-        "target.parent.mkdir(parents=True, exist_ok=True)\n"
-        f"target.write_text({log!r})\n"
+        f"session = Path({str(session)!r})\n"
+        "(session / 'bepinex').mkdir(parents=True, exist_ok=True)\n"
+        f"(session / 'bepinex/LogOutput.log').write_text({log!r})\n"
+        "(session / 'player.log').write_text('GfxDevice: creating device\\nDirect3D:\\n')\n"
         "time.sleep(4)",
     )
     result = invoke(tmp_path, "launch", timeout=2, env=env)
@@ -522,6 +523,28 @@ def test_launch_timeout_explains_the_bepinex_log(
     if "do not match" in shown[0]:
         # Waiting longer never fixes a mismatch.
         assert "keeps starting" not in result.stderr
+
+
+def test_launch_timeout_tells_a_stalled_app_from_a_slow_one(tmp_path: Path) -> None:
+    # R-SES-11: an app whose logs stopped changing will not become ready.
+    session = tmp_path / "state/test"
+    env = fake_framewisp(
+        tmp_path,
+        "import os\n"
+        f"session = Path({str(session)!r})\n"
+        "(session / 'bepinex').mkdir(parents=True, exist_ok=True)\n"
+        "quiet = time.time() - 40\n"
+        "for name in ['player.log', 'bepinex/LogOutput.log']:\n"
+        "    (session / name).write_text('Direct3D:\\n')\n"
+        "    os.utime(session / name, (quiet, quiet))\n"
+        "time.sleep(4)",
+    )
+    result = invoke(tmp_path, "launch", timeout=2, env=env)
+    assert result.returncode == 1
+    assert "probably stalled. Run stop, then launch" in result.stderr
+    assert str(session / "previous") in result.stderr
+    assert "Direct3D:" in result.stderr
+    assert "keeps starting" not in result.stderr
 
 
 def test_launch_fails_at_once_when_bepinex_fails_to_start(tmp_path: Path) -> None:
@@ -559,10 +582,16 @@ def test_resumed_launch_reports_the_running_apps_bepinex_failure(
     assert preloader.exists()
 
 
-def test_launch_ignores_bepinex_logs_from_an_earlier_run(tmp_path: Path) -> None:
+def test_launch_keeps_only_the_previous_runs_logs(tmp_path: Path) -> None:
     rpc = bridge(tmp_path, boot="old-boot")
-    root = rpc.parent / "bepinex"
+    session = rpc.parent
+    root = session / "bepinex"
     root.mkdir()
+    (session / "desktop").mkdir()
+    (session / "previous/bepinex").mkdir(parents=True)
+    (session / "previous/bepinex/ErrorLog.log").write_text("older run\n")
+    (session / "player.log").write_text("previous run\n")
+    (session / "desktop/app.log").write_text("previous run\n")
     (root / "preloader.log").write_text("earlier failure\n")
     (root / "LogOutput.log").write_text(
         f"[Warning:InteropManager] {OUTDATED_INTEROP}.\n"
@@ -584,6 +613,12 @@ def test_launch_ignores_bepinex_logs_from_an_earlier_run(tmp_path: Path) -> None
     assert result.returncode == 0, result.stderr
     assert not (root / "preloader.log").exists()
     assert not (root / "LogOutput.log").exists()
+    previous = session / "previous"
+    assert (previous / "player.log").read_text() == "previous run\n"
+    assert (previous / "desktop/app.log").read_text() == "previous run\n"
+    assert (previous / "bepinex/preloader.log").read_text() == "earlier failure\n"
+    assert OUTDATED_INTEROP in (previous / "bepinex/LogOutput.log").read_text()
+    assert not (previous / "bepinex/ErrorLog.log").exists()
 
 
 @pytest.mark.parametrize("logged_boot", ["test-boot", "old-boot"])

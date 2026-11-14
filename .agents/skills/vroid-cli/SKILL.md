@@ -242,7 +242,8 @@ number of model rebuilds since the app started; only differences between two
 readings mean anything. Session state lives in
 `.vroid/NAME/` at the Git worktree root (the current directory outside Git), or
 under `VROID_STATE_DIR`. On failure, read `runner.log`, `player.log`,
-`bepinex/LogOutput.log`, and `bepinex/preloader.log` there.
+`bepinex/LogOutput.log`, and `bepinex/preloader.log` there; `previous/` holds
+the previous run's logs.
 
 - A pending request blocks new commands. Its result appears in
   `rpc/results/ID.json`. Restarting the session marks it as having an unknown

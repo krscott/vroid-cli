@@ -50,6 +50,7 @@ digits, `_`, or `-`.
 | `bepinex/` | BepInEx root: links to the store, its config, cache, `LogOutput.log`, and `preloader.log` |
 | `rpc/` | File protocol, below |
 | `runner.log`, `player.log` | Framewisp runner and Unity player logs |
+| `previous/` | The previous app run's `player.log`, `desktop/app.log`, and BepInEx logs |
 
 Sessions from versions that installed VRoid into the prefix also hold
 `wine/drive_c/VRoidStudio`, `installed`, and `installer.log`. Nothing reads
@@ -70,18 +71,24 @@ The CLI reads the desktop as one of three states:
   runner is shutting down.
 - Running: `framewisp DESKTOP status` reports the app running.
 
-`launch` records its start time and takes the lock. A stopped desktop has its
-BepInEx logs removed, so any BepInEx log belongs to the app the desktop runs,
-and then starts
+`launch` records its start time and takes the lock. For a stopped desktop it
+moves the last run's `player.log`, `desktop/app.log`, and BepInEx logs into
+`previous/`, replacing the run kept there, so every log in place belongs to
+the app the desktop runs and a failed run's logs survive one retry. It then
+starts
 `framewisp DESKTOP run --x11 --width 2560 --height 1440 -- vroid-studio` in a
 new process session, logging to `runner.log`. A running app is waited for. An
 exited app fails with instructions to wait or stop. If the runner exits during
 the wait, the error shows the end of `desktop/app.log` when Framewisp recorded
 VRoid's exit during this launch, which is where the launcher script's own
 errors land, followed by the end of BepInEx's log (R-SES-11). Otherwise the
-desktop failed before VRoid started, `app.log` may be from an earlier run, and
-the error shows the end of `runner.log`. A timeout also shows the end of
-BepInEx's log, or explains an interop mismatch it reports.
+desktop failed before VRoid started, and the error shows the end of
+`runner.log`. A timeout shows the ends of `player.log` and BepInEx's log, or
+explains an interop mismatch BepInEx reports. When neither log has changed for
+30 s, or nothing has been logged for 30 s since the launch began, the app has
+stalled, and the error advises `stop` and `launch` instead of waiting. A cold
+first start logs nothing for about 12 s while it creates the prefix, and then
+logs every few seconds until ready.
 
 `launch` then waits for a bridge heartbeat that is fresh, was written after
 the launch began, and has found the main view model (R-SES-2). The bridge also
