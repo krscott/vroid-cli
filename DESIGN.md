@@ -719,7 +719,12 @@ below the character's centre (the soles reach 3 mm below it). It shows the
 renderers' world bounds: their height above the floor and any depth below it,
 and their horizontal reach from the anchor in any direction rather than the
 width seen from the view, so every body view of a model at one image size
-shares its scale and ground line. A head frame anchors at the humanoid
+shares its scale and ground line. A part that sticks out, such as a tail,
+shrinks every view, by about a quarter in 512x1024 views. The view that shows
+it side on needs that room to show it whole around the fixed centre line.
+Fitting the height instead would cut the part off at its view's edge, since
+each view renders alone on an opaque background, which R-VIEW-1 and R-VIEW-6
+rule out. Agents hide the part to compare the body at its size without it. A head frame anchors at the humanoid
 neck bone's height below the head bone (`Animator.GetBoneTransform`) and shows
 up to the top of the bounds. Its width is the horizontal reach from the head
 bone, in any direction, of every renderer whose bounds are centred above the
