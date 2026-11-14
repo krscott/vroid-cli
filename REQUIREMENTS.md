@@ -276,7 +276,8 @@ backfill unrelated requirements.
 - **R-EDIT-11** [manual] Before `apply` or `import` changes anything, it
   writes a template to a new file that restores everything the request
   changes, including what VRoid changes with an item, except what its result
-  names in `discarded` (R-EDIT-10). Its result, and its error after a change,
+  names in `discarded` (R-EDIT-10) and the accessory group that VRoid keeps
+  after an `import` (R-EDIT-15). Its result, and its error after a change,
   name the file.
 
   Rationale: Agents try edits and back out the ones that don't match a
