@@ -120,10 +120,10 @@ public sealed partial class Plugin
     private static bool Conflict(Slot a, Slot b) =>
         a.Conflicts.Contains(ItemIds.Kind(b.Type)) || b.Conflicts.Contains(ItemIds.Kind(a.Type));
 
-    // A worn accessory instance: its item, VRoid's name for it, its transferable
-    // and group, its available colours, its shape sliders, its placement, its
-    // flags, and its display name.
-    private sealed record Worn(string Item, string Name, string Id, string Group, object Instance, Swatch[] Swatches,
+    // A worn accessory instance: its item, VRoid's name for it, its transferable,
+    // its group and that group's type (its kind), its available colours, its
+    // shape sliders, its placement, its flags, and its display name.
+    private sealed record Worn(string Item, string Name, string Id, string Group, string Kind, object Instance, Swatch[] Swatches,
         object[] Parameters, Pose Pose, Flags Flags, object? DisplayName);
 
     // The name the user gave an accessory, or null for VRoid's default name for its
@@ -151,7 +151,8 @@ public sealed partial class Plugin
 
     // VRoid keeps one group per kind of accessory, such as glasses, so a worn
     // accessory's group names only the first of its kind; its display name's
-    // localization key names its own template.
+    // localization key names its own template. A group an imported accessory
+    // started makes every accessory in it custom.
     private static Worn[] WornAccessories() => Instances().Select(instance =>
     {
         var name = Reflect.Get(instance, "TranslatedDisplayName") as string ?? "";
@@ -159,8 +160,10 @@ public sealed partial class Plugin
         var info = Reflect.Get(instance, "transferableInfo");
         var id = Reflect.Get(info, "Id") as string ?? throw Differs($"the transferable of accessory {name}");
         var group = Reflect.Get(info, "GroupId") as string ?? throw Differs($"the group of accessory {name}");
+        var kind = Reflect.Get(info, "GroupType") as string ?? throw Differs($"the kind of accessory {name}");
+        var resource = Reflect.Get(info, "GroupResourceName") as string ?? throw Differs($"the group resource of accessory {name}");
         var display = Reflect.Call(Reflect.New("VRoidCore.Editing.Query.GetTransferableDisplayNameQuery", id), "Execute", model);
-        var item = ItemIds.AccessoryKey(Reflect.Get(display, "LocalizationKey") as string);
+        var item = ItemIds.Accessory(Reflect.Get(display, "LocalizationKey") as string, resource, AttachmentIds);
         var swatches = new List<Swatch>();
         foreach (var selection in Reflect.Items(Reflect.Get(Reflect.Get(instance, "CategoryColorSelection"), "_colorSelections")))
         {
@@ -187,12 +190,32 @@ public sealed partial class Plugin
         // A name the user gives keeps the localization key, which names the
         // accessory's template, and adds a user-defined string.
         var flags = new Flags(Reflect.Get(display, "UserDefinedString") as string, Flag(instance, "hidden"), Flag(instance, "locked"));
-        return new Worn(item != null && AttachmentIds.Contains(item) ? item : ItemIds.Custom, name, id, group, instance, swatches.ToArray(),
+        return new Worn(item, name, id, group, kind, instance, swatches.ToArray(),
             Reflect.Items(Reflect.Get(instance, "Parameters")).ToArray(), pose, flags, display);
     }).ToArray();
 
     private static object EditContext(object instance) =>
         Reflect.Get(Reflect.Get(instance, "_engine"), "Context") ?? throw Differs("the edit context");
+
+    // The kinds of accessory the project has a group of built-in accessories
+    // for, and those it has a group an import started for. VRoid keeps a kind's
+    // group after its last accessory is removed, even across a save, and adds
+    // every accessory of the kind to it.
+    private static (HashSet<string> BuiltIn, HashSet<string> Imported) AccessoryGroups()
+    {
+        var model = Reflect.Get(EditContext(AccessoryEditor), "editingModel") ?? throw Differs("the editing model");
+        var kinds = AttachmentKinds.Values.ToHashSet();
+        var groups = (BuiltIn: new HashSet<string>(), Imported: new HashSet<string>());
+        foreach (var pair in Reflect.Items(Reflect.Get(model, "_transferableGroups")))
+        {
+            var group = Reflect.Get(pair, "Value");
+            var kind = Reflect.Get(group, "TypeId") as string ?? throw Differs("the type of a transferable group");
+            if (!kinds.Contains(kind)) continue;
+            var resource = Reflect.Get(Reflect.Get(group, "Header"), "ResourceName") as string ?? throw Differs($"the resource of the {kind} group");
+            (ItemIds.Imported(resource) ? groups.Imported : groups.BuiltIn).Add(kind);
+        }
+        return groups;
+    }
 
     // An accessory as a template entry: its item, colours, and shape sliders by
     // label, its placement, and its flags.
@@ -436,10 +459,11 @@ public sealed partial class Plugin
         var available = AvailableAccessories().Select(accessory => accessory.Item).ToHashSet();
         CheckDefaultBones();
         work.Wanted = accessories.EnumerateArray().Select(SpecOf).ToList();
-        var plan = work.Plan = AccessoryPlan.Of(worn.Select(accessory => new WornAccessory(accessory.Item, accessory.Pose.Bone, accessory.Group)).ToList(),
+        var plan = work.Plan = AccessoryPlan.Of(worn.Select(accessory => new WornAccessory(accessory.Item, accessory.Pose.Bone, accessory.Kind)).ToList(),
             work.Wanted.Select(wanted => new WantedAccessory(wanted.Item, wanted.HasBone, wanted.Bone,
                 AttachmentKinds.GetValueOrDefault(wanted.Item, wanted.Item))).ToList(),
-            (i, j) => Satisfies(work.Wanted[i], work.WornEntries[j]));
+            (i, j) => Satisfies(work.Wanted[i], work.WornEntries[j]),
+            AccessoryGroups().Imported);
         for (var i = 0; i < work.Wanted.Count; i++)
             if (work.Wanted[i].Item != ItemIds.Custom && !available.Contains(work.Wanted[i].Item))
                 errors.Add($"Accessories[{i}]: unknown accessory {work.Wanted[i].Item}; list them with accessories");
@@ -678,12 +702,12 @@ public sealed partial class Plugin
     }
 
     // Moves the accessory listed at `index` to `bone`, which VRoid's command does
-    // only while no other accessory of its group is worn.
+    // only while no other accessory of its kind is worn.
     private static IEnumerable<bool> MoveBone(int index, string? bone, string path)
     {
         var worn = WornAccessories();
         if (worn[index].Pose.Bone == bone) yield break;
-        if (worn.Count(other => other.Group == worn[index].Group) > 1)
+        if (worn.Count(other => other.Kind == worn[index].Kind) > 1)
             throw new InvalidOperationException($"{path}: another accessory of its kind is worn, so VRoid cannot move it to {bone ?? "None"}");
         var before = rebuilt;
         modified = true;
@@ -751,11 +775,11 @@ public sealed partial class Plugin
     }
 
     // VRoid 2.16.0 builds an accessory's colour fields once, when the project
-    // opens, and builds none for one that is hidden or locked then, which its own
-    // editor shows too. So `open` briefly shows and unlocks each such accessory while
-    // it builds them again, then restores both; the project ends as it opened.
-    // Only these reads run for every accessory, so an accessory `dump` cannot read
-    // does not stop `open`.
+    // opens or the accessory is imported, and builds none for one that is hidden
+    // or locked then, which its own editor shows too. So `open` and `import`
+    // briefly show and unlock each such accessory while they build them again,
+    // then restore both; the accessories end as they were. Only these reads run
+    // for every accessory, so an accessory `dump` cannot read does not stop them.
     private static IEnumerable<bool> RebuildAccessoryColors()
     {
         var mode = Reflect.Get(Root, "EditMode") ?? throw Differs("the editor's section");
@@ -816,7 +840,8 @@ public sealed partial class Plugin
     }
 
     // Sets `hidden` or `locked` of the accessory listed at `index`, one rebuild each.
-    // It reads only that instance, so `open` can use it on any accessory.
+    // It reads only that instance, so `open` and `import` can use it on any
+    // accessory.
     private static IEnumerable<bool> SetFlag(int index, string key, bool value, string path)
     {
         if (Flag(Instances()[index], key) == value) yield break;

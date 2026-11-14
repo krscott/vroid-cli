@@ -54,7 +54,7 @@ def read_request(argument: str) -> str:
 
 def bridge_args(request: schema.BridgeRequest) -> dict[str, Any]:
     args = request.model_dump(mode="json", exclude={"method"})
-    if isinstance(request, schema.Open | schema.Save):
+    if isinstance(request, schema.Open | schema.Save | schema.Import):
         args["path"] = rpc.wine_path(request.path)
     return args
 
@@ -70,17 +70,21 @@ def with_path(result: Any, key: str, path: Path) -> Any:
 NO_HARD_LINKS = {errno.EPERM, errno.EOPNOTSUPP, errno.ENOTSUP, errno.EXDEV}
 
 
-def publish_image(
-    session: sessions.Session, request: schema.Render | schema.Thumbnails
+def publish(
+    session: sessions.Session,
+    request: schema.Render | schema.Thumbnails | schema.Export,
 ) -> Any:
     """Have the bridge write a hidden file beside the destination, then link it.
 
-    The link is atomic and never replaces an existing file (R-VIEW-3). The
-    hidden file is removed whatever happens; one left by a crash is named
-    `.vroid-render-*.png`.
+    The link is atomic and never replaces an existing file (R-VIEW-3,
+    R-EDIT-16). The hidden file is removed whatever happens; one left by a
+    crash is named `.vroid-render-*.png` or `.vroid-export-*.vroidcustomitem`.
     """
     method = request.method
-    temporary = request.path.with_name(f".vroid-render-{uuid.uuid4().hex}.png")
+    kind, key = ("export", "exported") if method == "export" else ("render", "rendered")
+    temporary = request.path.with_name(
+        f".vroid-{kind}-{uuid.uuid4().hex}{request.path.suffix}"
+    )
     args = bridge_args(request) | {"path": rpc.wine_path(temporary)}
     try:
         result = sessions.request(session, method=method, args=args)
@@ -92,7 +96,7 @@ def publish_image(
             ) from None
         except OSError as error:
             hint = (
-                ". Write images to a filesystem that supports hard links"
+                ". Write to a filesystem that supports hard links"
                 if error.errno in NO_HARD_LINKS
                 else ""
             )
@@ -102,7 +106,7 @@ def publish_image(
             ) from None
     finally:
         temporary.unlink(missing_ok=True)
-    return with_path(result, "rendered", request.path)
+    return with_path(result, key, request.path)
 
 
 def run(session: sessions.Session, request: schema.Request) -> Any:
@@ -119,8 +123,8 @@ def run(session: sessions.Session, request: schema.Request) -> Any:
             )
             key = "opened" if isinstance(request, schema.Open) else "saved"
             return with_path(result, key, request.path)
-        case schema.Render() | schema.Thumbnails():
-            return publish_image(session, request)
+        case schema.Render() | schema.Thumbnails() | schema.Export():
+            return publish(session, request)
         case _:
             return sessions.request(
                 session, method=request.method, args=bridge_args(request)

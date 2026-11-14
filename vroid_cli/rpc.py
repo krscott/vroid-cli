@@ -9,7 +9,7 @@ from typing import Any, cast
 
 # Change together with Bridge.Protocol whenever the file protocol or the
 # request methods change incompatibly.
-PROTOCOL = 10
+PROTOCOL = 11
 # The bridge writes a heartbeat about once a second from Unity's main thread.
 HEARTBEAT_STALE_MS = 5000
 # The bridge stops waiting on an operation after this long...
@@ -115,7 +115,7 @@ def submit(rpc: Path, *, boot: str, method: str, args: dict[str, Any]) -> Any:
             f"{response}; restarting the session marks it as having an unknown "
             "outcome"
         )
-        if method == "apply" and not undo.exists():
+        if method in ("apply", "import") and not undo.exists():
             # The app may still write the undo file and change things later.
             reason += f"; if {undo} appears, apply it to undo any change"
         return RuntimeError(restore(reason))

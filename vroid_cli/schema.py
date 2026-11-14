@@ -9,6 +9,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    NonNegativeInt,
     PositiveFloat,
     SerializerFunctionWrapHandler,
     StringConstraints,
@@ -210,6 +211,16 @@ def project_path(value: Path) -> Path:
     return resolved(value, ".vroid", "project")
 
 
+def item_path(value: Path) -> Path:
+    return resolved(value, ".vroidcustomitem", "custom item")
+
+
+def existing_file(path: Path) -> Path:
+    if not path.is_file():
+        raise ValueError(f"{path} is not an existing file")
+    return path
+
+
 def new_file(path: Path) -> Path:
     """Refuse an existing destination or a missing directory (R-EDIT-4, R-VIEW-3)."""
     if path.exists() or path.is_symlink():
@@ -250,10 +261,7 @@ class Open(Model):
     @field_validator("path")
     @classmethod
     def existing(cls, value: Path) -> Path:
-        path = project_path(value)
-        if not path.is_file():
-            raise ValueError(f"{path} is not an existing file")
-        return path
+        return existing_file(project_path(value))
 
 
 class New(Model):
@@ -331,8 +339,8 @@ class Apply(Model):
 
     @model_serializer(mode="wrap")
     def omit_defaults(self, handler: SerializerFunctionWrapHandler) -> Any:
-        # Dumped and undo templates leave accessories alone unless they list
-        # them, and never discard anything.
+        # Dumped and apply's undo templates leave accessories alone unless they
+        # list them, and never discard anything.
         data = handler(self)
         if self.Accessories is None:
             data.pop("Accessories", None)
@@ -361,6 +369,42 @@ class Apply(Model):
                             f"as {section}/{other}/{label}; set it once"
                         )
         return self
+
+
+class Import(Model):
+    """Wear the accessory in a .vroidcustomitem file as a new accessory.
+
+    It reads as "custom" in `accessories` and `dump`; place, recolour, and
+    reshape it with apply. Refused for a file that holds no accessory, and for
+    an accessory of a kind the project wears or wore a built-in one of, such as
+    ears from a file in a project that wore cat ears. Afterwards, apply refuses
+    built-in accessories of its kind in this project, even after its undo.
+    """
+
+    method: Literal["import"]
+    path: Path
+
+    @field_validator("path")
+    @classmethod
+    def existing(cls, value: Path) -> Path:
+        return existing_file(item_path(value))
+
+
+class Export(Model):
+    """Write a worn accessory to a new .vroidcustomitem file in an existing
+    directory, with its colours, shape sliders, and placement, which `import`
+    wears in another project."""
+
+    method: Literal["export"]
+    index: NonNegativeInt = Field(
+        description="the accessory's position in `accessories` `worn`, from 0"
+    )
+    path: Path
+
+    @field_validator("path")
+    @classmethod
+    def new(cls, value: Path) -> Path:
+        return new_file(item_path(value))
 
 
 class Save(Model):
@@ -437,6 +481,8 @@ Request = Annotated[
     | Accessories
     | Dump
     | Apply
+    | Import
+    | Export
     | Save
     | Render
     | Thumbnails,
@@ -451,6 +497,8 @@ BridgeRequest = (
     | Accessories
     | Dump
     | Apply
+    | Import
+    | Export
     | Save
     | Render
     | Thumbnails
@@ -558,14 +606,38 @@ class Applied(Model):
     @field_validator("undo")
     @classmethod
     def applies(cls, value: str) -> str:
-        # Agents read the file only when they need it, so check it now.
-        try:
-            text = Path(value).read_text()
-        except OSError as error:
-            raise ValueError(f"cannot read {value}: {error.strerror}") from None
-        if not isinstance(parse(text), Apply):
-            raise ValueError(f"{value} is not an apply request")
-        return value
+        return undo_file(value)
+
+
+def undo_file(value: str) -> str:
+    # Agents read the file only when they need it, so check it now.
+    try:
+        text = Path(value).read_text()
+    except OSError as error:
+        raise ValueError(f"cannot read {value}: {error.strerror}") from None
+    if not isinstance(parse(text), Apply):
+        raise ValueError(f"{value} is not an apply request")
+    return value
+
+
+class Imported(Model):
+    imported: Accessory = Field(
+        description='the new accessory\'s entry, as `accessories` lists it: "custom"'
+    )
+    undo: str = Field(
+        description="path of an apply request, written before the import, that "
+        "removes the imported accessory; apply it with `@PATH`"
+    )
+
+    @field_validator("undo")
+    @classmethod
+    def applies(cls, value: str) -> str:
+        return undo_file(value)
+
+
+class Exported(Model):
+    exported: str
+    bytes: int
 
 
 class Saved(Model):
@@ -598,6 +670,8 @@ RESULTS: dict[str, TypeAdapter[Any]] = {
     "accessories": TypeAdapter(AccessoryList),
     "dump": TypeAdapter(Apply),
     "apply": TypeAdapter(Applied),
+    "import": TypeAdapter(Imported),
+    "export": TypeAdapter(Exported),
     "save": TypeAdapter(Saved),
     "render": TypeAdapter(Rendered),
     "thumbnails": TypeAdapter(Thumbnailed),

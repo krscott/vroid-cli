@@ -12,6 +12,7 @@ public static class ItemIds
     private const string BuiltIn = "pixiv/VRoid/";
     private const string Attachments = "pixiv/VRoid/Attachment/";
     private const string AccessoryName = "Model.N00.Transferable.";
+    private const string CustomItems = "user/VRoid/CustomItem/";
     // The CLI's ItemId pattern; "custom" is reserved.
     private static readonly Regex Valid = new("^[A-Za-z0-9_]+$");
 
@@ -43,6 +44,17 @@ public static class ItemIds
         localizationKey != null && localizationKey.StartsWith(AccessoryName)
             ? Checked(localizationKey[AccessoryName.Length..])
             : null;
+
+    /// A worn accessory's item: the built-in template its localization key
+    /// names, or "custom". The key names the template even for an imported
+    /// accessory, but VRoid keeps every accessory of a kind in one group, and a
+    /// group an imported accessory started is a `user/VRoid/CustomItem/...`
+    /// resource, so every accessory in such a group is custom.
+    public static string Accessory(string? localizationKey, string groupResourceName, IReadOnlySet<string> builtIn) =>
+        AccessoryKey(localizationKey) is { } key && builtIn.Contains(key) && !Imported(groupResourceName) ? key : Custom;
+
+    /// Whether an import started the accessory group with this resource name.
+    public static bool Imported(string groupResourceName) => groupResourceName.StartsWith(CustomItems);
 
     /// What a category wears, such as `Onepiece`: the last part of its group
     /// type (`TransferableGroupType.N00.Level1.Onepiece`) or of a conflicting
@@ -106,10 +118,10 @@ public static class Placement
         scale.All(factor => factor > 0) ? null : "every factor must be positive";
 }
 
-/// A worn accessory as matching sees it: its item, bone, and the group VRoid
-/// keeps accessories of its kind in, such as every pair of animal ears. A null
-/// bone is VRoid's "None".
-public sealed record WornAccessory(string Item, string? Bone, string Group);
+/// A worn accessory as matching sees it: its item, bone, and kind, the group
+/// type VRoid keeps one group of accessories for, such as every pair of animal
+/// ears. A null bone is VRoid's "None".
+public sealed record WornAccessory(string Item, string? Bone, string Kind);
 
 /// A wanted accessory: its item, its bone if the request names one, and its
 /// kind, the group type a built-in one joins.
@@ -132,8 +144,8 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
     List<int> Removed, List<Addition> Added, HashSet<int> Rebuilt, int?[] Matched, List<string> Errors)
 {
     /// VRoid changes an accessory's bone only while no other accessory of its
-    /// group is worn; it adds one on its default bone, and a duplicate copies the
-    /// item and bone. So the accessories of one group sit on their default bone,
+    /// kind is worn; it adds one on its default bone, and a duplicate copies the
+    /// item and bone. So the accessories of one kind sit on their default bone,
     /// except copies of one item on one other bone. Built-in accessories of one
     /// item are interchangeable: a wanted one keeps a worn one that `same` says
     /// already matches it, first among those on the default bone if it names no
@@ -142,9 +154,12 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
     /// one cannot move, every one of that kind is removed and added again: one
     /// first, moved while alone, then copies of it and new ones. "custom" matches
     /// any worn accessory that is not built in, in order, which is its only
-    /// identity, and moves only while alone in its group.
+    /// identity, and moves only while alone in its kind. VRoid keeps a kind's
+    /// group after its last accessory is removed, and adds a built-in one to a
+    /// group an import started, where it reads as custom, so none is added to
+    /// the `imported` kinds.
     public static AccessoryPlan Of(IReadOnlyList<WornAccessory> worn, IReadOnlyList<WantedAccessory> wanted,
-        Func<int, int, bool>? same = null)
+        Func<int, int, bool>? same = null, IReadOnlySet<string>? imported = null)
     {
         var matched = new int?[wanted.Count];
         var plan = new AccessoryPlan(new(), new(), new(), new(), new(), matched, new());
@@ -183,7 +198,7 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
             {
                 plan.Kept.Add((j, i));
                 if (!Moves(i)) continue;
-                if (Enumerable.Range(0, worn.Count).Count(k => used[k] && worn[k].Group == worn[j].Group) > 1)
+                if (Enumerable.Range(0, worn.Count).Count(k => used[k] && worn[k].Kind == worn[j].Kind) > 1)
                     plan.Errors.Add($"Accessories[{i}]: VRoid moves an accessory to another bone only while no other accessory of its kind is worn");
                 else plan.Rebone.Add((j, wanted[i].Bone));
             }
@@ -191,6 +206,15 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
         {
             var entries = Enumerable.Range(0, wanted.Count).Where(i => wanted[i].Item != ItemIds.Custom && wanted[i].Kind == kind).ToList();
             var kept = entries.Where(i => matched[i] != null).ToList();
+            if (imported != null && imported.Contains(kind))
+            {
+                // A built-in one of this kind would read as custom, so none is worn.
+                foreach (var i in entries)
+                    plan.Errors.Add($"Accessories[{i}]: VRoid keeps the group of {ItemIds.Kind(kind)} accessories that an import started, even "
+                        + $"after the last one is removed, and would add {wanted[i].Item} to it, where it would read as custom, so vroid-cli cannot "
+                        + $"add a built-in accessory of kind {ItemIds.Kind(kind)} to this project. Report this VRoid limit to the user");
+                continue;
+            }
             // An item VRoid does not offer, which the caller refuses.
             if (entries.Any(i => Bones.Default(wanted[i].Item) == null))
             {

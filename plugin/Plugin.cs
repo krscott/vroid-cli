@@ -808,6 +808,12 @@ public sealed partial class Plugin : BasePlugin
             case "apply":
                 foreach (var step in Apply(request)) yield return step;
                 break;
+            case "import":
+                foreach (var step in Import(request)) yield return step;
+                break;
+            case "export":
+                foreach (var step in Export(request)) yield return step;
+                break;
             case "save":
             {
                 var path = request.Text("path");

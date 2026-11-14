@@ -1,7 +1,10 @@
 // Exercises plugin/Bridge.cs, the app side of the file protocol, the colour
-// rules in plugin/Colors.cs, the camera placement in plugin/Framing.cs, and
-// item identifiers and accessory matching in plugin/ItemIds.cs, and the
-// thumbnail sheet in plugin/Sheet.cs, without Unity.
+// rules in plugin/Colors.cs, custom item files in plugin/CustomItemFile.cs,
+// the camera placement in plugin/Framing.cs, item identifiers and accessory
+// matching in plugin/ItemIds.cs, and the thumbnail sheet in plugin/Sheet.cs,
+// without Unity.
+using System.IO.Compression;
+using System.Text;
 using System.Text.Json;
 using VroidBridge;
 
@@ -407,6 +410,17 @@ Test("item identifiers come from VRoid's resource names", _ =>
     Check(ItemIds.Attachment("user/VRoid/AdditionalAccessoryTemplate/e004.transferable") == null, "a user accessory is built in");
     Check(ItemIds.IsSet("TransferableGroupType.N00.Level0.HairSet") && ItemIds.IsSet("TransferableGroupType.N00.Level1.EyeSet"), "sets");
     Check(!ItemIds.IsSet("TransferableGroupType.N00.Level1.Tops"), "Tops is a set");
+    // An accessory's key names its template; a group an import started makes it custom.
+    var builtIn = new HashSet<string> { "CatEar", "RabbitEar" };
+    const string ears = "pixiv/VRoid/Attachment/CatEar/N00/Base_N00_000_00_Accessory_CatEar/TransferableGroupType.N00.Level1.AnimalEar.transferablegroup";
+    Check(ItemIds.Accessory("Model.N00.Transferable.CatEar", ears, builtIn) == "CatEar", "a built-in accessory");
+    Check(ItemIds.Accessory("Model.N00.Transferable.CatEar", "user/VRoid/CustomItem/ea62.transferablegroup", builtIn) == "custom",
+        "an imported accessory is built in");
+    Check(ItemIds.Accessory("Model.N00.Transferable.RabbitEar", "user/VRoid/CustomItem/ea62.transferablegroup", builtIn) == "custom",
+        "a built-in accessory in an imported one's group keeps its identifier");
+    Check(ItemIds.Accessory("Model.N00.Transferable.FoxTail", ears, builtIn) == "custom", "an accessory the catalog lacks is built in");
+    Check(ItemIds.Accessory(null, ears, builtIn) == "custom", "an accessory without a key is built in");
+    Check(ItemIds.Imported("user/VRoid/CustomItem/ea62.transferablegroup") && !ItemIds.Imported(ears), "imported groups");
     // Selectors list conflicts as transferable types, categories as group types.
     Check(ItemIds.Kind("TransferableType.N00.Onepiece") == ItemIds.Kind("TransferableGroupType.N00.Level1.Onepiece"), "kinds differ");
 });
@@ -487,13 +501,18 @@ Test("accessories of one item reach every arrangement of bones VRoid can make", 
     var customs = AccessoryPlan.Of(new[] { Worn("custom", Head, "user"), Worn("custom", Head, "user") }, new[] { Any("custom"), Any("custom") },
         (i, j) => i != j);
     Check(customs.Kept.SequenceEqual(new[] { (0, 0), (1, 1) }) && customs.Removed.Count == 0, Show(customs));
+    // As an import's undo does, the earlier ones are kept and the last one goes,
+    // even where values match others: two imports may differ in texture.
+    var undone = AccessoryPlan.Of(new[] { Worn("custom", Head, "ears"), Worn("custom", Neck, "ears"), Worn("custom", Hips, "tail") },
+        new[] { On("custom", Head), On("custom", Hips) }, (i, j) => (i, j) is (0, 1) or (1, 0));
+    Check(undone.Kept.SequenceEqual(new[] { (0, 0), (1, 1) }) && undone.Removed.SequenceEqual(new[] { 2 }), Show(undone));
     // "None" is a bone too.
     var none = AccessoryPlan.Of(new[] { Worn("CatTail", Hips) }, new[] { On("CatTail", null) });
     Check(none.Rebone.SequenceEqual(new (int, string?)[] { (0, null) }), Show(none));
 });
 
 // R-EDIT-3
-Test("apply refuses bones VRoid cannot combine and placements that distort", _ =>
+Test("apply refuses bones VRoid cannot combine, built-in accessories that would read as custom, and placements that distort", _ =>
 {
     var two = AccessoryPlan.Of(Array.Empty<WornAccessory>(), new[] { On("CatEar", Chest), On("CatEar", Neck) });
     Check(two.Errors.Single().Contains($"only as copies of one, but these put CatEar on {Chest}, CatEar on {Neck}"), Show(two));
@@ -511,12 +530,63 @@ Test("apply refuses bones VRoid cannot combine and placements that distort", _ =
     Check(crowded.Errors.Single().Contains("only while no other accessory of its kind is worn") && crowded.Rebone.Count == 0, Show(crowded));
     var alone = AccessoryPlan.Of(new[] { Worn("custom", Head, "user"), Worn("custom", Head, "other") }, new[] { On("custom", Chest), Any("custom") });
     Check(alone.Errors.Count == 0 && alone.Rebone.SequenceEqual(new (int, string?)[] { (0, Chest) }), Show(alone));
+    // A built-in accessory added to a kind whose group an import started would read
+    // as custom, even once no accessory of the kind is worn, since VRoid keeps the group.
+    var imported = new HashSet<string> { "ears" };
+    var joins = AccessoryPlan.Of(new[] { Worn("custom", Head, "ears") }, new[] { Any("custom"), Any("RabbitEar"), Any("FoxTail") }, null, imported);
+    Check(joins.Errors.Single().StartsWith("Accessories[1]: VRoid keeps the group of ears accessories that an import started")
+        && joins.Errors.Single().EndsWith("Report this VRoid limit to the user")
+        && joins.Added.SequenceEqual(new[] { new Addition(2, null, false, Hips) }), Show(joins));
+    var empty = AccessoryPlan.Of(Array.Empty<WornAccessory>(), new[] { Any("RabbitEar") }, null, imported);
+    Check(empty.Errors.Count == 1, Show(empty));
+    var free = AccessoryPlan.Of(new[] { Worn("custom", Head, "ears") }, new[] { Any("RabbitEar") });
+    Check(free.Errors.Count == 0 && free.Removed.SequenceEqual(new[] { 0 }), Show(free));
     Check(Placement.Rotation(new[] { 0f, 0f, 0f, 1f }) == null && Placement.Rotation(new[] { 0.1f, 0.2f, 0.3f, 0.9273618f }) == null, "a unit rotation");
     Check(Placement.Rotation(new[] { 0f, 0f, 0f, 2f }) != null && Placement.Rotation(new[] { 0f, 0f, 0f, 1.001f }) != null, "a long rotation");
     Check(Placement.Scale(new[] { 1f, 0.5f, 2f }) == null && Placement.Scale(new[] { 1f, 0f, 1f }) != null && Placement.Scale(new[] { -1f, 1f, 1f }) != null,
         "a scale that is not positive");
     Check(Bones.Default("FoxTail") == Hips && Bones.Default("WitchHat") == Head && Bones.Default("Nope") == null, "default bones");
     Check(Bones.All.Count == 54 && Bones.All.Distinct().Count() == 54 && Bones.All.Contains(Head), "bones");
+});
+
+// R-EDIT-15
+Test("a custom item file names its kind", directory =>
+{
+    Stream Zip(params (string Name, string Text)[] entries)
+    {
+        var stream = new MemoryStream();
+        using (var zip = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+            foreach (var (name, text) in entries)
+                using (var writer = new StreamWriter(zip.CreateEntry(name).Open(), Encoding.UTF8))
+                    writer.Write(text);
+        stream.Position = 0;
+        return stream;
+    }
+    using (var item = Zip(("meta.json", "{}"), ("v1customitem/meta.json",
+               """{"customItemMetaDataVersion": 3, "rootTransferableGroupTypeId": "TransferableGroupType.N00.Level1.AnimalEar"}""")))
+        Check(CustomItemFile.Kind(item) == "TransferableGroupType.N00.Level1.AnimalEar", "the kind of animal ears");
+    string Refusal(Stream file)
+    {
+        try
+        {
+            return $"read {CustomItemFile.Kind(file)}";
+        }
+        catch (ArgumentException error)
+        {
+            return error.Message;
+        }
+    }
+    foreach (var (file, reason) in new (Stream, string)[]
+             {
+                 (new MemoryStream(Encoding.UTF8.GetBytes("garbage")), "not a VRoid custom item file"),
+                 (Zip(("meta.json", "{}")), "it has no v1customitem/meta.json"),
+                 (Zip(("v1customitem/meta.json", "{\"rootTransferableGroupTypeId\": 3}")), "not a VRoid custom item file"),
+                 (Zip(("v1customitem/meta.json", "[]")), "not a VRoid custom item file"),
+                 (Zip(("v1customitem/meta.json", "{")), "not a VRoid custom item file"),
+                 (Zip(("v1customitem/meta.json", "{}")), "names no rootTransferableGroupTypeId"),
+             })
+        using (file)
+            Check(Refusal(file).Contains(reason), Refusal(file));
 });
 
 // R-EDIT-7

@@ -1,4 +1,5 @@
 // Adapted from brainrom/vroid-studio-mcp (MIT); see LICENSE.upstream.
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Il2CppInterop.Runtime;
@@ -90,6 +91,20 @@ internal static class Reflect
         return candidates[0].Invoke(null, args);
     }
 
+    // A native delegate of the IL2CPP delegate type `native`, such as
+    // Il2CppSystem.Action`2 closed over app types, that passes its arguments to
+    // `body`.
+    internal static object Callback(Type native, Action<object?[]> body)
+    {
+        var convert = native.GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Single(method => method.Name == "op_Implicit" && method.ReturnType == native);
+        var managed = convert.GetParameters()[0].ParameterType;
+        var parameters = managed.GetMethod("Invoke")!.GetParameters().Select(parameter => Expression.Parameter(parameter.ParameterType)).ToArray();
+        var args = Expression.NewArrayInit(typeof(object), parameters.Select(parameter => Expression.Convert(parameter, typeof(object))));
+        var lambda = Expression.Lambda(managed, Expression.Invoke(Expression.Constant(body), args), parameters);
+        return convert.Invoke(null, new object[] { lambda.Compile() })!;
+    }
+
     internal static PropertyInfo StaticProperty(string type, string name) =>
         Type(type).GetProperty(name, BindingFlags.Public | BindingFlags.Static)
             ?? throw new InvalidOperationException($"Missing static property {type}.{name}");
@@ -99,8 +114,10 @@ internal static class Reflect
         if (value == null) yield break;
         value = Concrete(value);
         var count = Get(value, "Count") ?? Get(value, "Length");
-        // Collection interfaces such as IReadOnlyCollection have a count but no indexer.
-        var indexed = value.GetType().GetMethods(Instance).Any(method => method.Name == "get_Item" && method.GetParameters().Length == 1);
+        // Collection interfaces such as IReadOnlyCollection have a count but no
+        // indexer, and a dictionary's indexer takes a key.
+        var indexed = value.GetType().GetMethods(Instance)
+            .Any(method => method.Name == "get_Item" && method.GetParameters() is [{ ParameterType: var type }] && type == typeof(int));
         if (count != null && indexed)
         {
             for (var i = 0; i < Convert.ToInt32(count); i++)
