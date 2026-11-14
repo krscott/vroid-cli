@@ -15,8 +15,8 @@ internal static class Textures
     }
 
     /// Scales `texture` to `width` x `height` with its own filtering and
-    /// returns its pixels in `format`, RGB24 or RGBA32, bottom row first.
-    internal static byte[] Read(object texture, int width, int height, string format)
+    /// returns its RGB24 pixels, bottom row first.
+    internal static byte[] Read(object texture, int width, int height)
     {
         var active = Reflect.StaticProperty("UnityEngine.RenderTexture", "active");
         var previous = active.GetValue(null);
@@ -28,7 +28,7 @@ internal static class Textures
                 .GetMethod("Blit", new[] { Reflect.Type("UnityEngine.Texture"), Reflect.Type("UnityEngine.RenderTexture") })!
                 .Invoke(null, new object[] { texture, (object)target });
             active.SetValue(null, (object)target);
-            readback = Reflect.New("UnityEngine.Texture2D", width, height, Format(format), false);
+            readback = Reflect.New("UnityEngine.Texture2D", width, height, Format("RGB24"), false);
             readback.ReadPixels((dynamic)Reflect.New("UnityEngine.Rect", 0f, 0f, (float)width, (float)height), 0, 0);
             return ((IEnumerable<byte>)readback.GetRawTextureData()).ToArray();
         }

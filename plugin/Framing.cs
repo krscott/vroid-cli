@@ -127,7 +127,7 @@ public static class Framing
     /// The `Shot.Size` for an image `height` pixels tall: the fitted one, or
     /// the one at `scale` pixels per metre, at which no view looking along
     /// `directions` may cut off anything of `extent`. A fitted size leaves at
-    /// least `Margin - 1` of room, so a reported scale passed back always fits.
+    /// least 2.5% of room, so a reported scale passed back always fits.
     public static double Size(Extent extent, IEnumerable<Vec> directions, double aspect, int height, double? scale)
     {
         if (scale is not double wanted) return Fit(extent, aspect);

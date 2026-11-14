@@ -821,7 +821,7 @@ errors (R-CLI-2).
   read-only stand-in store.
 - `tests/protocol`: the bridge's file protocol, colour rules, custom item
   files, camera placement and scale, item identifiers, accessory matching and
-  bones, image layout, scaling, and blending, and thumbnail sheet layout and
+  bones, image layout and reference fitting, and thumbnail sheet layout and
   font under the .NET SDK.
 
 `scripts/gui-smoke.sh`, run by `just gui-smoke`, drives a real session through

@@ -58,12 +58,11 @@ internal static class CharacterRender
     }
 
     // Decodes a PNG or JPEG file, draws it over `background`, one RGB24 pixel,
-    // at full size,
-    // and scales that to fit `boxWidth` x `boxHeight` without changing its
-    // aspect ratio. Drawing first keeps the colour under transparent pixels
-    // out of the filtering. The GPU does both, sampling the drawing's mipmaps
-    // trilinearly so a shrink averages the pixels it skips, so only the
-    // decoded file and the fitted pixels take memory. Returns RGB24 pixels,
+    // at full size, and scales that to fit `boxWidth` x `boxHeight` without
+    // changing its aspect ratio. Drawing first keeps the colour under
+    // transparent pixels out of the filtering. The GPU does both, sampling the
+    // drawing's mipmaps trilinearly so a shrink averages the pixels it skips,
+    // so only the fitted pixels reach managed memory. Returns RGB24 pixels,
     // bottom row first.
     private static (int Width, int Height, byte[] Pixels) ReadImage(string path, int boxWidth, int boxHeight, byte[] background)
     {
@@ -116,7 +115,7 @@ internal static class CharacterRender
             }
             var (fittedWidth, fittedHeight) = Canvas.FitSize(boxWidth, boxHeight, width, height);
             // Making another texture active generates the drawing's mipmaps.
-            return (fittedWidth, fittedHeight, Read((object)drawn, fittedWidth, fittedHeight, "RGB24"));
+            return (fittedWidth, fittedHeight, Read((object)drawn, fittedWidth, fittedHeight));
         }
         finally
         {

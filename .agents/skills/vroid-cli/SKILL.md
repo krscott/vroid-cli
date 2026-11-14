@@ -261,10 +261,10 @@ and tails are accessories.
   line up: the floor and centre line (body), or the neck and head (head),
   stay at the same pixels. A scale that would cut off the character in a
   requested view is refused, and the error names the largest that fits, edge
-  to edge. For before and after
-  images of an edit that may make the character taller or wider, multiply
-  the "before" render's reported `scale` by 0.9, render the "before" again at
-  that, and render the "after" at the same. `scale` is at least 1.
+  to edge. For before and after images of an edit that may make the character
+  taller or wider, multiply the "before" render's reported `scale` by 0.9,
+  render the "before" again at that, and render the "after" at the same.
+  `scale` is at least 1.
 - `{"method": "new", "base": "Preset_F"}` (or `"Preset_M"`) starts a character
   from VRoid's feminine (or masculine) base instead of `open`; it works
   offline and wears only built-in items. It has no file until `save`, and one

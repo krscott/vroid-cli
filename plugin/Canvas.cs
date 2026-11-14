@@ -1,5 +1,5 @@
 // Assembles images for `render` and `thumbnails`. Has no Unity dependencies so
-// tests/protocol can check layout and blending directly.
+// tests/protocol can check layout directly.
 namespace VroidBridge;
 
 /// An RGB24 image. `Pixels` runs bottom row first, as Unity's raw texture data

@@ -37,7 +37,7 @@ public sealed partial class Plugin
                 throw new InvalidOperationException(
                     $"The thumbnail of {item} is {width}x{height}, not {2 * Sheet.ThumbWidth}x{2 * Sheet.ThumbHeight}: this VRoid differs from the validated 2.16.0");
             source.filterMode = (dynamic)Enum.Parse(Reflect.Type("UnityEngine.FilterMode"), "Bilinear");
-            return Textures.Read((object)source, Sheet.ThumbWidth, Sheet.ThumbHeight, "RGB24");
+            return Textures.Read((object)source, Sheet.ThumbWidth, Sheet.ThumbHeight);
         }
         finally
         {
