@@ -187,8 +187,9 @@ and tails are accessories.
   shows, or null for VRoid's default name; leave it out when adding one from
   `available`, whose `name` is only VRoid's name for the item. `hidden` and
   `locked` are VRoid's Show / Hide and Lock / Unlock. `dump` always lists all
-  three. `render` leaves hidden accessories out. A lock guards only VRoid's
-  own editor: `apply` still changes and removes locked accessories.
+  three. `render` leaves hidden accessories out, and they don't affect its
+  framing. A lock guards only VRoid's own editor: `apply` still changes and
+  removes locked accessories.
 - `import` wears the accessory in a `.vroidcustomitem` file as a new one,
   such as a bow the user bought or made; vroid-cli has none of its own. It
   reads as `"custom"` in `accessories` and `dump`; place, recolour, and
@@ -246,7 +247,10 @@ and tails are accessories.
   at most 4096 pixels per side. Views are orthographic, and every view in one
   image shares one scale, so they compare directly with a reference
   turnaround. A body view fills its height when its width is at least
-  about 3/4 of its height; narrower views leave room above the head.
+  about 3/4 of its height, and a head view when its width is about its
+  height or more. Narrower views leave the spare height above the head: a
+  512 by 1024 head view leaves about the top half empty. Render head views
+  in their own square or wide image.
 - `reference` puts an existing PNG or JPEG, such as the user's turnaround, in
   a row above the views as wide as all of them and as tall as one, scaled to
   fit without changing its aspect ratio. List the views in the reference's
