@@ -377,15 +377,22 @@ backfill unrelated requirements.
 
 ## Views (VIEW)
 
-- **R-VIEW-1** [manual: `just gui-smoke` renders each view after an `apply`
-  and checks the image size, that its edges are background, and that it shows
-  the character] `render` writes a PNG of the open character at the requested
-  size, from the front, three-quarter, side, or back, framed to show the whole
-  character or its whole head on a plain background.
+- **R-VIEW-1** [manual] `render` writes a PNG of the open character from the
+  front, three-quarter, side, or back, or of several of these views side by
+  side, each at the requested size and framed to show the whole character or
+  its whole head on a plain background. Every view in one image has the same
+  scale.
 
   Rationale: Agents judge edits by comparing the character with reference
   turnarounds. Screenshots of the app window include editor panels, cut off
-  the feet, and cannot show the side or back.
+  the feet, and cannot show the side or back. Views at one scale compare
+  directly, and one image of every view spares agents reading each view
+  separately or installing other tools to tile them.
+
+  Manual test: `just gui-smoke` renders each view alone, and all four in one
+  image, after an `apply`. It checks each image's size, that the edges of the
+  image and of each view are background, that each view shows the character,
+  and that the views in one image share the character's lowest row.
 
 - **R-VIEW-2** [manual: `just gui-smoke` checks that `dump`, `modified`, and
   the Framewisp input log are unchanged by rendering and by drawing
@@ -413,3 +420,38 @@ backfill unrelated requirements.
   Rationale: VRoid has no item names, only thumbnails. Without them, an agent
   finds an item matching a reference only by wearing and rendering each
   candidate, which took about 45 minutes for 450 items in an eval.
+
+- **R-VIEW-5** [manual] `render` given a reference image draws it above the
+  views, scaled without changing its aspect ratio to fit a row as wide as the
+  views and as tall as one view. It refuses a reference that is missing or is
+  not a PNG or JPEG image it can read, and then writes nothing.
+
+  Rationale: Agents compare a character with a reference turnaround. With
+  both in one image, they compare each view with the reference above it.
+  Without this, an agent in an evaluation installed ImageMagick to tile them.
+  References found online are often JPEG.
+
+  Manual test: `just gui-smoke` renders the four views under a small PNG and
+  a small JPEG reference that it writes itself. It checks the image size and
+  that the reference's colours appear in the top row, scaled to fit. It
+  checks that a missing reference, a text file, and a truncated PNG are
+  refused and that no destination is written.
+
+- **R-VIEW-6** [manual] `render` reports the scale of its views and, given a
+  scale, renders at it instead of fitting the character. In renders at one
+  scale, view, frame, and size, the floor and the character's centre line in
+  body frames, or the neck and head in head frames, stay at the same pixels,
+  so renders before and after an edit line up. `render` refuses a scale at
+  which the framed part would be cut off, and names the largest scale that
+  fits.
+
+  Rationale: The fitted scale follows everything worn, so a hat, an ahoge, or
+  a height change rescales the character, and before and after renders no
+  longer compare directly. Cutting off part of the character could hide the
+  change being checked.
+
+  Manual test: `just gui-smoke` renders a front body view at 0.8 times its
+  fitted scale, applies an edit that makes the character taller, and renders
+  again at that scale. It checks that the character's lowest row and centre
+  column are unchanged, that a fitted render now reports a smaller scale, and
+  that the first fitted scale is now refused with no destination written.

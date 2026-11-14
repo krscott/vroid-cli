@@ -420,33 +420,97 @@ class Save(Model):
 
 
 ImageSize = Annotated[int, Field(ge=16, le=4096, description="pixels")]
+MAX_IMAGE = 4096
+View = Literal["front", "three_quarter", "side", "back"]
+
+
+def one_view_error(value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
+    # Without this, a bad value gets one error per union member.
+    try:
+        return handler(value)
+    except ValidationError:
+        raise ValueError(
+            f"expected one of {', '.join(get_args(View))}, or a non-empty list of them"
+        ) from None
+
+
+# File signatures of the reference image formats Unity decodes.
+IMAGE_SIGNATURES = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff")
 
 
 class Render(Model):
     """Render the open character to a new PNG in an existing directory.
 
-    The image is orthographic on a plain background. Body views of one
-    character state at one size share their scale and ground line; items that
-    make the character taller or wider change them.
+    Views are orthographic on a plain background, side by side in the order
+    given, all at one scale. By default the scale fits the frame, so items that
+    make the character taller or wider change it; pass `scale` from an earlier
+    result to keep it. At one scale and size, the floor and the character's
+    centre line (body), or its neck and head (head), stay at the same pixels.
     """
 
     method: Literal["render"]
     path: Path
-    view: Literal["front", "three_quarter", "side", "back"] = Field(
-        description="three_quarter and side show the character's left side"
+    view: Annotated[
+        View | Annotated[list[View], Field(min_length=1)],
+        WrapValidator(one_view_error),
+    ] = Field(
+        description="one view, or a list drawn left to right; three_quarter and "
+        "side show the character's left side"
     )
     frame: Literal["body", "head"] = Field(
         "body",
         description="body fits the whole character; head fits everything "
         "above the neck, so a front head view is a face close-up",
     )
-    width: ImageSize = 1024
-    height: ImageSize = 1024
+    width: ImageSize = Field(1024, description="pixels per view")
+    height: ImageSize = Field(1024, description="pixels per view")
+    reference: Path | None = Field(
+        None,
+        description="an existing PNG or JPEG image, such as a reference "
+        "turnaround, drawn in a row above the views as wide as all of them and "
+        "as tall as one, scaled to fit without changing its aspect ratio",
+    )
+    scale: Annotated[float, Field(ge=1)] | None = Field(
+        None,
+        description="pixels per metre, such as an earlier result's `scale` or a "
+        "fraction of it; omit it to fit the frame. Refused if it would cut off "
+        "the character.",
+    )
 
     @field_validator("path")
     @classmethod
     def new(cls, value: Path) -> Path:
         return new_file(resolved(value, ".png", "image"))
+
+    @field_validator("reference")
+    @classmethod
+    def image(cls, value: Path | None) -> Path | None:
+        if value is None:
+            return None
+        path = existing_file((Path.cwd() / value).resolve())
+        try:
+            with path.open("rb") as file:
+                start = file.read(8)
+        except OSError as error:
+            raise ValueError(f"cannot read {path}: {error.strerror}") from None
+        if not start.startswith(IMAGE_SIGNATURES):
+            raise ValueError(f"{path} is not a PNG or JPEG image")
+        return path
+
+    @property
+    def views(self) -> list[View]:
+        return [self.view] if isinstance(self.view, str) else self.view
+
+    @model_validator(mode="after")
+    def fits(self) -> "Render":
+        width = len(self.views) * self.width
+        height = self.height * (2 if self.reference else 1)
+        if width > MAX_IMAGE or height > MAX_IMAGE:
+            raise ValueError(
+                f"the image would be {width}x{height} pixels; at most "
+                f"{MAX_IMAGE} per side"
+            )
+        return self
 
 
 class Thumbnails(Model):
@@ -650,6 +714,13 @@ class Rendered(Model):
     bytes: int
 
 
+class RenderedViews(Rendered):
+    scale: PositiveFloat = Field(
+        description="pixels per metre of every view; pass it to a later render "
+        "to draw at the same scale"
+    )
+
+
 class Thumbnailed(Rendered):
     columns: int = Field(description="thumbnails per row")
     items: list[str] = Field(
@@ -673,7 +744,7 @@ RESULTS: dict[str, TypeAdapter[Any]] = {
     "import": TypeAdapter(Imported),
     "export": TypeAdapter(Exported),
     "save": TypeAdapter(Saved),
-    "render": TypeAdapter(Rendered),
+    "render": TypeAdapter(RenderedViews),
     "thumbnails": TypeAdapter(Thumbnailed),
 }
 

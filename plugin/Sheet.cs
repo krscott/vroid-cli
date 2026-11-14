@@ -2,9 +2,9 @@
 // tests/protocol can exercise it directly.
 namespace VroidBridge;
 
-/// An RGB24 image of item thumbnails, each above its identifier, in rows of
-/// `Columns`. `Pixels` runs bottom row first, as Unity's raw texture data does.
-public sealed class Sheet
+/// An image of item thumbnails, each above its identifier, in rows of
+/// `Columns`.
+public sealed class Sheet : Canvas
 {
     public const int Columns = 10;
     // Half of the 300x400 thumbnails VRoid 2.16.0 ships.
@@ -21,42 +21,36 @@ public sealed class Sheet
     /// The longest label that fits under a thumbnail.
     public const int MaxLabel = (ThumbWidth - 2 * LabelPadding + Scale) / Advance;
     private const byte Ink = 0x20;
-
-    public int Width { get; }
-    public int Height { get; }
-    public byte[] Pixels { get; }
+    private static readonly byte[] White = { 0xFF, 0xFF, 0xFF };
 
     /// Draws one label per thumbnail. Refuses a label the font cannot draw or
     /// that does not fit under its thumbnail.
     public Sheet(IReadOnlyList<string> labels)
+        : base(SheetWidth(labels), (labels.Count + Columns - 1) / Columns * (CellHeight + Gutter) + Gutter, White)
+    {
+        for (var index = 0; index < labels.Count; index++) Label(index, labels[index]);
+    }
+
+    // The sheet's width, once every label is known to be drawable.
+    private static int SheetWidth(IReadOnlyList<string> labels)
     {
         if (labels.Count == 0) throw new ArgumentException("A sheet needs at least one item");
         foreach (var label in labels)
             if (label.Length == 0 || label.Length > MaxLabel || label.Any(c => !Font.ContainsKey(c)))
                 throw new ArgumentException($"Cannot label item {label}");
-        var rows = (labels.Count + Columns - 1) / Columns;
-        Width = Math.Min(labels.Count, Columns) * (ThumbWidth + Gutter) + Gutter;
-        Height = rows * (CellHeight + Gutter) + Gutter;
-        Pixels = new byte[Width * Height * 3];
-        Array.Fill(Pixels, (byte)0xFF);
-        for (var index = 0; index < labels.Count; index++) Label(index, labels[index]);
+        return Math.Min(labels.Count, Columns) * (ThumbWidth + Gutter) + Gutter;
     }
 
     // The top-left corner of a cell, counting rows from the top.
     private static (int X, int Top) Cell(int index) =>
         (Gutter + index % Columns * (ThumbWidth + Gutter), Gutter + index / Columns * (CellHeight + Gutter));
 
-    private int Offset(int x, int top) => ((Height - 1 - top) * Width + x) * 3;
-
     /// Copies a ThumbWidth x ThumbHeight RGB24 thumbnail, bottom row first,
     /// into cell `index`.
     public void Place(int index, byte[] thumbnail)
     {
-        if (thumbnail.Length != ThumbWidth * ThumbHeight * 3)
-            throw new ArgumentException($"Thumbnail {index} has {thumbnail.Length} bytes");
         var (x, top) = Cell(index);
-        for (var row = 0; row < ThumbHeight; row++)
-            Buffer.BlockCopy(thumbnail, row * ThumbWidth * 3, Pixels, Offset(x, top + ThumbHeight - 1 - row), ThumbWidth * 3);
+        Place(x, top, ThumbWidth, ThumbHeight, thumbnail);
     }
 
     private void Label(int index, string text)

@@ -40,6 +40,7 @@ vroid-cli alice '{"method": "dump"}' > alice.json
 vroid-cli alice @alice.json
 vroid-cli alice '{"method": "save", "path": "./alice-v2.vroid"}'
 vroid-cli alice '{"method": "render", "path": "./alice-side.png", "view": "side"}'
+vroid-cli alice '{"method": "render", "path": "./alice-sheet.png", "view": ["front", "three_quarter", "side", "back"], "width": 512, "height": 1024, "reference": "./turnaround.png"}'
 vroid-cli alice '{"method": "stop"}'
 ```
 
@@ -49,9 +50,9 @@ field and result.
 ## Scope
 
 vroid-cli opens existing `.vroid` projects, creates characters from VRoid's
-feminine and masculine bases, reads and sets the numeric sliders
-in the Face and Body editors and the colour fields in the Face, Hairstyle, and
-Body editors, sets the base and shade colours of built-in outfit items, selects
+feminine and masculine bases, reads and sets the numeric sliders in the Face
+and Body editors and the colour fields in the Face, Hairstyle, and Body
+editors, sets the base and shade colours of built-in outfit items, selects
 VRoid's built-in items (hairstyle parts, face parts and presets, body presets,
 outfit items), draws a category's built-in item thumbnails labelled with their
 identifiers, adds, removes, recolours, places, and reshapes built-in
@@ -60,15 +61,15 @@ including their bone and shape sliders, hides, locks, and renames any worn
 accessory, imports accessories from `.vroidcustomitem` files the user provides
 and places, recolours, and reshapes them, exports worn accessories to such
 files, renders the character to PNG from the front, three-quarter, side, or
-back, and saves projects. It can't change outfit or accessory textures or the
-colours of other custom items, import outfit custom items or XWear (`.xwear`)
-items such as bags and belts, design new custom items, create characters from
-VRoid's sample models (`open` a sample's `.vroid` instead), or export VRM. To
-see
-the character, use `render`, not screenshots of the editor window. Edits go
-through `vroid-cli`, never Framewisp input. When a request needs anything
-vroid-cli can't do, do the parts it can and tell the user which parts you
-couldn't.
+back, one view or several side by side, optionally under a PNG or JPEG
+reference image, at a fitted or given scale, and saves projects. It can't
+change outfit or accessory textures or the colours of other custom items,
+import outfit custom items or XWear (`.xwear`) items such as bags and belts,
+design new custom items, create characters from VRoid's sample models (`open` a
+sample's `.vroid` instead), or export VRM. To see the character, use `render`,
+not screenshots of the editor window. Edits go through `vroid-cli`, never
+Framewisp input. When a request needs anything vroid-cli can't do, do the parts
+it can and tell the user which parts you couldn't.
 
 Face "Ear" parameters shape human ears at the sides of the head. Animal ears
 and tails are accessories.
@@ -237,15 +238,33 @@ and tails are accessories.
 - `save` needs a new `.vroid` path in an existing directory. It never
   overwrites. Choose a new versioned filename.
 - `render` writes a new `.png` of the open character, without changing it:
-  `view` is `front`, `three_quarter`, `side`, or `back`; `three_quarter` and
-  `side` show its left side. `frame: "head"` fits everything above the neck,
-  so a front head view is a face close-up and a side head view shows ear
-  shape. Views are orthographic, and body views of one character state at one
-  `width` and `height` share their scale, so they compare directly with a
-  reference turnaround. The body frame fits everything worn, so an item that
-  makes the character taller or wider, such as an ahoge, a hat, or a long top,
-  changes the scale and can move the ground line.
-  `width` and `height` default to 1024.
+  `view` is `front`, `three_quarter`, `side`, or `back`, or a list of them
+  drawn left to right in one image; `three_quarter` and `side` show its left
+  side. `frame: "head"` fits everything above the neck, so a front head view
+  is a face close-up and a side head view shows ear shape. `width` and
+  `height` are the size of each view and default to 1024; the whole image is
+  at most 4096 pixels per side. Views are orthographic, and every view in one
+  image shares one scale, so they compare directly with a reference
+  turnaround. A body view fills its height when its width is at least
+  about 3/4 of its height; narrower views leave room above the head.
+- `reference` puts an existing PNG or JPEG, such as the user's turnaround, in
+  a row above the views as wide as all of them and as tall as one, scaled to
+  fit without changing its aspect ratio. List the views in the reference's
+  order to compare each with the one above it; they line up view for view
+  when the row has the reference's proportions, such as four 512 by 1024
+  views under a 2:1 four-view turnaround. Transparent areas show the
+  background. The reference keeps its own scale, not the character's.
+- The body frame fits everything worn, so an item or edit that makes the
+  character taller or wider, such as an ahoge, a hat, or a long top, changes
+  the scale. Each result reports `scale` in pixels per metre; pass it back as
+  `scale` to keep it, and renders of one view, frame, and size at one scale
+  line up: the floor and centre line (body), or the neck and head (head),
+  stay at the same pixels. A scale that would cut off the character in a
+  requested view is refused, and the error names the largest that fits, edge
+  to edge. For before and after images of an edit that may make the character
+  taller or wider, multiply the "before" render's reported `scale` by 0.9,
+  render the "before" again at that, and render the "after" at the same.
+  `scale` is at least 1.
 - `{"method": "new", "base": "Preset_F"}` (or `"Preset_M"`) starts a character
   from VRoid's feminine (or masculine) base instead of `open`; it works
   offline and wears only built-in items. It has no file until `save`, and one

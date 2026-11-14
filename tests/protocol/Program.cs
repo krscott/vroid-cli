@@ -1,8 +1,8 @@
 // Exercises plugin/Bridge.cs, the app side of the file protocol, the colour
 // rules in plugin/Colors.cs, custom item files in plugin/CustomItemFile.cs,
 // the camera placement in plugin/Framing.cs, item identifiers and accessory
-// matching in plugin/ItemIds.cs, and the thumbnail sheet in plugin/Sheet.cs,
-// without Unity.
+// matching in plugin/ItemIds.cs, and the image layout in plugin/Canvas.cs and
+// plugin/Sheet.cs, without Unity.
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
@@ -180,18 +180,35 @@ Test("a request whose id is not a CLI id writes nothing outside results", direct
 
 // Framing: a sample character's meshes, as VRoid reports their bounds: the
 // body with its arms, the head, and long ears that reach past the head's
-// height. The model faces +Z or is turned.
+// height. The model stands on the floor at its origin, facing +Z or turned.
+var origin = new Vec(0, 0, 0);
 var body = new Box(new Vec(-0.48, 0.0, -0.38), new Vec(0.48, 1.30, 0.33));
 var skull = new Box(new Vec(-0.12, 1.19, -0.15), new Vec(0.12, 1.50, 0.12));
 var ears = new Box(new Vec(-0.30, 1.28, -0.05), new Vec(0.30, 1.36, 0.02));
 // Long hair from above the skull to the waist, centred below the neck.
 var hair = new Box(new Vec(-0.17, 0.80, -0.20), new Vec(0.17, 1.53, 0.10));
 var parts = new[] { body, skull, ears, hair };
+// A tall hat and a tail behind the model, which the fitted frames must grow for.
+var hat = new Box(new Vec(-0.15, 1.40, -0.15), new Vec(0.15, 1.90, 0.15));
+var tail = new Box(new Vec(-0.05, 0.50, -0.90), new Vec(0.05, 0.70, -0.30));
+var dressed = parts.Append(hat).Append(tail).ToArray();
 var neck = new Vec(0, 1.19, -0.03);
 var head = new Vec(0.01, 1.25, -0.02);
 var forwards = new[] { new Vec(0, 0, 1), new Vec(Math.Sin(0.5), 0, Math.Cos(0.5)) };
 var aspects = new[] { 0.5, 1.0, 2.0 };
 var views = Enum.GetValues<View>();
+
+Shot BodyShot(Box[] boxes, Vec forward, View view, double aspect, int height = 1000, double? scale = null)
+{
+    var extent = Framing.Body(boxes, origin);
+    return Framing.Place(extent, Framing.Size(extent, new[] { Framing.Direction(forward, view) }, aspect, height, scale), Box.Union(boxes), forward, view);
+}
+
+Shot HeadShot(Box[] boxes, Vec forward, View view, double aspect, int height = 1000, double? scale = null)
+{
+    var extent = Framing.Head(boxes, neck, head);
+    return Framing.Place(extent, Framing.Size(extent, new[] { Framing.Direction(forward, view) }, aspect, height, scale), Box.Union(boxes), forward, view);
+}
 
 // Position of `point` in the image plane of `shot`: right, up, and depth.
 (double Right, double Up, double Depth) Project(Shot shot, Vec point)
@@ -206,21 +223,30 @@ var views = Enum.GetValues<View>();
     return (offset.X * z - offset.Z * x, offset.Y, depth);
 }
 
+// Where `point` lands in an image `height` pixels tall: pixels right of the
+// centre line, and up from the bottom edge.
+(double Column, double Row) Pixel(Shot shot, Vec point, int height)
+{
+    var (right, up, _) = Project(shot, point);
+    var perMetre = Framing.Scale(shot.Size, height);
+    return (right * perMetre, (up + shot.Size) * perMetre);
+}
+
 IEnumerable<Vec> Corners(Box box) =>
     from x in new[] { box.Min.X, box.Max.X }
     from y in new[] { box.Min.Y, box.Max.Y }
     from z in new[] { box.Min.Z, box.Max.Z }
     select new Vec(x, y, z);
 
-// Checks that every corner of `boxes` is inside the frame with its margin and unclipped.
-void Shows(Shot shot, double aspect, IEnumerable<Box> boxes, string what)
+// Checks that every corner of `boxes` is inside the frame with `margin` and unclipped.
+void Shows(Shot shot, double aspect, IEnumerable<Box> boxes, string what, double margin = Framing.Margin)
 {
     foreach (var corner in boxes.SelectMany(Corners))
     {
         var (right, up, depth) = Project(shot, corner);
         var where = $"{what} at aspect {aspect}: corner {corner}";
-        Check(Math.Abs(right) <= shot.Size * aspect / Framing.Margin + 1e-9, $"{where} is outside the width");
-        Check(Math.Abs(up) <= shot.Size / Framing.Margin + 1e-9, $"{where} is outside the height");
+        Check(Math.Abs(right) <= shot.Size * aspect / margin + 1e-9, $"{where} is outside the width");
+        Check(Math.Abs(up) <= shot.Size / margin + 1e-9, $"{where} is outside the height");
         Check(depth > shot.Near && depth < shot.Far, $"{where} is clipped");
     }
 }
@@ -228,10 +254,11 @@ void Shows(Shot shot, double aspect, IEnumerable<Box> boxes, string what)
 // R-VIEW-1
 Test("every body view shows the whole model with a margin", _ =>
 {
-    foreach (var forward in forwards)
-        foreach (var aspect in aspects)
-            foreach (var view in views)
-                Shows(Framing.Body(parts, forward, view, aspect), aspect, parts, $"{view} body");
+    foreach (var boxes in new[] { parts, dressed })
+        foreach (var forward in forwards)
+            foreach (var aspect in aspects)
+                foreach (var view in views)
+                    Shows(BodyShot(boxes, forward, view, aspect), aspect, boxes, $"{view} body");
 });
 
 // R-VIEW-1
@@ -240,12 +267,102 @@ Test("views of one model at one size share their scale", _ =>
     foreach (var forward in forwards)
         foreach (var aspect in aspects)
         {
-            var bodies = views.Select(view => Framing.Body(parts, forward, view, aspect)).ToArray();
+            var bodies = views.Select(view => BodyShot(dressed, forward, view, aspect)).ToArray();
             Check(bodies.All(shot => Math.Abs(shot.Size - bodies[0].Size) < 1e-9), $"body scale differs at aspect {aspect}");
             Check(bodies.All(shot => Math.Abs(shot.Target.Y - bodies[0].Target.Y) < 1e-9), $"ground line differs at aspect {aspect}");
-            var heads = views.Select(view => Framing.Head(parts, neck, head, forward, view, aspect)).ToArray();
+            var heads = views.Select(view => HeadShot(dressed, forward, view, aspect)).ToArray();
             Check(heads.All(shot => Math.Abs(shot.Size - heads[0].Size) < 1e-9), $"head scale differs at aspect {aspect}");
         }
+});
+
+// R-VIEW-1
+Test("a part below the floor keeps a margin below it", _ =>
+{
+    // A tail moved 0.3 m below the floor, deeper than the margin at the fit
+    // the rest of the model would get.
+    var low = parts.Append(new Box(new Vec(-0.05, -0.30, -0.60), new Vec(0.05, 0.40, -0.30))).ToArray();
+    foreach (var aspect in aspects)
+    {
+        var shot = BodyShot(low, forwards[0], View.Front, aspect);
+        var clear = -0.30 - (shot.Target.Y - shot.Size);
+        Check(clear >= 0.30 * (Framing.Margin - 1) - 1e-9, $"at aspect {aspect} the tail is {clear} m above the bottom edge");
+        Shows(shot, aspect, parts, "the rest of the model", margin: 1);
+    }
+});
+
+// R-VIEW-6
+Test("renders at one scale keep the floor, centre line, neck, and head in place", _ =>
+{
+    foreach (var forward in forwards)
+        foreach (var aspect in aspects)
+            foreach (var view in views)
+            {
+                var fitted = BodyShot(dressed, forward, view, aspect);
+                var scale = Framing.Scale(fitted.Size, 1000);
+                var plain = BodyShot(parts, forward, view, aspect, scale: scale);
+                Check(Math.Abs(plain.Size - fitted.Size) < 1e-9, $"{view} body at aspect {aspect} ignores the scale");
+                var (column, row) = Pixel(plain, origin, 1000);
+                var (fittedColumn, fittedRow) = Pixel(fitted, origin, 1000);
+                Check(Math.Abs(column) < 1e-6 && Math.Abs(fittedColumn) < 1e-6, $"{view} body is not centred on the origin");
+                Check(Math.Abs(row - fittedRow) < 1e-6, $"{view} body moves the floor from row {fittedRow} to {row}");
+                // The floor stays at one row at every scale.
+                var (_, closer) = Pixel(BodyShot(parts, forward, view, aspect, scale: scale / 2), origin, 1000);
+                Check(Math.Abs(closer - row) < 1e-6, $"{view} body moves the floor with the scale");
+
+                var fittedHead = HeadShot(dressed, forward, view, aspect);
+                var headScale = Framing.Scale(fittedHead.Size, 1000);
+                var plainHead = HeadShot(parts, forward, view, aspect, scale: headScale);
+                var (headColumn, neckRow) = Pixel(plainHead, new Vec(head.X, neck.Y, head.Z), 1000);
+                var (_, fittedNeckRow) = Pixel(fittedHead, new Vec(head.X, neck.Y, head.Z), 1000);
+                Check(Math.Abs(headColumn) < 1e-6, $"{view} head is not centred on the head");
+                Check(Math.Abs(neckRow - fittedNeckRow) < 1e-6, $"{view} head moves the neck from row {fittedNeckRow} to {neckRow}");
+            }
+});
+
+// R-VIEW-6
+Test("a scale that would cut off the character in a requested view is refused, naming the largest that fits", _ =>
+{
+    var extent = Framing.Body(dressed, origin);
+    foreach (var forward in forwards)
+        foreach (var aspect in aspects)
+            foreach (var view in views)
+            {
+                var direction = new[] { Framing.Direction(forward, view) };
+                var fitted = Framing.Scale(Framing.Fit(extent, aspect), 1000);
+                // The reported scale passed back, and one below it, are accepted.
+                Framing.Size(extent, direction, aspect, 1000, fitted);
+                Framing.Size(extent, direction, aspect, 1000, fitted * 0.9);
+                double named;
+                try
+                {
+                    Framing.Size(extent, direction, aspect, 1000, fitted * 3);
+                    throw new Exception($"a scale too large for {view} at aspect {aspect} was accepted");
+                }
+                catch (InvalidOperationException error)
+                {
+                    named = double.Parse(error.Message[(error.Message.LastIndexOf(' ') + 1)..], System.Globalization.CultureInfo.InvariantCulture);
+                }
+                Check(named >= fitted, $"the largest scale {named} is below the fitted {fitted}");
+                // At the named scale nothing is cut off; just above it, something is.
+                var size = Framing.Size(extent, direction, aspect, 1000, named);
+                Shows(Framing.Place(extent, size, Box.Union(dressed), forward, view), aspect, dressed, $"{view} body at scale {named}", margin: 1);
+                try
+                {
+                    Framing.Size(extent, direction, aspect, 1000, named + 0.002);
+                    throw new Exception($"a scale above {named} for {view} at aspect {aspect} was accepted");
+                }
+                catch (InvalidOperationException) { }
+            }
+    // The tail behind the model limits the side view, not the front one.
+    var forwardOnly = new[] { Framing.Direction(forwards[0], View.Front) };
+    var sideToo = new[] { forwardOnly[0], Framing.Direction(forwards[0], View.Side) };
+    Framing.Size(extent, forwardOnly, 0.5, 1000, 400);
+    try
+    {
+        Framing.Size(extent, sideToo, 0.5, 1000, 400);
+        throw new Exception("a side view that cuts off the tail was accepted");
+    }
+    catch (InvalidOperationException) { }
 });
 
 // R-VIEW-1
@@ -275,12 +392,13 @@ Test("a head view shows every mesh above the neck and the top, not the arms", _ 
         foreach (var aspect in aspects)
             foreach (var view in views)
             {
-                var shot = Framing.Head(parts, neck, head, forward, view, aspect);
+                var shot = HeadShot(parts, forward, view, aspect);
                 Check(Math.Abs(shot.Target.X - head.X) < 1e-9 && Math.Abs(shot.Target.Z - head.Z) < 1e-9, "not centred on the head");
                 Shows(shot, aspect, new[] { skull, ears }, $"{view} head");
-                Check(Math.Abs(shot.Target.Y - (neck.Y + hair.Max.Y) / 2) < 1e-9, $"{view} head is not centred from the neck to the top");
                 var (_, crown, _) = Project(shot, new Vec(head.X, hair.Max.Y, head.Z));
                 Check(crown <= shot.Size / Framing.Margin + 1e-9, $"{view} head at aspect {aspect} cuts off the top of the hair");
+                var (_, under, _) = Project(shot, new Vec(head.X, neck.Y, head.Z));
+                Check(Math.Abs(under + shot.Size / Framing.Margin) < 1e-9, $"{view} head does not start at the neck");
                 // The arms reach further from the head than anything above the neck.
                 Check(shot.Size * aspect < body.Max.X - head.X, $"{view} head at aspect {aspect} is as wide as the arms");
             }
@@ -612,6 +730,40 @@ Test("the sheet font draws every identifier character distinctly", _ =>
     }
     var shapes = Sheet.Font.Values.Select(glyph => glyph.PadRight(53, '.')).ToList();
     Check(shapes.Distinct().Count() == shapes.Count, "two glyphs look the same");
+});
+
+// R-VIEW-1, R-VIEW-5
+Test("a canvas places images by their top-left corner", _ =>
+{
+    var canvas = new Canvas(4, 3, new byte[] { 9, 9, 9 });
+    // A 2x2 image, bottom row first: red below, green above.
+    canvas.Place(1, 0, 2, 2, new byte[] { 255, 0, 0, 255, 0, 0, 0, 255, 0, 0, 255, 0 });
+    byte Green(int x, int top) => canvas.Pixels[((canvas.Height - 1 - top) * canvas.Width + x) * 3 + 1];
+    Check(Green(1, 0) == 255 && Green(2, 0) == 255, "the top row is not the image's top row");
+    Check(Green(1, 1) == 0 && canvas.Pixels[((3 - 1 - 1) * 4 + 1) * 3] == 255, "the second row is not red");
+    Check(Green(0, 0) == 9 && Green(3, 2) == 9 && Green(1, 2) == 9, "the background changed outside the image");
+    foreach (var place in new Action[]
+    {
+        () => canvas.Place(3, 0, 2, 2, new byte[12]),
+        () => canvas.Place(0, 0, 2, 2, new byte[11]),
+    })
+    {
+        try
+        {
+            place();
+            throw new Exception("an image that does not fit was placed");
+        }
+        catch (ArgumentException) { }
+    }
+});
+
+// R-VIEW-5
+Test("a reference keeps its aspect ratio", _ =>
+{
+    Check(Canvas.FitSize(300, 300, 40, 20) == (300, 150), "a wide image does not fill the width");
+    Check(Canvas.FitSize(200, 100, 10, 20) == (50, 100), "a tall image does not fill the height");
+    Check(Canvas.FitSize(2048, 1024, 1774, 887) == (2048, 1024), "a 2:1 image does not fill a 2:1 box");
+    Check(Canvas.FitSize(100, 100, 100000, 1) == (100, 1), "a thin image vanishes");
 });
 
 // R-VIEW-4

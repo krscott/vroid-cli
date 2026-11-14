@@ -83,14 +83,17 @@ ignores itself in Git.
 
 `render` writes a PNG of the open character on a plain background, without
 changing the project or the editor's view. It shows the front, three-quarter,
-side, or back of the whole character, or of its head with `"frame": "head"`.
-Views are orthographic, and body views of one character state at one size share
-their scale, like a turnaround sheet. An item that makes the character taller
-or wider changes it:
+side, or back of the whole character, or of its head with `"frame": "head"`,
+or several views side by side, optionally under a reference image. Views are
+orthographic, and the views in one image share their scale, like a turnaround
+sheet. An item that makes the character taller or wider changes the fitted
+scale; pass a result's `scale` back to keep it, so before and after renders
+line up:
 
 ```sh
 vroid-cli demo '{"method": "render", "path": "./side.png", "view": "side"}'
 vroid-cli demo '{"method": "render", "path": "./face.png", "view": "front", "frame": "head"}'
+vroid-cli demo '{"method": "render", "path": "./sheet.png", "view": ["front", "three_quarter", "side", "back"], "width": 512, "height": 1024, "reference": "./turnaround.png"}'
 ```
 
 VRoid's built-in items have no names, only thumbnails. `thumbnails` draws

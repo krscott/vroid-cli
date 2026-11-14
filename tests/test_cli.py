@@ -1104,19 +1104,30 @@ def test_status_of_a_new_session_is_one_json_value(tmp_path: Path) -> None:
         ({"path": "view.jpg"}, "path: image paths must end in .png"),
         ({"path": "missing/view.png"}, "is not a directory"),
         ({"path": "existing.png"}, "path: refusing to overwrite"),
-        ({"view": "left"}, "view: Input should be 'front'"),
+        ({"view": "left"}, "view: expected one of front, three_quarter"),
         ({"frame": "face"}, "frame: Input should be 'body' or 'head'"),
         ({"width": 15}, "width: Input should be greater than or equal to 16"),
         ({"height": 4097}, "height: Input should be less than or equal to 4096"),
         ({"width": 512.0}, "width: Input should be a valid integer"),
         ({"angle": 30}, "angle: Extra inputs"),
+        ({"view": []}, "view: expected one of front"),
+        ({"view": ["front", "left"]}, "or a non-empty list of them"),
+        ({"view": ["front"] * 5}, "the image would be 5120x1024 pixels"),
+        ({"reference": "ref.png", "height": 2049}, "image would be 1024x4098"),
+        ({"scale": 0.9}, "scale: Input should be greater than or equal to 1"),
+        ({"scale": "500"}, "scale: Input should be a valid number"),
+        ({"reference": "missing.png"}, "missing.png is not an existing file"),
+        ({"reference": "notes.png"}, "notes.png is not a PNG or JPEG image"),
+        ({"reference": "."}, "is not an existing file"),
     ],
 )
 def test_invalid_render_requests_are_rejected_without_state(
     tmp_path: Path, fields: dict[str, Any], reason: str
 ) -> None:
-    # R-CLI-3, R-VIEW-3
+    # R-CLI-3, R-VIEW-3, R-VIEW-5
     (tmp_path / "existing.png").write_bytes(b"earlier image")
+    (tmp_path / "ref.png").write_bytes(PNG_SIGNATURE)
+    (tmp_path / "notes.png").write_text("not an image")
     request = {"method": "render", "path": "view.png", "view": "front"} | fields
     result = run_cli(tmp_path, "test", json.dumps(request))
     assert result.returncode == 2
@@ -1155,6 +1166,41 @@ def test_invalid_thumbnails_requests_are_rejected_without_state(
     assert not (tmp_path / "state").exists()
 
 
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        ({"view": "side"}, {"view": ["side"], "reference": None, "scale": None}),
+        (
+            {"view": ["back", "front"], "scale": 512.5},
+            {"view": ["back", "front"], "reference": None, "scale": 512.5},
+        ),
+        (
+            {"view": ["front"], "reference": "ref.jpg"},
+            {"view": ["front"], "reference": "Z:{tmp}/ref.jpg", "scale": None},
+        ),
+    ],
+)
+def test_render_sends_a_list_of_views_and_a_wine_reference_path(
+    tmp_path: Path, fields: dict[str, Any], expected: dict[str, Any]
+) -> None:
+    # R-VIEW-1, R-VIEW-5, R-VIEW-6
+    (tmp_path / "ref.jpg").write_bytes(b"\xff\xd8\xff\xe0 JFIF")
+    rpc = bridge(tmp_path)
+    with answer(rpc, writes_file(b"written")) as received:
+        result = invoke(tmp_path, "render", path="sheet.png", **fields)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["scale"] == 512.5
+    sent = {key: received[0][key] for key in expected}
+    if isinstance(expected["reference"], str):
+        expected = expected | {
+            "reference": expected["reference"].format(tmp=tmp_path.as_posix())
+        }
+    assert sent == expected
+
+
 def published_files(directory: Path) -> list[str]:
     return sorted(
         path.name
@@ -1176,6 +1222,8 @@ def published_result(request: dict[str, Any], size: int) -> dict[str, Any]:
     if request["method"] == "export":
         return {"exported": request["path"], "bytes": size}
     result: dict[str, Any] = {"rendered": request["path"], "bytes": size}
+    if request["method"] == "render":
+        result["scale"] = 512.5
     if request["method"] == "thumbnails":
         result |= {"columns": 10, "items": ["159", "Default"]}
     return result
@@ -1229,7 +1277,7 @@ def test_files_are_published_at_the_callers_path(tmp_path: Path, method: str) ->
     else:
         assert temporary.name.startswith(".vroid-render-")
     if method == "render":
-        assert (request["view"], request["frame"]) == ("front", "body")
+        assert (request["view"], request["frame"]) == (["front"], "body")
         assert (request["width"], request["height"]) == (1024, 1024)
     elif method == "thumbnails":
         assert (request["section"], request["category"]) == ("Outfit", "Tops")
