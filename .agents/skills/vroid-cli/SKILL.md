@@ -117,11 +117,11 @@ and tails are accessories.
   default colours. Then select candidates and `render` them to compare.
   Outfit Inner Top and Inner Bottom items are flat black with no colours to
   set, so their thumbnails, like VRoid's picker, show black shapes; the dark
-  red is their inside. Choose them by shape. Selecting an item keeps every colour except the Outfit item's own, which
-  start at the item's defaults, and resets Face Irises and Eyebrows values,
-  so `apply` changes items first, then values. Setting an outfit colour keeps
-  the item built in. `"item": null` takes
-  off the item where `items` reports `removable`.
+  red is their inside. Choose them by shape. Selecting an item keeps every
+  colour except the Outfit item's own, which start at the item's defaults,
+  and resets Face Irises and Eyebrows values, so `apply` changes items first,
+  then values. Setting an outfit colour keeps the item built in.
+  `"item": null` takes off the item where `items` reports `removable`.
 - VRoid takes off conflicting items itself, such as the dress when a top is
   selected; a request naming both is refused. Each Hair Back item also brings
   its own Base Hair item, or none: Back `146` selects Base Hair `001`, `326`
