@@ -639,6 +639,15 @@ texture editor. Accessories' colours are above.
   project. Each colour's keys are its part's transferable and its position,
   so outfit colours are never shared. Selecting an Outfit item resets its
   colours to the item's defaults.
+  VRoid names a part only by its transferable's display name
+  (`GetTransferableDisplayNameQuery`), which names the template the part was
+  modelled from and often repeats within an item: each of Tops 144's three
+  parts is "Long Coat (High Neck)", and a part of Bottoms 145 is "Dress
+  (Short Sleeve)". Such names would mislead, so parts stay unnamed; the skill
+  shows how to map them with one render. A colour multiplies its part's
+  texture, Base Color where lit and Shade Color where shaded: in 2.16.0, a
+  render with Base Color c matches one with #FFFFFF times c within a few
+  levels per channel, and no colour raises a channel above it.
 
 Some colours are shared. A sub-selection's accessor writes the model keys in
 `_keysToSet`: Face Eyelids, Nose, and Skin and Body Whole Body each write all

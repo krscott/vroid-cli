@@ -87,9 +87,17 @@ and tails are accessories.
   return them. A label that appears more than once in a category, like "Nose
   Size" in Face Sets, takes an array with one value per occurrence, in
   `parameters` order. Outfit items have a "Base Color" and "Shade Color" per
-  part, so an item with several parts takes an array of colours; `render` to
-  see which part each one colours. A new item's parts are known only once it
-  is worn: select it, list its `parameters`, then set its colours. Inner Top
+  part, so an item with several parts takes an array of colours. VRoid has no
+  names for the parts. To map them in one try, set each part's two colours to
+  its own vivid colour, such as `"#FF0000"`, `"#00FF00"`, and `"#0000FF"` for
+  three parts, `render` the front and back, then apply the `undo` file. A new
+  item's parts are known only once it is worn: select it, list its
+  `parameters`, then set its colours. A colour multiplies the item's texture:
+  "Base Color" on its lit side, "Shade Color" on its shaded side, which
+  includes back views. `"#FFFFFF"` shows the texture unchanged. Any colour
+  tints the light areas of the texture but never lightens it, so a dark
+  band, trim, or cuff stays dark whatever colour is set; choose another item
+  for a light colour there. Inner Top
   and Inner Bottom items are flat black and have no colours; VRoid changes
   them only with Edit Texture, which vroid-cli can't use.
 - `apply` accepts finite values within each parameter's `min..max`, as
