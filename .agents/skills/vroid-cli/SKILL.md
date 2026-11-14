@@ -148,9 +148,9 @@ and tails are accessories.
   remove the rest. A pair of ears is one accessory; VRoid allows five.
 - An accessory entry has an `item` from `accessories`, its "Color", its shape
   sliders by label, and its placement: `bone`, one of `accessories` `bones`
-  such as `J_Bip_C_Head`; `position` `[x, y, z]` in metres; `rotation`, a
-  unit quaternion `[x, y, z, w]`; and `scale` `[x, y, z]`, all in the bone's
-  axes, below. VRoid's default placement is the identity, except that it fits
+  such as `J_Bip_C_Head`; `position` `[x, y, z]` in metres; `rotation`,
+  angles `{"degrees": [x, y, z]}` or a unit quaternion `[x, y, z, w]`; and
+  `scale` `[x, y, z]`, all in the bone's axes, below. VRoid's default placement is the identity, except that it fits
   hats on the Head about 0.13 m up and tilted 10° back, as `dump` shows.
   `"bone": null` is VRoid's None, with no placement. An omitted key keeps a
   worn accessory's value, or VRoid's default for an added one, whose sliders
@@ -158,11 +158,14 @@ and tails are accessories.
   the identity, even a hat's back on the Head, so name the placement with the
   bone; remove and re-add a hat to fit it again.
 - Bone axes follow the character in VRoid's A-pose: +x is the character's
-  right, +y up, +z forward. A positive rotation about x tips the front down,
+  right, +y up, +z forward. A positive angle about x tips the front down,
   about y turns the front to the character's right, and about z lowers the
-  character's left side. θ about x is `[sin(θ/2), 0, 0, cos(θ/2)]`, so
-  `[-0.173648, 0, 0, 0.984808]` droops a tail 20°, and a positive y rotation
-  swings it to the character's left. In VRoid 2.16.0, some bones tilt from
+  character's left side. Angles turn z first, then x, then y, each about the
+  bone's axes, as Unity's `Quaternion.Euler` does, so
+  `{"degrees": [-20, 30, 0]}` droops a tail 20° and then swings it 30° to
+  the character's left. Write rotations as angles; `dump` gives quaternions,
+  where θ about x alone is `[sin(θ/2), 0, 0, cos(θ/2)]`, and `apply` refuses
+  a quaternion that is not unit length. In VRoid 2.16.0, some bones tilt from
   these axes:
 
   | Bones | Tilt |
@@ -178,10 +181,11 @@ and tails are accessories.
   places. Ears, glasses, and tails have theirs at the bone's joint, at the
   base of the skull for the Head, so rotating them alone swings them around
   it; a hat's is in its brim. To turn an accessory with rotation R and
-  position p by T about a point c in bone axes, set rotation to T ⊗ R (the
-  quaternion product, T applied last) and position to c + T·(p − c). For a
-  hat, c = p. Cat ears tilted back 20° about `[0, 0.15, 0]`, near the top
-  of the head, take rotation `[-0.173648, 0, 0, 0.984808]` and position
+  position p by T about a point c in bone axes, set rotation to T after R
+  and position to c + T·(p − c). For a hat, c = p. Angles add when R and T
+  turn about one axis, or T only about y; otherwise use the quaternion
+  product T ⊗ R. Cat ears tilted back 20° about `[0, 0.15, 0]`, near the
+  top of the head, take rotation `{"degrees": [-20, 0, 0]}` and position
   `[0, 0.009, 0.051]`. `render` the front and side to check.
 - An entry's `name` is a name the user gave it, which VRoid's accessory list
   shows, or null for VRoid's default name; leave it out when adding one from

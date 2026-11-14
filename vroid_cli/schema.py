@@ -1,6 +1,7 @@
 """Request and result models; the JSON Schema printed by --agent-skill comes from here."""
 
 import json
+import math
 from collections import Counter
 from pathlib import Path
 from typing import Annotated, Any, Literal, get_args
@@ -17,6 +18,7 @@ from pydantic import (
     ValidationError,
     ValidatorFunctionWrapHandler,
     WrapValidator,
+    field_serializer,
     field_validator,
     model_serializer,
     model_validator,
@@ -65,9 +67,10 @@ def omittable(schema: dict[str, Any]) -> None:
     # A field that may be omitted but not null: its None default only marks it
     # omitted, which `not_null` enforces.
     no_default(schema)
-    schema.update(
-        next(branch for branch in schema.pop("anyOf") if branch.get("type") != "null")
-    )
+    branches = [
+        branch for branch in schema.pop("anyOf") if branch.get("type") != "null"
+    ]
+    schema.update(branches[0] if len(branches) == 1 else {"anyOf": branches})
 
 
 class Model(BaseModel):
@@ -118,6 +121,52 @@ Template = Annotated[
 
 Vector3 = Annotated[list[float], Field(min_length=3, max_length=3)]
 Quaternion = Annotated[list[float], Field(min_length=4, max_length=4)]
+
+
+def product(a: list[float], b: list[float]) -> list[float]:
+    """The Hamilton product a ⊗ b of quaternions [x, y, z, w]: b, then a."""
+    ax, ay, az, aw = a
+    bx, by, bz, bw = b
+    return [
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+        aw * bw - ax * bx - ay * by - az * bz,
+    ]
+
+
+class Degrees(Model):
+    """Angles about a bone's axes, as Unity's Quaternion.Euler takes them."""
+
+    # The order is part of the request's meaning (R-EDIT-17).
+    degrees: Vector3 = Field(
+        description="[x, y, z]: z degrees about the bone's z axis, then x about "
+        "its x axis, then y about its y axis"
+    )
+
+    def quaternion(self) -> list[float]:
+        def turn(axis: int, angle: float) -> list[float]:
+            half = math.radians(angle) / 2
+            parts = [0.0, 0.0, 0.0, math.cos(half)]
+            parts[axis] = math.sin(half)
+            return parts
+
+        x, y, z = self.degrees
+        return product(turn(1, y), product(turn(0, x), turn(2, z)))
+
+
+def one_rotation_error(value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
+    # Without this, a bad value gets one error per union member.
+    try:
+        return handler(value)
+    except ValidationError:
+        raise ValueError(
+            "expected a unit quaternion [x, y, z, w], or angles as "
+            '{"degrees": [x, y, z]}, of finite numbers'
+        ) from None
+
+
+Rotation = Annotated[Quaternion | Degrees, WrapValidator(one_rotation_error)]
 # An accessory entry's keys, besides its item, that are not VRoid labels.
 ENTRY_KEYS = ("bone", "position", "rotation", "scale", "name", "hidden", "locked")
 
@@ -149,10 +198,11 @@ class Accessory(BaseModel):
         "the bone",
         json_schema_extra=omittable,
     )
-    rotation: Quaternion | None = Field(
+    rotation: Rotation | None = Field(
         None,
-        description="a unit quaternion [x, y, z, w] relative to the bone; "
-        "[0, 0, 0, 1] is the default",
+        description="a unit quaternion [x, y, z, w] relative to the bone, or "
+        'angles as {"degrees": [x, y, z]}; [0, 0, 0, 1] is the default. dump '
+        "gives quaternions.",
         json_schema_extra=omittable,
     )
     scale: Vector3 | None = Field(
@@ -188,6 +238,13 @@ class Accessory(BaseModel):
         if value is None:
             raise ValueError("give a value, or omit it to keep the current one")
         return value
+
+    @field_serializer("rotation")
+    def as_quaternion(
+        self, rotation: Quaternion | Degrees | None
+    ) -> list[float] | None:
+        # The bridge, dump, and undo files know only quaternions.
+        return rotation.quaternion() if isinstance(rotation, Degrees) else rotation
 
     @model_serializer(mode="wrap")
     def omit_unset_keys(self, handler: SerializerFunctionWrapHandler) -> Any:
