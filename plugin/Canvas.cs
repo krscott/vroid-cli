@@ -48,22 +48,4 @@ public class Canvas
         var scale = Math.Min((double)boxWidth / width, (double)boxHeight / height);
         return (Math.Clamp((int)Math.Round(width * scale), 1, boxWidth), Math.Clamp((int)Math.Round(height * scale), 1, boxHeight));
     }
-
-    /// Blends a `width` x `height` RGBA32 image, bottom row first, over the
-    /// canvas by its alpha, with its top-left corner at `x`, `top`.
-    public void Blend(int x, int top, int width, int height, byte[] image)
-    {
-        Inside(x, top, width, height);
-        if (image.Length != width * height * 4) throw new ArgumentException($"A {width}x{height} image has {image.Length} bytes");
-        for (var row = 0; row < height; row++)
-        {
-            var at = Offset(x, top + height - 1 - row);
-            for (int column = 0, from = row * width * 4; column < width; column++, at += 3, from += 4)
-            {
-                var alpha = image[from + 3];
-                for (var channel = 0; channel < 3; channel++)
-                    Pixels[at + channel] = (byte)((image[from + channel] * alpha + Pixels[at + channel] * (255 - alpha) + 127) / 255);
-            }
-        }
-    }
 }

@@ -30,9 +30,25 @@ public enum Frame { Body, Head }
 public sealed record Shot(Vec Position, Vec Target, double Size, double Near, double Far);
 
 /// What a frame must show: everything from `Below` under to `Above` over
-/// `Anchor`, within `Reach` of the vertical line through it in any direction.
-/// The anchor stays at the same place in the image at every scale.
-public readonly record struct Extent(Vec Anchor, double Above, double Below, double Reach);
+/// `Anchor`, and the horizontal extent of `Wide` around the vertical line
+/// through it. The anchor stays at the same place in the image at every scale.
+public sealed record Extent(Vec Anchor, double Above, double Below, IReadOnlyList<Box> Wide)
+{
+    /// The farthest horizontal distance of `Wide` from the anchor's line, in
+    /// any direction.
+    public double Reach => Wide.Max(part =>
+    {
+        var x = Math.Max(Math.Abs(part.Min.X - Anchor.X), Math.Abs(part.Max.X - Anchor.X));
+        var z = Math.Max(Math.Abs(part.Min.Z - Anchor.Z), Math.Abs(part.Max.Z - Anchor.Z));
+        return Math.Sqrt(x * x + z * z);
+    });
+
+    /// The farthest distance of `Wide` from the anchor's line to either side
+    /// of an image looking along `direction`, a horizontal unit vector.
+    public double HalfWidth(Vec direction) => Wide.Max(part =>
+        new[] { part.Min.X, part.Max.X }.SelectMany(x => new[] { part.Min.Z, part.Max.Z },
+            (x, z) => Math.Abs((x - Anchor.X) * direction.Z - (z - Anchor.Z) * direction.X)).Max());
+}
 
 public static class Framing
 {
@@ -82,7 +98,7 @@ public static class Framing
     public static Extent Body(IReadOnlyList<Box> parts, Vec origin)
     {
         var all = Box.Union(parts);
-        return new Extent(origin, all.Max.Y - origin.Y, Math.Max(0, origin.Y - all.Min.Y), Reach(parts, origin));
+        return new Extent(origin, all.Max.Y - origin.Y, Math.Max(0, origin.Y - all.Min.Y), parts);
     }
 
     /// The model from the neck to its top, anchored at the neck and centred on
@@ -96,16 +112,8 @@ public static class Framing
     {
         var above = parts.Where(part => part.Center.Y > neck.Y).ToArray();
         if (above.Length == 0) throw new InvalidOperationException("The character has no meshes above its neck");
-        return new Extent(new Vec(head.X, neck.Y, head.Z), Box.Union(parts).Max.Y - neck.Y, 0, Reach(above, head));
+        return new Extent(new Vec(head.X, neck.Y, head.Z), Box.Union(parts).Max.Y - neck.Y, 0, above);
     }
-
-    // The farthest horizontal distance of any part's bounds from `from`.
-    private static double Reach(IEnumerable<Box> parts, Vec from) => parts.Max(part =>
-    {
-        var x = Math.Max(Math.Abs(part.Min.X - from.X), Math.Abs(part.Max.X - from.X));
-        var z = Math.Max(Math.Abs(part.Min.Z - from.Z), Math.Abs(part.Max.Z - from.Z));
-        return Math.Sqrt(x * x + z * z);
-    });
 
     /// The smallest `Shot.Size` that shows `extent` with its margin. The image
     /// spans `Size * (1 - 1 / Margin)` below the anchor, which is the margin, and
@@ -116,26 +124,24 @@ public static class Framing
         Math.Max(extent.Above / 2, extent.Reach / aspect),
         extent.Below / (1 - 1 / Margin));
 
-    // The smallest `Shot.Size` that shows `extent` at all, without margins: the
-    // image spans `Size * (1 - 1 / Margin)` below the anchor, `Size * (1 + 1 /
-    // Margin)` above it, and `Size * aspect` to each side.
-    private static double Least(Extent extent, double aspect) => Math.Max(
-        Math.Max(extent.Above / (1 + 1 / Margin), extent.Reach / aspect),
-        extent.Below / (1 - 1 / Margin));
-
     /// The `Shot.Size` for an image `height` pixels tall: the fitted one, or
-    /// the one at `scale` pixels per metre, at which nothing of `extent` may be
-    /// cut off.
-    public static double Size(Extent extent, double aspect, int height, double? scale)
+    /// the one at `scale` pixels per metre, at which no view looking along
+    /// `directions` may cut off anything of `extent`. A fitted size leaves at
+    /// least `Margin - 1` of room, so a reported scale passed back always fits.
+    public static double Size(Extent extent, IEnumerable<Vec> directions, double aspect, int height, double? scale)
     {
         if (scale is not double wanted) return Fit(extent, aspect);
         var size = height / (2 * wanted);
-        var least = Least(extent, aspect);
-        // Tolerates rounding when a reported scale is passed back.
-        if (size < least * (1 - 1e-9))
+        // The smallest size that cuts nothing off: the image spans
+        // `Size * (1 - 1 / Margin)` below the anchor, `Size * (1 + 1 / Margin)`
+        // above it, and `Size * aspect` to each side.
+        var least = Math.Max(
+            Math.Max(extent.Above / (1 + 1 / Margin), directions.Max(extent.HalfWidth) / aspect),
+            extent.Below / (1 - 1 / Margin));
+        if (size < least)
             throw new InvalidOperationException(
                 string.Create(CultureInfo.InvariantCulture,
-                    $"At scale {wanted} the image would cut off the character; the largest scale that fits is {Math.Floor(Scale(least, height) * 1000) / 1000}"));
+                    $"At scale {wanted} the image would cut off the character; the largest scale that fits, edge to edge, is {Math.Floor(Scale(least, height) * 1000) / 1000}"));
         return size;
     }
 

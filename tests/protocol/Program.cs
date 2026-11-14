@@ -201,13 +201,13 @@ var views = Enum.GetValues<View>();
 Shot BodyShot(Box[] boxes, Vec forward, View view, double aspect, int height = 1000, double? scale = null)
 {
     var extent = Framing.Body(boxes, origin);
-    return Framing.Place(extent, Framing.Size(extent, aspect, height, scale), Box.Union(boxes), forward, view);
+    return Framing.Place(extent, Framing.Size(extent, new[] { Framing.Direction(forward, view) }, aspect, height, scale), Box.Union(boxes), forward, view);
 }
 
 Shot HeadShot(Box[] boxes, Vec forward, View view, double aspect, int height = 1000, double? scale = null)
 {
     var extent = Framing.Head(boxes, neck, head);
-    return Framing.Place(extent, Framing.Size(extent, aspect, height, scale), Box.Union(boxes), forward, view);
+    return Framing.Place(extent, Framing.Size(extent, new[] { Framing.Direction(forward, view) }, aspect, height, scale), Box.Union(boxes), forward, view);
 }
 
 // Position of `point` in the image plane of `shot`: right, up, and depth.
@@ -320,37 +320,49 @@ Test("renders at one scale keep the floor, centre line, neck, and head in place"
 });
 
 // R-VIEW-6
-Test("a scale that would cut off the character is refused, naming the largest that fits", _ =>
+Test("a scale that would cut off the character in a requested view is refused, naming the largest that fits", _ =>
 {
-    foreach (var aspect in aspects)
+    var extent = Framing.Body(dressed, origin);
+    foreach (var forward in forwards)
+        foreach (var aspect in aspects)
+            foreach (var view in views)
+            {
+                var direction = new[] { Framing.Direction(forward, view) };
+                var fitted = Framing.Scale(Framing.Fit(extent, aspect), 1000);
+                // The reported scale passed back, and one below it, are accepted.
+                Framing.Size(extent, direction, aspect, 1000, fitted);
+                Framing.Size(extent, direction, aspect, 1000, fitted * 0.9);
+                double named;
+                try
+                {
+                    Framing.Size(extent, direction, aspect, 1000, fitted * 3);
+                    throw new Exception($"a scale too large for {view} at aspect {aspect} was accepted");
+                }
+                catch (InvalidOperationException error)
+                {
+                    named = double.Parse(error.Message[(error.Message.LastIndexOf(' ') + 1)..], System.Globalization.CultureInfo.InvariantCulture);
+                }
+                Check(named >= fitted, $"the largest scale {named} is below the fitted {fitted}");
+                // At the named scale nothing is cut off; just above it, something is.
+                var size = Framing.Size(extent, direction, aspect, 1000, named);
+                Shows(Framing.Place(extent, size, Box.Union(dressed), forward, view), aspect, dressed, $"{view} body at scale {named}", margin: 1);
+                try
+                {
+                    Framing.Size(extent, direction, aspect, 1000, named + 0.002);
+                    throw new Exception($"a scale above {named} for {view} at aspect {aspect} was accepted");
+                }
+                catch (InvalidOperationException) { }
+            }
+    // The tail behind the model limits the side view, not the front one.
+    var forwardOnly = new[] { Framing.Direction(forwards[0], View.Front) };
+    var sideToo = new[] { forwardOnly[0], Framing.Direction(forwards[0], View.Side) };
+    Framing.Size(extent, forwardOnly, 0.5, 1000, 400);
+    try
     {
-        var extent = Framing.Body(dressed, origin);
-        var fitted = Framing.Scale(Framing.Fit(extent, aspect), 1000);
-        // The reported scale passed back, and one below it, are accepted.
-        Framing.Size(extent, aspect, 1000, fitted);
-        Framing.Size(extent, aspect, 1000, fitted * 0.9);
-        double named;
-        try
-        {
-            Framing.Size(extent, aspect, 1000, fitted * 2);
-            throw new Exception($"a scale too large at aspect {aspect} was accepted");
-        }
-        catch (InvalidOperationException error)
-        {
-            named = double.Parse(error.Message[(error.Message.LastIndexOf(' ') + 1)..], System.Globalization.CultureInfo.InvariantCulture);
-        }
-        Check(named >= fitted, $"the largest scale {named} is below the fitted {fitted}");
-        // At the named scale nothing is cut off; just above it, something is.
-        var size = Framing.Size(extent, aspect, 1000, named);
-        foreach (var view in views)
-            Shows(Framing.Place(extent, size, Box.Union(dressed), forwards[0], view), aspect, dressed, $"{view} body at scale {named}", margin: 1);
-        try
-        {
-            Framing.Size(extent, aspect, 1000, named + 0.002);
-            throw new Exception($"a scale above {named} at aspect {aspect} was accepted");
-        }
-        catch (InvalidOperationException) { }
+        Framing.Size(extent, sideToo, 0.5, 1000, 400);
+        throw new Exception("a side view that cuts off the tail was accepted");
     }
+    catch (InvalidOperationException) { }
 });
 
 // R-VIEW-1
@@ -746,28 +758,12 @@ Test("a canvas places images by their top-left corner", _ =>
 });
 
 // R-VIEW-5
-Test("a reference keeps its aspect ratio, its orientation, and its alpha", _ =>
+Test("a reference keeps its aspect ratio", _ =>
 {
     Check(Canvas.FitSize(300, 300, 40, 20) == (300, 150), "a wide image does not fill the width");
     Check(Canvas.FitSize(200, 100, 10, 20) == (50, 100), "a tall image does not fill the height");
     Check(Canvas.FitSize(2048, 1024, 1774, 887) == (2048, 1024), "a 2:1 image does not fill a 2:1 box");
     Check(Canvas.FitSize(100, 100, 100000, 1) == (100, 1), "a thin image vanishes");
-
-    var grey = new byte[] { 200, 200, 200 };
-    (int Red, int Green, int Blue) At(Canvas image, int x, int top)
-    {
-        var at = ((image.Height - 1 - top) * image.Width + x) * 3;
-        return (image.Pixels[at], image.Pixels[at + 1], image.Pixels[at + 2]);
-    }
-    // A 2x2 RGBA image, bottom row first: opaque red and blue below,
-    // transparent black and half-transparent black above.
-    var image = new byte[] { 255, 0, 0, 255, 0, 0, 255, 255, 0, 0, 0, 0, 0, 0, 0, 128 };
-    var canvas = new Canvas(4, 4, grey);
-    canvas.Blend(1, 1, 2, 2, image);
-    Check(At(canvas, 1, 2) == (255, 0, 0) && At(canvas, 2, 2) == (0, 0, 255), "the bottom row is not red then blue");
-    Check(At(canvas, 1, 1) == (200, 200, 200), "a transparent pixel changed the background");
-    Check(At(canvas, 2, 1) == (100, 100, 100), $"half alpha gives {At(canvas, 2, 1)}");
-    Check(At(canvas, 0, 0) == (200, 200, 200) && At(canvas, 3, 3) == (200, 200, 200), "the background changed outside the image");
 });
 
 // R-VIEW-4

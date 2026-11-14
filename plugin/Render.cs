@@ -40,46 +40,96 @@ internal static class CharacterRender
         var extent = frame == Frame.Head
             ? Framing.Head(parts, Bone(model, "Neck"), Bone(model, "Head"))
             : Framing.Body(parts, position);
-        var size = Framing.Size(extent, (double)width / height, height, scale);
-        var row = views.Count * width;
-        (int Width, int Height, byte[] Pixels)? image = reference == null ? null : ReadImage(reference, row, height);
+        var size = Framing.Size(extent, views.Select(view => Framing.Direction(forward, view)), (double)width / height, height, scale);
         var all = Box.Union(parts);
         var shots = views.Select(view => Framing.Place(extent, size, all, forward, view)).ToArray();
         var (background, rendered) = Capture(shots, layers, width, height);
-        var top = image == null ? 0 : height;
+        var row = views.Count * width;
+        var top = reference == null ? 0 : height;
         var canvas = new Canvas(row, top + height, background);
         for (var index = 0; index < rendered.Length; index++) canvas.Place(index * width, top, width, height, rendered[index]);
-        if (image is { } fitted)
-            canvas.Blend((row - fitted.Width) / 2, (height - fitted.Height) / 2, fitted.Width, fitted.Height, fitted.Pixels);
+        if (reference != null)
+        {
+            var (fittedWidth, fittedHeight, pixels) = ReadImage(reference, row, height, background);
+            canvas.Place((row - fittedWidth) / 2, (height - fittedHeight) / 2, fittedWidth, fittedHeight, pixels);
+        }
         // A given scale is reported as given, so passing it back compares equal.
         return (Encode(canvas), scale ?? Framing.Scale(size, height));
     }
 
-    // Decodes a PNG or JPEG file and scales it to fit `boxWidth` x `boxHeight`
-    // without changing its aspect ratio. The GPU scales it, sampling its
-    // mipmaps trilinearly so a shrink averages the pixels it skips, so only the
-    // decoded file and the fitted pixels take memory. Returns RGBA32 pixels,
+    // Decodes a PNG or JPEG file, draws it over `background`, one RGB24 pixel,
+    // at full size,
+    // and scales that to fit `boxWidth` x `boxHeight` without changing its
+    // aspect ratio. Drawing first keeps the colour under transparent pixels
+    // out of the filtering. The GPU does both, sampling the drawing's mipmaps
+    // trilinearly so a shrink averages the pixels it skips, so only the
+    // decoded file and the fitted pixels take memory. Returns RGB24 pixels,
     // bottom row first.
-    private static (int Width, int Height, byte[] Pixels) ReadImage(string path, int boxWidth, int boxHeight)
+    private static (int Width, int Height, byte[] Pixels) ReadImage(string path, int boxWidth, int boxHeight, byte[] background)
     {
         var bytes = File.ReadAllBytes(path);
-        dynamic? texture = null;
+        var active = Reflect.StaticProperty("UnityEngine.RenderTexture", "active");
+        var previous = active.GetValue(null);
+        dynamic? texture = null, fill = null, drawn = null;
         try
         {
-            texture = New("UnityEngine.Texture2D", 2, 2, Format("RGBA32"), true);
+            // A texture of the background's own bytes matches it exactly, while
+            // GL.Clear would skip the colour space conversion the camera makes.
+            fill = New("UnityEngine.Texture2D", 1, 1, Format("RGB24"), false);
+            fill.LoadRawTextureData(new Il2CppStructArray<byte>(background));
+            fill.Apply();
+            texture = New("UnityEngine.Texture2D", 2, 2, Format("RGBA32"), false);
             var load = Reflect.Type("UnityEngine.ImageConversion")
                 .GetMethod("LoadImage", new[] { Reflect.Type("UnityEngine.Texture2D"), typeof(Il2CppStructArray<byte>) })!;
             if (!(bool)load.Invoke(null, new object[] { (object)texture, new Il2CppStructArray<byte>(bytes) })!)
                 throw new InvalidOperationException("Unity could not read the reference image as a PNG or JPEG");
-            texture.filterMode = (dynamic)Enum.Parse(Reflect.Type("UnityEngine.FilterMode"), "Trilinear");
+            int width = texture.width, height = texture.height;
+            drawn = New("UnityEngine.RenderTexture", width, height, 0);
+            drawn.useMipMap = true;
+            drawn.autoGenerateMips = true;
+            drawn.filterMode = (dynamic)Enum.Parse(Reflect.Type("UnityEngine.FilterMode"), "Trilinear");
             // Repeat, the default, would blend each edge with the opposite one.
-            texture.wrapMode = (dynamic)Enum.Parse(Reflect.Type("UnityEngine.TextureWrapMode"), "Clamp");
-            var (width, height) = Canvas.FitSize(boxWidth, boxHeight, (int)texture.width, (int)texture.height);
-            return (width, height, Read((object)texture, width, height, "RGBA32"));
+            drawn.wrapMode = (dynamic)Enum.Parse(Reflect.Type("UnityEngine.TextureWrapMode"), "Clamp");
+            active.SetValue(null, (object)drawn);
+            Reflect.CallStatic("UnityEngine.GL", "PushMatrix");
+            try
+            {
+                Reflect.CallStatic("UnityEngine.GL", "LoadPixelMatrix", 0f, (float)width, (float)height, 0f);
+                // Without a material, DrawTexture blends by alpha. IL2CPP keeps
+                // several overloads of this length, so pick one by its types.
+                var rect = Reflect.Type("UnityEngine.Rect");
+                var draw = Reflect.Type("UnityEngine.Graphics").GetMethod("DrawTexture", new[]
+                {
+                    rect, Reflect.Type("UnityEngine.Texture"), rect, typeof(int), typeof(int), typeof(int), typeof(int),
+                    Reflect.Type("UnityEngine.Material"),
+                })!;
+                foreach (var layer in new object[] { fill, texture })
+                    draw.Invoke(null, new object?[]
+                    {
+                        (object)New("UnityEngine.Rect", 0f, 0f, (float)width, (float)height), layer,
+                        (object)New("UnityEngine.Rect", 0f, 0f, 1f, 1f), 0, 0, 0, 0, null,
+                    });
+            }
+            finally
+            {
+                Reflect.CallStatic("UnityEngine.GL", "PopMatrix");
+            }
+            var (fittedWidth, fittedHeight) = Canvas.FitSize(boxWidth, boxHeight, width, height);
+            // Making another texture active generates the drawing's mipmaps.
+            return (fittedWidth, fittedHeight, Read((object)drawn, fittedWidth, fittedHeight, "RGB24"));
         }
         finally
         {
-            Destroy(texture);
+            try
+            {
+                active.SetValue(null, previous);
+            }
+            finally
+            {
+                Destroy(texture);
+                Destroy(fill);
+                Destroy(drawn);
+            }
         }
     }
 

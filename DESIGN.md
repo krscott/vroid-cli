@@ -731,11 +731,13 @@ wider, such as an ahoge, a hat, or a long top, changes it. Every render reports
 its scale in pixels per metre, and a request may give one instead (R-VIEW-6).
 Since the anchor's pixel depends only on the image size, renders of one view,
 frame, and size at one scale line up across character states. A given scale at
-which the region would reach past the image's edges is refused, and the error
-names the largest that would not, rounded down to 0.001 so it can be passed
-back; the check tolerates the rounding of a reported scale passed back, and a
-given scale is reported as given. The camera stands outside the bounds, so no
-part of the model is clipped.
+which any requested view would cut off part of the region is refused; the check
+uses each view's own width, so a tail behind the model limits only views that
+show it from the side. The error names the largest scale that cuts nothing off,
+edge to edge, rounded down to 0.001 so it can be passed back. A fitted scale is
+always at least 2.5% inside that limit, so a reported scale passed back always
+fits, and a given scale is reported as given. The camera stands outside the
+bounds, so no part of the model is clipped.
 
 All views of one request share one size, so they share their scale (R-VIEW-1).
 `plugin/Canvas.cs`, which `tests/protocol` also builds, assembles the image
@@ -743,16 +745,21 @@ from the views' raw RGB bytes, left to right, on the background colour, which
 the camera reads from a render of nothing first. With a `reference`, a row as
 wide as the views and as tall as one sits above them (R-VIEW-5). The bridge
 reads the file and decodes it with `ImageConversion.LoadImage(Texture2D,
-byte[])` into a texture with mipmaps; it handles PNG and JPEG and returns false
-otherwise. The IL2CPP build has a second two-argument overload, so the bridge
-selects this one by its parameter types. A trilinear, clamped `Graphics.Blit`
-scales the image to fit the row without changing its aspect ratio, into an ARGB
-`RenderTexture` read into an RGBA32 `Texture2D`, so a shrink averages the
-pixels it skips and only the fitted pixels reach managed memory. The canvas
-centres them in the row and blends them over the background by their alpha.
+byte[])`, which handles PNG and JPEG and returns false otherwise. On the GPU,
+it fills a mipmapped `RenderTexture` the reference's size with a 1x1 texture
+of the background's bytes, draws the reference over it with
+`Graphics.DrawTexture`, which blends by alpha, and blits that, trilinear and
+clamped, to the largest size that fits the row without changing its aspect
+ratio, read back as RGB24. Blending at full size keeps the colour under
+transparent pixels out of the filtering, the mipmaps make a shrink average the
+pixels it skips, and only the fitted pixels reach managed memory. Colours come
+through exact or within 1/255. `GL.Clear` would skip the colour space
+conversion the camera makes, so the fill is a texture. IL2CPP keeps several
+overloads of `LoadImage` and `DrawTexture` with the same number of parameters,
+so the bridge selects them by type. The canvas centres the result in the row.
 `plugin/Textures.cs` holds the blit, readback, and PNG encoding that `render`
 and `thumbnails` share. A four-view sheet at 512x1024 per view with a 1774x887
-reference takes about 1 s.
+reference takes under 1 s.
 
 The bridge writes the PNG of `render` or `thumbnails` to the path it is given
 with `FileMode.CreateNew` and deletes the file if the write fails. The CLI

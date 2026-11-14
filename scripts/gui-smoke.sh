@@ -284,7 +284,7 @@ if reference:
     # A square reference fills the row's height, centred, the right way up.
     left = (w - cell_height) // 2
     def near(pixel, colour):
-        return all(abs(a - b) <= 16 for a, b in zip(pixel, colour))
+        return all(abs(a - b) <= 8 for a, b in zip(pixel, colour))
     for y, colour in ((2, reference[0]), (cell_height // 4, reference[0]), (cell_height * 3 // 4, reference[1]), (cell_height - 3, reference[1])):
         for x in (left + 2, w // 2, left + cell_height - 3):
             if not near(rows[y][x], colour):
@@ -329,8 +329,11 @@ out=$(mktemp -d "$(jq -r .directory <<<"$state")/smoke.XXXXXX")
 edited=$out/edited.vroid
 printf 'gui-smoke: artifacts in %s\n' "$out" >&2
 # Square references for render, each with its top half one colour and its
-# bottom half another: a red and green PNG, a blue and ochre JPEG, and files
-# that are not images Unity can read.
+# bottom half another, and files that are not images Unity can read. The PNG
+# shrinks 8x into its row: its top half is red, and its bottom half white with
+# a transparent magenta 2x2 hole in the middle of each 8x8 block, which reads
+# as near-white only if the shrink averages every pixel and the hidden magenta
+# stays out of it. The JPEG is blue above ochre.
 python3 - "$out/reference.png" <<'PY'
 import struct
 import sys
@@ -339,8 +342,12 @@ import zlib
 def chunk(kind, data):
     return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
 
-rows = b"".join(b"\0" + (b"\xff\x00\x00\xff" if y < 4 else b"\x00\xff\x00\xff") * 8 for y in range(8))
-png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 8, 8, 8, 6, 0, 0, 0))
+size, white, hole = 4096, b"\xff\xff\xff\xff", b"\xff\x00\xff\x00"
+red = b"\0" + b"\xff\x00\x00\xff" * size
+plain = b"\0" + white * size
+holes = b"\0" + (white * 3 + hole * 2 + white * 3) * (size // 8)
+rows = b"".join(red if y < size // 2 else holes if y % 8 in (3, 4) else plain for y in range(size))
+png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0))
 open(sys.argv[1], "wb").write(png + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
 PY
 base64 -d >"$out/reference.jpg" <<<'/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAIBAQEBAQIBAQECAgICAgQDAgICAgUEBAMEBgUGBgYFBgYGBwkIBgcJBwYGCAsICQoKCgoKBggLDAsKDAkKCgr/2wBDAQICAgICAgUDAwUKBwYHCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgr/wAARCAAQABADAREAAhEBAxEB/8QAFgABAQEAAAAAAAAAAAAAAAAAAAgJ/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/EABgBAQADAQAAAAAAAAAAAAAAAAAHCAkK/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AhNoohcBqw5110AH/2Q=='
@@ -420,7 +427,7 @@ render front body 512 512 "$out/scale-refitted.png" | jq -e --argjson fitted "$f
 if refusal=$(render front body 512 512 "$out/scale-too-large.png" "{\"scale\": $fitted}" 2>&1); then
     fatal "a scale at which the character does not fit was accepted"
 fi
-[[ $refusal == *'the largest scale that fits is'* && ! -e $out/scale-too-large.png ]] ||
+[[ $refusal == *'the largest scale that fits'* && ! -e $out/scale-too-large.png ]] ||
     fatal "an unfitting scale was not refused as expected: $refusal"
 ((changed >= ${#items[@]} + 2)) || fatal "apply changed $changed items and accessories"
 # One rebuild sets an accessory's position, rotation, and scale together, so
@@ -624,7 +631,7 @@ for item in "${renders[@]}"; do
 done
 # Several views in one image, under a reference (R-VIEW-1, R-VIEW-5).
 sheets=(
-    'front,three_quarter,side,back|body|256|512|4|png|ff0000,00ff00'
+    'front,three_quarter,side,back|body|256|512|4|png|ff0000,fdfdfd'
     'front,three_quarter,side,back|head|256|256|4|jpg|2040c0,c0a020'
 )
 for item in "${sheets[@]}"; do

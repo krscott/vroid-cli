@@ -252,15 +252,16 @@ and tails are accessories.
   fit without changing its aspect ratio. List the views in the reference's
   order to compare each with the one above it; they line up view for view
   when the row has the reference's proportions, such as four 512 by 1024
-  views under a 2:1 four-view turnaround. The reference keeps its own scale,
-  not the character's.
+  views under a 2:1 four-view turnaround. Transparent areas show the
+  background. The reference keeps its own scale, not the character's.
 - The body frame fits everything worn, so an item or edit that makes the
   character taller or wider, such as an ahoge, a hat, or a long top, changes
   the scale. Each result reports `scale` in pixels per metre; pass it back as
   `scale` to keep it, and renders of one view, frame, and size at one scale
   line up: the floor and centre line (body), or the neck and head (head),
-  stay at the same pixels. A scale that would cut off the character is
-  refused, and the error names the largest that fits. For before and after
+  stay at the same pixels. A scale that would cut off the character in a
+  requested view is refused, and the error names the largest that fits, edge
+  to edge. For before and after
   images of an edit that may make the character taller or wider, multiply
   the "before" render's reported `scale` by 0.9, render the "before" again at
   that, and render the "after" at the same. `scale` is at least 1.
