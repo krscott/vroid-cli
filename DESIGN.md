@@ -453,14 +453,18 @@ instance has sliders, so an accessory that is not worn has no bounds to list
 until `apply` adds it (R-EDIT-13). Placement is the instance's
 `PartOrigin`, read with `GetPartOriginQuery(transferableId)` on the editing
 model: a parent bone, VRoid's joint name such as `J_Bip_C_Head`, and a
-position, rotation quaternion, and scale relative to it, which are the
-identity at VRoid's default placement. VRoid saves exactly the float32 values
+position, rotation quaternion, and scale in its axes. A new accessory's
+placement is the identity, except a hat's on the Head, which VRoid fits about
+0.13 m up and tilted 10° back. The skill lists each bone's axes, measured from
+renders. VRoid saves exactly the float32 values
 given and does not normalize a quaternion, so they read back exactly after a
 save and a reopen. The editor's own view-model setters (`PartOriginLocalScale`
 and so on) only change what the gizmo shows, so `apply` runs VRoid's commands
 through the edit context's `ExecuteSyncCommand`, which records them in VRoid's
 history: `SetPartOriginTransformCommand(transferableId, Transform)` and
-`SetPartOriginParentCommand(groupId, ResolvedBoneId)`, each one rebuild. A
+`SetPartOriginParentCommand(groupId, ResolvedBoneId)`, each one rebuild. The
+parent command resets the placement to the identity, so `apply` sets the
+bone first and then the placement the entry names. A
 null bone is VRoid's "None", which removes the `PartOrigin` and so the
 placement. `accessories` lists the bones `apply` accepts: the avatar's
 `HumanBoneMap`, 54 humanoid joints in 2.16.0 (Jaw is not mapped), which

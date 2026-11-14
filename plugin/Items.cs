@@ -131,9 +131,8 @@ public sealed partial class Plugin
     private sealed record Flags(string? Name, bool Hidden, bool Locked);
 
     // Where an accessory hangs: VRoid's joint name for its bone, and its position,
-    // rotation quaternion (x, y, z, w), and scale relative to that bone, which
-    // are the identity at VRoid's default placement. A null bone is VRoid's
-    // "None", which has no placement.
+    // rotation quaternion (x, y, z, w), and scale in that bone's axes. A null
+    // bone is VRoid's "None", which has no placement.
     private sealed record Pose(string? Bone, float[]? Position, float[]? Rotation, float[]? Scale);
 
     // An accessory entry's keys that are not VRoid labels.

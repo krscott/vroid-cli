@@ -141,14 +141,42 @@ and tails are accessories.
   it to `worn` from `accessories`, as the example's list would otherwise
   remove the rest. A pair of ears is one accessory; VRoid allows five.
 - An accessory entry has an `item` from `accessories`, its "Color", its shape
-  sliders by label, and its
-  placement: `bone`, one of `accessories` `bones` such as `J_Bip_C_Head`;
-  `position` `[x, y, z]` in metres; `rotation`, a unit quaternion
-  `[x, y, z, w]`; and `scale` `[x, y, z]`, all relative to the bone and the
-  identity at VRoid's default placement. A rotation of θ about the x axis is
-  `[sin(θ/2), 0, 0, cos(θ/2)]`. `"bone": null` is VRoid's None, with no
-  placement. An omitted key keeps a worn accessory's value, or VRoid's default
-  for an added one, whose sliders are checked only once it is worn.
+  sliders by label, and its placement: `bone`, one of `accessories` `bones`
+  such as `J_Bip_C_Head`; `position` `[x, y, z]` in metres; `rotation`, a
+  unit quaternion `[x, y, z, w]`; and `scale` `[x, y, z]`, all in the bone's
+  axes, below. VRoid's default placement is the identity, except that it fits
+  hats on the Head about 0.13 m up and tilted 10° back, as `dump` shows.
+  `"bone": null` is VRoid's None, with no placement. An omitted key keeps a
+  worn accessory's value, or VRoid's default for an added one, whose sliders
+  are checked only once it is worn. Changing `bone` resets the placement to
+  the identity, even a hat's back on the Head, so name the placement with the
+  bone; remove and re-add a hat to fit it again.
+- Bone axes follow the character in VRoid's A-pose: +x is the character's
+  right, +y up, +z forward. A positive rotation about x tips the front down,
+  about y turns the front to the character's right, and about z lowers the
+  character's left side. θ about x is `[sin(θ/2), 0, 0, cos(θ/2)]`, so
+  `[-0.173648, 0, 0, 0.984808]` droops a tail 20°, and a positive y rotation
+  swings it to the character's left. In VRoid 2.16.0, some bones tilt from
+  these axes:
+
+  | Bones | Tilt |
+  | --- | --- |
+  | Head, FaceEye, legs, feet | under 5° |
+  | Hips, Spine, Neck | front down about 7°, 9°, 7° |
+  | Chest, UpperChest | front up about 7°, 19° |
+  | Shoulder; UpperArm, LowerArm, Hand | rolled down with the arm about 7°; 40° to 55°, so x runs along the arm |
+
+  Tails are modelled to stick out level from Hips; a hat moved there tips 7°
+  forward.
+- Rotation and scale turn an accessory about its origin, which `position`
+  places. Ears, glasses, and tails have theirs at the bone's joint, at the
+  base of the skull for the Head, so rotating them alone swings them around
+  it; a hat's is in its brim. To turn an accessory with rotation R and
+  position p by T about a point c in bone axes, set rotation to T ⊗ R (the
+  quaternion product, T applied last) and position to c + T·(p − c). For a
+  hat, c = p. Cat ears tilted back 20° about `[0, 0.15, 0]`, near the top
+  of the head, take rotation `[-0.173648, 0, 0, 0.984808]` and position
+  `[0, 0.009, 0.051]`. `render` the front and side to check.
 - An entry's `name` is a name the user gave it, which VRoid's accessory list
   shows, or null for VRoid's default name; leave it out when adding one from
   `available`, whose `name` is only VRoid's name for the item. `hidden` and
