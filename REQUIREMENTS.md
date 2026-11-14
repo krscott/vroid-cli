@@ -375,6 +375,16 @@ backfill unrelated requirements.
   exported one. It checks that an existing destination is refused and left
   unchanged.
 
+- **R-EDIT-17** [test] `apply` takes an accessory's rotation as a unit
+  quaternion or as angles `[x, y, z]` in degrees. Angles turn the accessory
+  z degrees about the bone's z axis, then x degrees about its x axis, then
+  y degrees about its y axis.
+
+  Rationale: Agents write rotations by hand, and a hand-written quaternion is
+  easy to round off unit length or to combine wrongly from a pitch and a yaw.
+  The order of the angles is fixed, because a request whose angles changed
+  meaning between versions would place accessories wrongly without an error.
+
 ## Views (VIEW)
 
 - **R-VIEW-1** [manual] `render` writes a PNG of the open character from the

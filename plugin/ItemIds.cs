@@ -110,7 +110,7 @@ public static class Placement
     public static string? Rotation(IReadOnlyList<float> rotation)
     {
         var length = Math.Sqrt(rotation.Sum(part => (double)part * part));
-        return Math.Abs(length - 1) <= Tolerance ? null : $"has length {length}, not 1; give a unit quaternion [x, y, z, w]";
+        return Math.Abs(length - 1) <= Tolerance ? null : $"has length {length}, not 1; give a unit quaternion [x, y, z, w], or angles as {{\"degrees\": [x, y, z]}}";
     }
 
     /// A reason `scale` is not positive on every axis, or null.

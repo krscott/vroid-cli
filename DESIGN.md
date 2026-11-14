@@ -800,7 +800,13 @@ and colours that are not `#RRGGBB` in either case (R-EDIT-2) and checks
 destination in an existing directory (R-EDIT-4, R-VIEW-3, R-EDIT-16), a
 `render` reference that exists and starts with a PNG or JPEG signature
 (R-VIEW-5), and a `render` image of at most 4096 pixels per side, all before
-touching session state. The CLI always sends `render`'s `view` as a list. Paths resolve against the current directory,
+touching session state. The CLI always sends `render`'s `view` as a list,
+and an accessory's `rotation` as a quaternion: it turns
+`{"degrees": [x, y, z]}` into the turn of z degrees about the bone's z axis,
+then x about x, then y about y, the order of Unity's `Quaternion.Euler`
+(R-EDIT-17). The bridge, `dump`, and undo files therefore know only
+quaternions, and the bridge's unit-length check (R-EDIT-3) passes every
+converted angle. Paths resolve against the current directory,
 and `open`, `save`, `render`, `thumbnails`, and `export` report the resolved
 path rather than the bridge's Wine path. The bridge rechecks the destination
 before saving. Validation errors print one `FIELD: REASON` line each. Output is

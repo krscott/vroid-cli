@@ -2,6 +2,7 @@
 
 import fcntl
 import json
+import math
 import os
 import signal
 import subprocess
@@ -203,6 +204,7 @@ def test_nonfinite_values_are_rejected_without_state(tmp_path: Path) -> None:
     [
         '"position": [0, NaN, 0]',
         '"rotation": [0, 0, 0, Infinity]',
+        '"rotation": {"degrees": [0, NaN, 0]}',
         '"scale": [1, 1e999, 1]',
         '"Ear Size (Bigger)": NaN',
     ],
@@ -306,7 +308,11 @@ def test_bridge_from_an_older_protocol_is_refused(tmp_path: Path) -> None:
         ),
         (
             '{"method": "apply", "Accessories": [{"item": "CatEar", "rotation": [0, 0, 1]}]}',
-            "Accessories.0.rotation: List should have at least 4 items",
+            'Accessories.0.rotation: expected a unit quaternion [x, y, z, w], or angles as {"degrees": [x, y, z]}',
+        ),
+        (
+            '{"method": "apply", "Accessories": [{"item": "CatEar", "rotation": {"degrees": [0, 0, 0], "w": 1}}]}',
+            "Accessories.0.rotation: expected a unit quaternion",
         ),
         (
             '{"method": "apply", "Accessories": [{"item": "CatEar", "scale": "1"}]}',
@@ -965,6 +971,54 @@ def test_a_result_that_breaks_the_schema_is_an_error(tmp_path: Path) -> None:
     assert result.stdout == ""
     assert "does not match the schema" in result.stderr
     assert "bytes: Input should be a valid integer" in result.stderr
+
+
+def rotation_matrix(q: list[float]) -> list[list[float]]:
+    x, y, z, w = q
+    return [
+        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+    ]
+
+
+def turn_matrix(axis: str, degrees: float) -> list[list[float]]:
+    c, s = math.cos(math.radians(degrees)), math.sin(math.radians(degrees))
+    matrices: dict[str, list[list[float]]] = {
+        "x": [[1, 0, 0], [0, c, -s], [0, s, c]],
+        "y": [[c, 0, s], [0, 1, 0], [-s, 0, c]],
+        "z": [[c, -s, 0], [s, c, 0], [0, 0, 1]],
+    }
+    return matrices[axis]
+
+
+def matmul(a: list[list[float]], b: list[list[float]]) -> list[list[float]]:
+    return [
+        [sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)
+    ]
+
+
+@pytest.mark.parametrize(
+    "degrees",
+    [[-20, 0, 0], [0, 30, 0], [0, 0, -45], [22, -30, 0], [10, 20, 30], [-170, 95, 400]],
+)
+def test_accessory_rotation_in_degrees_turns_about_z_then_x_then_y(
+    tmp_path: Path, degrees: list[float]
+) -> None:
+    # R-EDIT-17: the bridge receives the quaternion of the z, then x, then y
+    # turn about the bone's axes, checked against rotation matrices.
+    rpc = bridge(tmp_path)
+    entry = {"item": "CatTail", "rotation": {"degrees": degrees}}
+    with answer(rpc, lambda packet: applied(rpc, packet, changed=1)) as received:
+        result = invoke(tmp_path, "apply", Accessories=[entry])
+    assert result.returncode == 0, result.stderr
+    quaternion = received[0]["Accessories"][0]["rotation"]
+    assert math.isclose(math.hypot(*quaternion), 1, abs_tol=1e-12)
+    x, y, z = degrees
+    want = matmul(turn_matrix("y", y), matmul(turn_matrix("x", x), turn_matrix("z", z)))
+    got = rotation_matrix(quaternion)
+    for want_row, got_row in zip(want, got):
+        assert got_row == pytest.approx(want_row, abs=1e-12)
 
 
 def test_accessory_sliders_must_match_the_worn_accessories(tmp_path: Path) -> None:
