@@ -264,7 +264,16 @@ and tails are accessories.
   background. The reference keeps its own scale, not the character's.
 - The body frame fits everything worn, so an item or edit that makes the
   character taller or wider, such as an ahoge, a hat, or a long top, changes
-  the scale. Each result reports `scale` in pixels per metre; pass it back as
+  the scale. A body view leaves room on both sides of the centre line for
+  the farthest anything reaches from it in any direction, so a part that
+  sticks out, such as a tail, shrinks the character in every view: in 512 by
+  1024 views, a cat tail makes it about a quarter smaller. Hidden accessories
+  don't affect framing, so to compare the body with a reference at its size
+  without the part, set `"hidden": true` on the part's entry in
+  `accessories` `worn`, `apply` that list, render, and apply the result's
+  `undo`. Wider views leave more room too, but a reference row then no
+  longer lines up view for view. Each result reports `scale` in pixels per
+  metre; pass it back as
   `scale` to keep it, and renders of one view, frame, and size at one scale
   line up: the floor and centre line (body), or the neck and head (head),
   stay at the same pixels. A scale that would cut off the character in a
