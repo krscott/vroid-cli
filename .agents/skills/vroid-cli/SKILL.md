@@ -115,7 +115,9 @@ and tails are accessories.
   thumbnail of each item, 10 per row in `items` order, labelled with its
   identifier. It takes about 2 s, changes nothing, and shows items in VRoid's
   default colours. Then select candidates and `render` them to compare.
-  Selecting an item keeps every colour except the Outfit item's own, which
+  Outfit Inner Top and Inner Bottom items are flat black with no colours to
+  set, so their thumbnails, like VRoid's picker, show black shapes; the dark
+  red is their inside. Choose them by shape. Selecting an item keeps every colour except the Outfit item's own, which
   start at the item's defaults, and resets Face Irises and Eyebrows values,
   so `apply` changes items first, then values. Setting an outfit colour keeps
   the item built in. `"item": null` takes
