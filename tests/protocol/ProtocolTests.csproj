@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../plugin/Bridge.cs" />
+    <Compile Include="../../plugin/Canvas.cs" />
     <Compile Include="../../plugin/Colors.cs" />
     <Compile Include="../../plugin/CustomItemFile.cs" />
     <Compile Include="../../plugin/Framing.cs" />

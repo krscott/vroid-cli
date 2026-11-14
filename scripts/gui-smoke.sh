@@ -3,8 +3,8 @@
 # template round trip, then new characters and an imported accessory,
 # checking R-EDIT-1, R-EDIT-3, R-EDIT-5, R-EDIT-6, R-EDIT-7, R-EDIT-8,
 # R-EDIT-9, R-EDIT-11, R-EDIT-12, R-EDIT-13, R-EDIT-14 except its by-hand
-# offline check, R-EDIT-15, R-EDIT-16, R-SES-4, R-VIEW-1, R-VIEW-2, and
-# R-VIEW-4.
+# offline check, R-EDIT-15, R-EDIT-16, R-SES-4, R-VIEW-1, R-VIEW-2, R-VIEW-4,
+# R-VIEW-5, and R-VIEW-6.
 # Needs graphics access.
 set -euo pipefail
 shopt -s failglob
@@ -17,10 +17,12 @@ usage() {
         'parameters and four colours (orange hair, green eyes) in one request,' \
         'then selects other Hair Front and Outfit Tops items and adds cat and' \
         'rabbit ears, moving, placing, reshaping, renaming, hiding, and locking' \
-        'the cat ears, undoing and redoing both edits, undoes a removal of the' \
-        'cat ears and a refused cat tail, recolours the new top, undoing that' \
-        'and a later change of top, saves a copy, renders each view, draws the' \
-        'thumbnails of those two categories, restarts, checks the saved values,' \
+        'the cat ears, undoing and redoing both edits and rendering at one scale' \
+        'before and after, undoes a removal of the cat ears and a refused cat' \
+        'tail, recolours the new top, undoing that and a later change of top,' \
+        'saves a copy, renders each view alone and in sheets under a reference,' \
+        'draws the thumbnails of those two categories, restarts, checks the' \
+        'saved values,' \
         'renders the cat ears hidden, then shown with their default name, and' \
         'applies the original template. It then creates a character from each base' \
         'twice, restarting between them, and imports the cat ears exported before' \
@@ -163,10 +165,13 @@ settled_screenshot() {
     fatal "the editor kept changing after $attempt screenshots; see $1"
 }
 
-# Render one view: VIEW FRAME WIDTH HEIGHT PATH.
+# Render: VIEWS FRAME WIDTH HEIGHT PATH [EXTRA], where VIEWS is one view or
+# several separated by commas, and EXTRA is a JSON object of more fields.
 render() {
-    jq -cn --arg view "$1" --arg frame "$2" --argjson width "$3" --argjson height "$4" --arg path "$5" \
-        '{method: "render", view: $view, frame: $frame, width: $width, height: $height, path: $path}' |
+    jq -cn --arg views "$1" --arg frame "$2" --argjson width "$3" --argjson height "$4" --arg path "$5" \
+        --argjson extra "${6:-"{}"}" \
+        '{method: "render", view: ($views | split(",") | if length == 1 then .[0] else . end), frame: $frame,
+            width: $width, height: $height, path: $path} + $extra' |
         vroid -
 }
 
@@ -177,12 +182,19 @@ thumbnails() {
         vroid -
 }
 
-# Check a PNG: render PATH FRAME WIDTH HEIGHT, or sheet PATH COUNT.
+# Check a PNG: render PATH FRAME WIDTH HEIGHT [VIEWS [REFERENCE]], sheet PATH
+# COUNT, or feet PATH.
 #
-# A render's size must match, it must show the character, and the edges that
-# frame the character must be background: every edge for a body; for a head,
-# whose frame cuts through the neck and may show the shoulders, the top and the
-# upper three quarters of each side, which hold the ears.
+# A render's size must fit VIEWS views of WIDTH x HEIGHT, under a reference row
+# if REFERENCE, the hex colour of a square reference image, is given. Each view
+# must show the character, and the edges that frame it must be background:
+# every edge for a body; for a head, whose frame cuts through the neck and may
+# show the shoulders, the top and the upper three quarters of each side, which
+# hold the ears. Body views must share the character's lowest row. The
+# reference must fill a centred square of the reference row.
+#
+# feet prints the lowest row showing the character and the leftmost and
+# rightmost columns of the rows just above it.
 #
 # A thumbnail sheet's size must fit COUNT items, and no thumbnail may be one
 # flat colour.
@@ -204,6 +216,11 @@ while at < len(data):
 w, h, depth, colour, _, _, interlace = struct.unpack(">IIBBBBB", chunks[b"IHDR"])
 if check == "render":
     frame, width, height = sys.argv[3], int(sys.argv[4]), int(sys.argv[5])
+    views = int(sys.argv[6]) if len(sys.argv) > 6 else 1
+    reference = bytes.fromhex(sys.argv[7]) if len(sys.argv) > 7 else None
+    width, height = views * width, height * (2 if reference else 1)
+elif check == "feet":
+    width, height = w, h
 else:
     # Rows of 10 cells of 150x224 pixels, a 200-pixel thumbnail above its
     # label, with a 4-pixel gutter around each.
@@ -240,16 +257,42 @@ if check == "sheet":
             sys.exit(f"{path}: thumbnail {index} is blank")
     sys.exit()
 background = rows[0][0]
-sides = rows[: h * 3 // 4] if frame == "head" else rows
-edges = {"top": rows[0], "left": [r[0] for r in sides], "right": [r[-1] for r in sides]}
-if frame == "body":
-    edges["bottom"] = rows[-1]
-for name in edges:
-    if any(pixel != background for pixel in edges[name]):
-        sys.exit(f"{path}: the character touches the {name} edge")
-shown = sum(pixel != background for row in rows for pixel in row)
-if shown < w * h // 20:
-    sys.exit(f"{path}: only {shown} pixels show the character")
+if check == "feet":
+    lowest = max(y for y, row in enumerate(rows) if any(pixel != background for pixel in row))
+    columns = [x for row in rows[lowest - h // 50 : lowest + 1] for x, pixel in enumerate(row) if pixel != background]
+    print(lowest, min(columns), max(columns))
+    sys.exit()
+cell_width, cell_height = w // views, h // (2 if reference else 1)
+lowest = []
+for view in range(views):
+    cell = [row[view * cell_width : (view + 1) * cell_width] for row in rows[h - cell_height :]]
+    sides = cell[: cell_height * 3 // 4] if frame == "head" else cell
+    edges = {"top": cell[0], "left": [r[0] for r in sides], "right": [r[-1] for r in sides]}
+    if frame == "body":
+        edges["bottom"] = cell[-1]
+    for name in edges:
+        if any(pixel != background for pixel in edges[name]):
+            sys.exit(f"{path}: view {view} touches the {name} edge")
+    shown = sum(pixel != background for row in cell for pixel in row)
+    if shown < cell_width * cell_height // 20:
+        sys.exit(f"{path}: only {shown} pixels of view {view} show the character")
+    lowest.append(max(y for y, row in enumerate(cell) if any(pixel != background for pixel in row)))
+if frame == "body" and max(lowest) - min(lowest) > 2:
+    sys.exit(f"{path}: the views' lowest rows {lowest} differ")
+if reference:
+    # A square reference fills the row's height, centred.
+    middle, left = rows[cell_height // 2], (w - cell_height) // 2
+    def near(pixel, colour):
+        return all(abs(a - b) <= 16 for a, b in zip(pixel, colour))
+    for x in (left + 2, w // 2, left + cell_height - 3):
+        if not near(middle[x], reference):
+            sys.exit(f"{path}: the reference row shows {middle[x].hex()} at {x}, not {reference.hex()}")
+    for x in (left - 3, left + cell_height + 2):
+        if middle[x] != background:
+            sys.exit(f"{path}: the reference reaches column {x}")
+    for y in (2, cell_height - 3):
+        if not near(rows[y][w // 2], reference):
+            sys.exit(f"{path}: the reference does not fill row {y}")
 PY
 }
 
@@ -286,6 +329,23 @@ launch
 out=$(mktemp -d "$(jq -r .directory <<<"$state")/smoke.XXXXXX")
 edited=$out/edited.vroid
 printf 'gui-smoke: artifacts in %s\n' "$out" >&2
+# Square references for render: a red PNG, a blue JPEG, and files that are not
+# images Unity can read.
+python3 - "$out/reference.png" <<'PY'
+import struct
+import sys
+import zlib
+
+def chunk(kind, data):
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+rows = b"".join(b"\0" + b"\xff\x00\x00\xff" * 8 for _ in range(8))
+png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 8, 8, 8, 6, 0, 0, 0))
+open(sys.argv[1], "wb").write(png + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+PY
+base64 -d >"$out/reference.jpg" <<<'/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAIBAQEBAQIBAQECAgICAgQDAgICAgUEBAMEBgUGBgYFBgYGBwkIBgcJBwYGCAsICQoKCgoKBggLDAsKDAkKCgr/2wBDAQICAgICAgUDAwUKBwYHCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgr/wAARCAAIAAgDAREAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAVAQEBAAAAAAAAAAAAAAAAAAAHCf/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AAmooF3/2Q=='
+printf 'not an image\n' >"$out/notes.png"
+head -c 40 "$out/reference.png" >"$out/truncated.png"
 inputs_before=$(input_events)
 jq -cn --arg path "$source" '{method: "open", path: $path}' | vroid - >/dev/null
 vroid '{"method": "dump"}' >"$out/original.json"
@@ -336,10 +396,32 @@ for item in "${items[@]}"; do
     request=$(with_value "$section" "$category" item "${expected_item[$item]}" <<<"$request")
 done
 vroid '{"method": "dump"}' >"$out/before-items.json"
+# The ears make the character taller, which shrinks the fitted scale of a
+# square image, whose body frame the character's height sets rather than its
+# arms; at a smaller scale chosen before, the feet stay where they were
+# (R-VIEW-6).
+fitted=$(render front body 512 512 "$out/scale-fitted.png" | jq -e .scale) || fatal "render reported no scale"
+kept=$(jq -n --argjson fitted "$fitted" '$fitted * 0.8')
+render front body 512 512 "$out/scale-before.png" "{\"scale\": $kept}" | jq -e --argjson kept "$kept" '.scale == $kept' >/dev/null ||
+    fatal "render did not keep scale $kept"
+check_png render "$out/scale-before.png" body 512 512
 result=$(vroid "$request")
 undo "$result" "$out/before-items.json"
 before=$(rebuilt)
 changed=$(vroid "$request" | jq .changed)
+render front body 512 512 "$out/scale-after.png" "{\"scale\": $kept}" >/dev/null
+check_png render "$out/scale-after.png" body 512 512
+feet_before=$(check_png feet "$out/scale-before.png")
+feet_after=$(check_png feet "$out/scale-after.png")
+[[ $feet_before == "$feet_after" ]] ||
+    fatal "the feet moved from $feet_before to $feet_after at scale $kept; compare $out/scale-before.png and $out/scale-after.png"
+render front body 512 512 "$out/scale-refitted.png" | jq -e --argjson fitted "$fitted" '.scale < $fitted' >/dev/null ||
+    fatal "the fitted scale did not shrink with the ears"
+if refusal=$(render front body 512 512 "$out/scale-too-large.png" "{\"scale\": $fitted}" 2>&1); then
+    fatal "a scale at which the character does not fit was accepted"
+fi
+[[ $refusal == *'the largest scale that fits is'* && ! -e $out/scale-too-large.png ]] ||
+    fatal "an unfitting scale was not refused as expected: $refusal"
 ((changed >= ${#items[@]} + 2)) || fatal "apply changed $changed items and accessories"
 # One rebuild sets an accessory's position, rotation, and scale together, so
 # only each item and added accessory needs its own.
@@ -539,6 +621,26 @@ for item in "${renders[@]}"; do
     image=$out/render-$view-$frame.png
     render "$view" "$frame" "$width" "$height" "$image" >/dev/null
     check_png render "$image" "$frame" "$width" "$height"
+done
+# Several views in one image, under a reference (R-VIEW-1, R-VIEW-5).
+sheets=(
+    'front,three_quarter,side,back|body|256|512|4|png|ff0000'
+    'front,side|head|256|256|2|jpg|2040c0'
+)
+for item in "${sheets[@]}"; do
+    IFS='|' read -r views frame width height count kind colour <<<"$item"
+    image=$out/sheet-$frame.png
+    render "$views" "$frame" "$width" "$height" "$image" "$(jq -cn --arg path "$out/reference.$kind" '{reference: $path}')" >/dev/null
+    check_png render "$image" "$frame" "$width" "$height" "$count" "$colour"
+done
+# A missing reference, or one that is not a PNG or JPEG Unity can read, is
+# refused and writes nothing (R-VIEW-5).
+for reference in missing.png notes.png truncated.png; do
+    image=$out/refused-$reference
+    if render front body 64 128 "$image" "$(jq -cn --arg path "$out/$reference" '{reference: $path}')" >/dev/null 2>&1; then
+        fatal "a render with $reference as its reference succeeded"
+    fi
+    [[ ! -e $image ]] || fatal "a refused render with $reference wrote $image"
 done
 image=$out/render-front-body.png
 cp "$image" "$out/render-front-body.copy"

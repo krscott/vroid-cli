@@ -3,8 +3,6 @@
 //
 // Like Render.cs, instance members of Unity engine objects are called through
 // `dynamic`; static members go through Reflect.
-using Il2CppInterop.Runtime.InteropTypes.Arrays;
-
 namespace VroidBridge;
 
 /// Scales thumbnails into Sheet cells. Dispose destroys what it created.
@@ -65,23 +63,6 @@ internal sealed class ThumbnailReader : IDisposable
         finally
         {
             Destroy(texture);
-        }
-    }
-
-    internal static byte[] Png(Sheet sheet)
-    {
-        dynamic? texture = null;
-        try
-        {
-            texture = Reflect.New("UnityEngine.Texture2D", sheet.Width, sheet.Height, RGB24, false);
-            texture.LoadRawTextureData(new Il2CppStructArray<byte>(sheet.Pixels));
-            var png = Reflect.CallStatic("UnityEngine.ImageConversion", "EncodeToPNG", (object)texture)
-                ?? throw new InvalidOperationException("Unity could not encode the image");
-            return ((IEnumerable<byte>)png).ToArray();
-        }
-        finally
-        {
-            if (texture != null) Destroy(texture);
         }
     }
 
@@ -151,7 +132,7 @@ public sealed partial class Plugin
                 sheet.Place(index, reader.Read(texture, item));
             }
         }
-        var png = ThumbnailReader.Png(sheet);
+        var png = CharacterRender.Encode(sheet);
         var path = request.Text("path");
         WriteNew(path, png);
         result = new { rendered = path, bytes = png.Length, columns = Sheet.Columns, items = ids };

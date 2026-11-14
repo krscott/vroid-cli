@@ -833,11 +833,16 @@ public sealed partial class Plugin : BasePlugin
                 _ = Root;
                 var origin = Reflect.Get(updater, "ModelOrigin")
                     ?? throw new InvalidOperationException("The model is not loaded; open or create a character first");
-                var png = CharacterRender.Png(origin, Framing.ParseView(request.Text("view")), Framing.ParseFrame(request.Text("frame")),
-                    request.Body.GetProperty("width").GetInt32(), request.Body.GetProperty("height").GetInt32());
+                var views = request.Body.GetProperty("view").EnumerateArray().Select(view => Framing.ParseView(view.GetString()!)).ToArray();
+                var reference = request.Body.GetProperty("reference");
+                var scale = request.Body.GetProperty("scale");
+                var (png, used) = CharacterRender.Sheet(origin, views, Framing.ParseFrame(request.Text("frame")),
+                    request.Body.GetProperty("width").GetInt32(), request.Body.GetProperty("height").GetInt32(),
+                    reference.ValueKind == JsonValueKind.Null ? null : reference.GetString(),
+                    scale.ValueKind == JsonValueKind.Null ? null : scale.GetDouble());
                 var path = request.Text("path");
                 WriteNew(path, png);
-                result = new { rendered = path, bytes = png.Length };
+                result = new { rendered = path, bytes = png.Length, scale = used };
                 break;
             }
             default:

@@ -56,6 +56,10 @@ def bridge_args(request: schema.BridgeRequest) -> dict[str, Any]:
     args = request.model_dump(mode="json", exclude={"method"})
     if isinstance(request, schema.Open | schema.Save | schema.Import):
         args["path"] = rpc.wine_path(request.path)
+    if isinstance(request, schema.Render):
+        args["view"] = request.views
+        if request.reference is not None:
+            args["reference"] = rpc.wine_path(request.reference)
     return args
 
 

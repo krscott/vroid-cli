@@ -682,8 +682,8 @@ whether or not it succeeds. It waits for each task between frames, and fails if
 one faults or returns null, or if a thumbnail is not 300x400. It blits each
 texture with bilinear filtering into a 150x200 `RenderTexture`, restoring the
 active render texture that `Blit` changes, reads that into a reused RGB24
-`Texture2D`, and copies the raw bytes into a `Sheet` (`plugin/Sheet.cs`, which
-`tests/protocol` also builds). The sheet lays cells out in rows of 10 in
+`Texture2D`, and copies the raw bytes into a `Sheet` (`plugin/Sheet.cs`, a
+`Canvas`, below, which `tests/protocol` also builds). The sheet lays cells out in rows of 10 in
 `items` order, separated by a 4-pixel white gutter, and draws each identifier
 below its thumbnail with an embedded 5x9 bitmap font at twice its size, so no
 Unity font, canvas, or UI is involved. The font covers exactly the characters
@@ -700,8 +700,8 @@ its own pose, and its thumbnail code poses the model and hides meshes while it
 runs; both change app state, so the bridge renders with its own camera instead.
 In one frame, it creates a disabled orthographic `Camera` whose culling mask
 holds only the renderers' layers (all Default in 2.16.0, which nothing else in
-view uses), renders into a 4x MSAA `RenderTexture` cleared to light grey, reads
-it into an RGB `Texture2D`, and encodes it with `ImageConversion.EncodeToPNG`.
+view uses), and for each requested view renders into a 4x MSAA
+`RenderTexture` cleared to light grey and reads it into an RGB `Texture2D`.
 A `finally` block restores `RenderTexture.active` and destroys the three
 objects, so the editor's cameras, the project, and `modified` never change
 (R-VIEW-2). The scene's own directional lights, fixed in world space in front
@@ -710,19 +710,49 @@ of the model, light every view, so back views show MToon's shade colours.
 `plugin/Framing.cs` places the camera without Unity, so `tests/protocol` checks
 it. The model's forward direction, turned by 0, -45, -90, or 180 degrees, gives
 the front, three-quarter, side, and back views; the negative turns show the
-model's left side. A body frame fits the renderers' world bounds with a 5%
-margin: their height, and their horizontal radius rather than the width seen
-from the view, so every body view of a model at one image size shares its scale
-and ground line. The bounds include everything worn, so an item that makes the
-model taller or wider, such as an ahoge, a hat, or a long top, changes the
-scale; only renders of one character state compare directly. A head frame
-spans from the humanoid neck bone to the top of the bounds, centred on the head
-bone (`Animator.GetBoneTransform`). Its width
-is the horizontal reach from the head bone, in any direction, of every renderer
-whose bounds are centred above the neck, such as the head, ears, hair, and
-hats, so head views share their scale too. The body, whose bounds include the
-arms, does not widen it, and neither does long hair centred below the neck. The
-camera stands outside the bounds, so no part of the model is clipped.
+model's left side. A frame has an anchor, which sits on the image's vertical
+centre line a fixed 2.4% of its height above the bottom edge, and what it must
+show around the anchor. A body frame anchors at `ModelOrigin`, which in 2.16.0
+is the floor below the character's centre (the soles reach 3 mm below it). It
+shows the renderers' world bounds: their height above the floor and any depth
+below it, and their horizontal reach from the anchor in any direction rather
+than the width seen from the view, so every body view of a model at one image
+size shares its scale and ground line. A head frame anchors at the humanoid
+neck bone's height below the head bone (`Animator.GetBoneTransform`) and shows
+up to the top of the bounds. Its width is the horizontal reach from the head
+bone, in any direction, of every renderer whose bounds are centred above the
+neck, such as the head, ears, hair, and hats, so head views share their scale
+too. The body, whose bounds include the arms, does not widen it, and neither
+does long hair centred below the neck; the frame cuts through what lies below
+the neck.
+
+The fitted size shows that region with a 5% margin, so the bounds, which
+include everything worn, set the scale: an item that makes the model taller or
+wider, such as an ahoge, a hat, or a long top, changes it. Every render reports
+its scale in pixels per metre, and a request may give one instead (R-VIEW-6).
+Since the anchor's pixel depends only on the image height, renders of one view,
+frame, and size at one scale line up across character states. A given scale
+that cannot show the region is refused, and the error names the largest that
+can, rounded down to 0.001 so it can be passed back; the check tolerates the
+rounding of a reported scale passed back, and a given scale is reported as
+given. The camera stands outside the bounds, so no part of the model is
+clipped.
+
+All views of one request share one size, so they share their scale (R-VIEW-1).
+`plugin/Canvas.cs`, which `tests/protocol` also builds, assembles the image
+from the views' raw RGB bytes, left to right. Its background is the first
+view's top-left pixel, which every frame's margin leaves background. With a
+`reference`, a row as wide as the views and as tall as one sits above them
+(R-VIEW-5). The bridge reads the file and decodes it with
+`ImageConversion.LoadImage(Texture2D, byte[])`, which handles PNG and JPEG and
+returns false otherwise; the IL2CPP build has a second two-argument overload,
+so the bridge selects this one by its parameter types. A `Graphics.Blit` into
+an ARGB `RenderTexture` and a read into an RGBA32 `Texture2D` convert whichever
+format `LoadImage` chose. The canvas scales the pixels with a separable
+triangle filter that widens when shrinking, so every source pixel contributes,
+on premultiplied alpha, then centres them in the row and blends them over the
+background. One RGB24 texture loads the canvas's bytes for `EncodeToPNG`. A
+four-view sheet at 512x1024 per view with a 1774x887 reference takes about 1 s.
 
 The bridge writes the PNG of `render` or `thumbnails` to the path it is given
 with `FileMode.CreateNew` and deletes the file if the write fails. The CLI
@@ -756,9 +786,11 @@ misspelled fields (R-CLI-3). Its JSON parser keeps the last of repeated keys,
 so the CLI rejects repeated keys first. Validation refuses non-finite values
 and colours that are not `#RRGGBB` in either case (R-EDIT-2) and checks
 `.vroid`, `.png`, and `.vroidcustomitem` suffixes, an existing `open` or
-`import` source, and a new `save`, `render`, `thumbnails`, or `export`
-destination in an existing directory (R-EDIT-4, R-VIEW-3, R-EDIT-16), all
-before touching session state. Paths resolve against the current directory,
+`import` source, a new `save`, `render`, `thumbnails`, or `export`
+destination in an existing directory (R-EDIT-4, R-VIEW-3, R-EDIT-16), a
+`render` reference that exists and starts with a PNG or JPEG signature
+(R-VIEW-5), and a `render` image of at most 4096 pixels per side, all before
+touching session state. The CLI always sends `render`'s `view` as a list. Paths resolve against the current directory,
 and `open`, `save`, `render`, `thumbnails`, and `export` report the resolved
 path rather than the bridge's Wine path. The bridge rechecks the destination
 before saving. Validation errors print one `FIELD: REASON` line each. Output is
@@ -781,17 +813,22 @@ errors (R-CLI-2).
 - `tests/test_launcher.py`: the launcher against a stand-in Wine and a
   read-only stand-in store.
 - `tests/protocol`: the bridge's file protocol, colour rules, custom item
-  files, camera placement, item identifiers, accessory matching and bones,
-  and thumbnail sheet layout and font under the .NET SDK.
+  files, camera placement and scale, item identifiers, accessory matching and
+  bones, image layout, scaling, and blending, and thumbnail sheet layout and
+  font under the .NET SDK.
 
 `scripts/gui-smoke.sh`, run by `just gui-smoke`, drives a real session through
 open, dump, numeric and colour edits, item and accessory edits, including two
 accessories of one kind with one moved to another bone, placed, reshaped,
-renamed, hidden, and locked, a check that an accessory slider's listed bounds
+renamed, hidden, and locked, with front renders at one scale before and after
+that must line up while the fitted scale shrinks and the first fitted scale is
+refused (R-VIEW-6), a check that an accessory slider's listed bounds
 match `apply`'s refusal, and the undo of its removal, outfit colour edits that
 keep the item built in (R-EDIT-12), refusal, save, an export of the moved cat
 ears that changes nothing and refuses an existing destination (R-EDIT-16),
-rendering every view, drawing the thumbnails of the edited item categories,
+rendering every view alone and in sheets under a PNG and a JPEG reference it
+writes itself, with refusals of a missing reference, a text file, and a
+truncated PNG (R-VIEW-5), drawing the thumbnails of the edited item categories,
 restart, reopen with a read-back of every edited number, colour, item, and
 accessory (R-EDIT-1), of each category's item identifiers (R-EDIT-9), and of a
 `dump` equal to the one taken after the save, with `modified` false, a render
@@ -805,7 +842,8 @@ imports the exported ears into a new character, compares their values, edits
 them, checks that built-in ears are refused, and undoes the import (R-EDIT-3,
 R-EDIT-11, R-EDIT-15). It saves editor screenshots before and after the first
 edits. It decodes each render with the Python standard library to check its
-size and framing, checks each thumbnail sheet's size and items, and compares
+size, the framing of each view, a shared lowest row, and the reference row,
+checks each thumbnail sheet's size and items, and compares
 `dump` and an editor screenshot before and after rendering and drawing
 thumbnails. It needs graphics access.
 
