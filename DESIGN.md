@@ -710,13 +710,16 @@ of the model, light every view, so back views show MToon's shade colours.
 it. The model's forward direction, turned by 0, -45, -90, or 180 degrees, gives
 the front, three-quarter, side, and back views; the negative turns show the
 model's left side. A frame has an anchor, which sits on the image's vertical
-centre line a fixed 2.4% of its height above the bottom edge, and what it must
-show around the anchor. A body frame anchors at `ModelOrigin`, which in 2.16.0
-is the floor below the character's centre (the soles reach 3 mm below it). It
-shows the renderers' world bounds: their height above the floor and any depth
-below it, and their horizontal reach from the anchor in any direction rather
-than the width seen from the view, so every body view of a model at one image
-size shares its scale and ground line. A head frame anchors at the humanoid
+centre line a fixed 2.4% of its height above the bottom edge, and a region it
+must show around the anchor. In an image narrower, for its height, than the
+region, the region's width sets the scale and all spare height lies above the
+region; centring it would move the anchor whenever an edit changed its height
+(R-VIEW-6). A body frame anchors at `ModelOrigin`, which in 2.16.0 is the floor
+below the character's centre (the soles reach 3 mm below it). It shows the
+renderers' world bounds: their height above the floor and any depth below it,
+and their horizontal reach from the anchor in any direction rather than the
+width seen from the view, so every body view of a model at one image size
+shares its scale and ground line. A head frame anchors at the humanoid
 neck bone's height below the head bone (`Animator.GetBoneTransform`) and shows
 up to the top of the bounds. Its width is the horizontal reach from the head
 bone, in any direction, of every renderer whose bounds are centred above the
