@@ -238,15 +238,15 @@ IEnumerable<Vec> Corners(Box box) =>
     from z in new[] { box.Min.Z, box.Max.Z }
     select new Vec(x, y, z);
 
-// Checks that every corner of `boxes` is inside the frame with its margin and unclipped.
-void Shows(Shot shot, double aspect, IEnumerable<Box> boxes, string what)
+// Checks that every corner of `boxes` is inside the frame with `margin` and unclipped.
+void Shows(Shot shot, double aspect, IEnumerable<Box> boxes, string what, double margin = Framing.Margin)
 {
     foreach (var corner in boxes.SelectMany(Corners))
     {
         var (right, up, depth) = Project(shot, corner);
         var where = $"{what} at aspect {aspect}: corner {corner}";
-        Check(Math.Abs(right) <= shot.Size * aspect / Framing.Margin + 1e-9, $"{where} is outside the width");
-        Check(Math.Abs(up) <= shot.Size / Framing.Margin + 1e-9, $"{where} is outside the height");
+        Check(Math.Abs(right) <= shot.Size * aspect / margin + 1e-9, $"{where} is outside the width");
+        Check(Math.Abs(up) <= shot.Size / margin + 1e-9, $"{where} is outside the height");
         Check(depth > shot.Near && depth < shot.Far, $"{where} is clipped");
     }
 }
@@ -273,6 +273,21 @@ Test("views of one model at one size share their scale", _ =>
             var heads = views.Select(view => HeadShot(dressed, forward, view, aspect)).ToArray();
             Check(heads.All(shot => Math.Abs(shot.Size - heads[0].Size) < 1e-9), $"head scale differs at aspect {aspect}");
         }
+});
+
+// R-VIEW-1
+Test("a part below the floor keeps a margin below it", _ =>
+{
+    // A tail moved 0.3 m below the floor, deeper than the margin at the fit
+    // the rest of the model would get.
+    var low = parts.Append(new Box(new Vec(-0.05, -0.30, -0.60), new Vec(0.05, 0.40, -0.30))).ToArray();
+    foreach (var aspect in aspects)
+    {
+        var shot = BodyShot(low, forwards[0], View.Front, aspect);
+        var clear = -0.30 - (shot.Target.Y - shot.Size);
+        Check(clear >= 0.30 * (Framing.Margin - 1) - 1e-9, $"at aspect {aspect} the tail is {clear} m above the bottom edge");
+        Shows(shot, aspect, parts, "the rest of the model", margin: 1);
+    }
 });
 
 // R-VIEW-6
@@ -305,26 +320,36 @@ Test("renders at one scale keep the floor, centre line, neck, and head in place"
 });
 
 // R-VIEW-6
-Test("a scale at which the frame does not fit is refused, naming the largest that does", _ =>
+Test("a scale that would cut off the character is refused, naming the largest that fits", _ =>
 {
     foreach (var aspect in aspects)
     {
         var extent = Framing.Body(dressed, origin);
-        var largest = Framing.Scale(Framing.Fit(extent, aspect), 1000);
+        var fitted = Framing.Scale(Framing.Fit(extent, aspect), 1000);
         // The reported scale passed back, and one below it, are accepted.
-        Framing.Size(extent, aspect, 1000, largest);
-        Framing.Size(extent, aspect, 1000, largest * 0.9);
+        Framing.Size(extent, aspect, 1000, fitted);
+        Framing.Size(extent, aspect, 1000, fitted * 0.9);
+        double named;
         try
         {
-            Framing.Size(extent, aspect, 1000, largest * 1.01);
+            Framing.Size(extent, aspect, 1000, fitted * 2);
             throw new Exception($"a scale too large at aspect {aspect} was accepted");
         }
         catch (InvalidOperationException error)
         {
-            var named = double.Parse(error.Message[(error.Message.LastIndexOf(' ') + 1)..], System.Globalization.CultureInfo.InvariantCulture);
-            Check(named <= largest && named > largest - 0.001, $"the error names {named}, not {largest}");
-            Framing.Size(extent, aspect, 1000, named);
+            named = double.Parse(error.Message[(error.Message.LastIndexOf(' ') + 1)..], System.Globalization.CultureInfo.InvariantCulture);
         }
+        Check(named >= fitted, $"the largest scale {named} is below the fitted {fitted}");
+        // At the named scale nothing is cut off; just above it, something is.
+        var size = Framing.Size(extent, aspect, 1000, named);
+        foreach (var view in views)
+            Shows(Framing.Place(extent, size, Box.Union(dressed), forwards[0], view), aspect, dressed, $"{view} body at scale {named}", margin: 1);
+        try
+        {
+            Framing.Size(extent, aspect, 1000, named + 0.002);
+            throw new Exception($"a scale above {named} at aspect {aspect} was accepted");
+        }
+        catch (InvalidOperationException) { }
     }
 });
 
@@ -695,7 +720,6 @@ Test("the sheet font draws every identifier character distinctly", _ =>
     Check(shapes.Distinct().Count() == shapes.Count, "two glyphs look the same");
 });
 
-// R-VIEW-4
 // R-VIEW-1, R-VIEW-5
 Test("a canvas places images by their top-left corner", _ =>
 {
@@ -722,54 +746,31 @@ Test("a canvas places images by their top-left corner", _ =>
 });
 
 // R-VIEW-5
-Test("a reference is scaled to fit its box, centred, and blended by its alpha", _ =>
+Test("a reference keeps its aspect ratio, its orientation, and its alpha", _ =>
 {
+    Check(Canvas.FitSize(300, 300, 40, 20) == (300, 150), "a wide image does not fill the width");
+    Check(Canvas.FitSize(200, 100, 10, 20) == (50, 100), "a tall image does not fill the height");
+    Check(Canvas.FitSize(2048, 1024, 1774, 887) == (2048, 1024), "a 2:1 image does not fill a 2:1 box");
+    Check(Canvas.FitSize(100, 100, 100000, 1) == (100, 1), "a thin image vanishes");
+
     var grey = new byte[] { 200, 200, 200 };
-    byte[] Solid(int width, int height, byte r, byte g, byte b, byte a) =>
-        Enumerable.Range(0, width * height).SelectMany(_ => new[] { r, g, b, a }).ToArray();
     (int Red, int Green, int Blue) At(Canvas image, int x, int top)
     {
         var at = ((image.Height - 1 - top) * image.Width + x) * 3;
         return (image.Pixels[at], image.Pixels[at + 1], image.Pixels[at + 2]);
     }
-
-    // A wide image fills the width and is centred vertically; scaling keeps a
-    // solid colour exact, up or down.
-    foreach (var (width, height) in new[] { (40, 20), (400, 200), (37, 19) })
-    {
-        var canvas = new Canvas(300, 300, grey);
-        canvas.Fit(0, 0, 300, 300, width, height, Solid(width, height, 10, 20, 30, 255));
-        var expected = (int)Math.Round(height * 300.0 / width);
-        var top = (300 - expected) / 2;
-        Check(At(canvas, 0, top) == (10, 20, 30) && At(canvas, 299, top + expected - 1) == (10, 20, 30),
-            $"a {width}x{height} image does not fill {expected} rows from {top}");
-        Check(At(canvas, 150, top - 1) == (200, 200, 200) && At(canvas, 150, top + expected) == (200, 200, 200),
-            $"a {width}x{height} image spills outside {expected} rows");
-    }
-
-    // A tall image in a wide box is centred horizontally.
-    var tall = new Canvas(200, 100, grey);
-    tall.Fit(0, 0, 200, 100, 10, 20, Solid(10, 20, 0, 0, 0, 255));
-    Check(At(tall, 75, 50) == (0, 0, 0) && At(tall, 124, 50) == (0, 0, 0), "a tall image is not centred");
-    Check(At(tall, 74, 50) == (200, 200, 200) && At(tall, 125, 50) == (200, 200, 200), "a tall image is too wide");
-
-    // Transparent pixels leave the background, and half alpha blends with it,
-    // whatever colour the transparent pixels hold.
-    var clear = new Canvas(20, 20, grey);
-    clear.Fit(0, 0, 20, 20, 4, 4, Solid(4, 4, 0, 0, 0, 0));
-    Check(clear.Pixels.All(value => value == 200), "a transparent image changed the background");
-    var half = new Canvas(20, 20, grey);
-    half.Fit(0, 0, 20, 20, 4, 4, Solid(4, 4, 0, 0, 0, 128));
-    Check(Math.Abs(At(half, 10, 10).Red - 100) <= 1, $"half alpha gives {At(half, 10, 10)}");
-
-    // Shrinking averages every source pixel: a fine checkerboard turns grey.
-    var checks = Enumerable.Range(0, 64 * 64)
-        .SelectMany(i => (i % 64 + i / 64) % 2 == 0 ? new byte[] { 0, 0, 0, 255 } : new byte[] { 255, 255, 255, 255 }).ToArray();
-    var small = new Canvas(8, 8, grey);
-    small.Fit(0, 0, 8, 8, 64, 64, checks);
-    Check(small.Pixels.All(value => Math.Abs(value - 127.5) <= 2), "a shrunken checkerboard is not grey");
+    // A 2x2 RGBA image, bottom row first: opaque red and blue below,
+    // transparent black and half-transparent black above.
+    var image = new byte[] { 255, 0, 0, 255, 0, 0, 255, 255, 0, 0, 0, 0, 0, 0, 0, 128 };
+    var canvas = new Canvas(4, 4, grey);
+    canvas.Blend(1, 1, 2, 2, image);
+    Check(At(canvas, 1, 2) == (255, 0, 0) && At(canvas, 2, 2) == (0, 0, 255), "the bottom row is not red then blue");
+    Check(At(canvas, 1, 1) == (200, 200, 200), "a transparent pixel changed the background");
+    Check(At(canvas, 2, 1) == (100, 100, 100), $"half alpha gives {At(canvas, 2, 1)}");
+    Check(At(canvas, 0, 0) == (200, 200, 200) && At(canvas, 3, 3) == (200, 200, 200), "the background changed outside the image");
 });
 
+// R-VIEW-4
 Test("the sheet lays thumbnails out in labelled rows of ten", _ =>
 {
     var labels = Enumerable.Range(0, 82).Select(i => i.ToString("000")).ToArray();

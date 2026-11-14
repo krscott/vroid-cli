@@ -26,20 +26,19 @@ public sealed class Sheet : Canvas
     /// Draws one label per thumbnail. Refuses a label the font cannot draw or
     /// that does not fit under its thumbnail.
     public Sheet(IReadOnlyList<string> labels)
-        : base(Math.Min(Count(labels), Columns) * (ThumbWidth + Gutter) + Gutter,
-            (labels.Count + Columns - 1) / Columns * (CellHeight + Gutter) + Gutter, White)
+        : base(SheetWidth(labels), (labels.Count + Columns - 1) / Columns * (CellHeight + Gutter) + Gutter, White)
     {
         for (var index = 0; index < labels.Count; index++) Label(index, labels[index]);
     }
 
-    // The number of labels, once each is known to be drawable.
-    private static int Count(IReadOnlyList<string> labels)
+    // The sheet's width, once every label is known to be drawable.
+    private static int SheetWidth(IReadOnlyList<string> labels)
     {
         if (labels.Count == 0) throw new ArgumentException("A sheet needs at least one item");
         foreach (var label in labels)
             if (label.Length == 0 || label.Length > MaxLabel || label.Any(c => !Font.ContainsKey(c)))
                 throw new ArgumentException($"Cannot label item {label}");
-        return labels.Count;
+        return Math.Min(labels.Count, Columns) * (ThumbWidth + Gutter) + Gutter;
     }
 
     // The top-left corner of a cell, counting rows from the top.
@@ -50,8 +49,6 @@ public sealed class Sheet : Canvas
     /// into cell `index`.
     public void Place(int index, byte[] thumbnail)
     {
-        if (thumbnail.Length != ThumbWidth * ThumbHeight * 3)
-            throw new ArgumentException($"Thumbnail {index} has {thumbnail.Length} bytes");
         var (x, top) = Cell(index);
         Place(x, top, ThumbWidth, ThumbHeight, thumbnail);
     }

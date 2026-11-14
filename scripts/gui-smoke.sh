@@ -186,7 +186,8 @@ thumbnails() {
 # COUNT, or feet PATH.
 #
 # A render's size must fit VIEWS views of WIDTH x HEIGHT, under a reference row
-# if REFERENCE, the hex colour of a square reference image, is given. Each view
+# if REFERENCE, the hex colours of a square reference image's top and bottom
+# halves separated by a comma, is given. Each view
 # must show the character, and the edges that frame it must be background:
 # every edge for a body; for a head, whose frame cuts through the neck and may
 # show the shoulders, the top and the upper three quarters of each side, which
@@ -217,7 +218,7 @@ w, h, depth, colour, _, _, interlace = struct.unpack(">IIBBBBB", chunks[b"IHDR"]
 if check == "render":
     frame, width, height = sys.argv[3], int(sys.argv[4]), int(sys.argv[5])
     views = int(sys.argv[6]) if len(sys.argv) > 6 else 1
-    reference = bytes.fromhex(sys.argv[7]) if len(sys.argv) > 7 else None
+    reference = [bytes.fromhex(colour) for colour in sys.argv[7].split(",")] if len(sys.argv) > 7 else None
     width, height = views * width, height * (2 if reference else 1)
 elif check == "feet":
     width, height = w, h
@@ -280,19 +281,17 @@ for view in range(views):
 if frame == "body" and max(lowest) - min(lowest) > 2:
     sys.exit(f"{path}: the views' lowest rows {lowest} differ")
 if reference:
-    # A square reference fills the row's height, centred.
-    middle, left = rows[cell_height // 2], (w - cell_height) // 2
+    # A square reference fills the row's height, centred, the right way up.
+    left = (w - cell_height) // 2
     def near(pixel, colour):
         return all(abs(a - b) <= 16 for a, b in zip(pixel, colour))
-    for x in (left + 2, w // 2, left + cell_height - 3):
-        if not near(middle[x], reference):
-            sys.exit(f"{path}: the reference row shows {middle[x].hex()} at {x}, not {reference.hex()}")
-    for x in (left - 3, left + cell_height + 2):
-        if middle[x] != background:
-            sys.exit(f"{path}: the reference reaches column {x}")
-    for y in (2, cell_height - 3):
-        if not near(rows[y][w // 2], reference):
-            sys.exit(f"{path}: the reference does not fill row {y}")
+    for y, colour in ((2, reference[0]), (cell_height // 4, reference[0]), (cell_height * 3 // 4, reference[1]), (cell_height - 3, reference[1])):
+        for x in (left + 2, w // 2, left + cell_height - 3):
+            if not near(rows[y][x], colour):
+                sys.exit(f"{path}: the reference row shows {rows[y][x].hex()} at {x},{y}, not {colour.hex()}")
+        for x in (left - 3, left + cell_height + 2):
+            if rows[y][x] != background:
+                sys.exit(f"{path}: the reference reaches column {x}")
 PY
 }
 
@@ -329,8 +328,9 @@ launch
 out=$(mktemp -d "$(jq -r .directory <<<"$state")/smoke.XXXXXX")
 edited=$out/edited.vroid
 printf 'gui-smoke: artifacts in %s\n' "$out" >&2
-# Square references for render: a red PNG, a blue JPEG, and files that are not
-# images Unity can read.
+# Square references for render, each with its top half one colour and its
+# bottom half another: a red and green PNG, a blue and ochre JPEG, and files
+# that are not images Unity can read.
 python3 - "$out/reference.png" <<'PY'
 import struct
 import sys
@@ -339,11 +339,11 @@ import zlib
 def chunk(kind, data):
     return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
 
-rows = b"".join(b"\0" + b"\xff\x00\x00\xff" * 8 for _ in range(8))
+rows = b"".join(b"\0" + (b"\xff\x00\x00\xff" if y < 4 else b"\x00\xff\x00\xff") * 8 for y in range(8))
 png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 8, 8, 8, 6, 0, 0, 0))
 open(sys.argv[1], "wb").write(png + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
 PY
-base64 -d >"$out/reference.jpg" <<<'/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAIBAQEBAQIBAQECAgICAgQDAgICAgUEBAMEBgUGBgYFBgYGBwkIBgcJBwYGCAsICQoKCgoKBggLDAsKDAkKCgr/2wBDAQICAgICAgUDAwUKBwYHCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgr/wAARCAAIAAgDAREAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAVAQEBAAAAAAAAAAAAAAAAAAAHCf/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AAmooF3/2Q=='
+base64 -d >"$out/reference.jpg" <<<'/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAIBAQEBAQIBAQECAgICAgQDAgICAgUEBAMEBgUGBgYFBgYGBwkIBgcJBwYGCAsICQoKCgoKBggLDAsKDAkKCgr/2wBDAQICAgICAgUDAwUKBwYHCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgr/wAARCAAQABADAREAAhEBAxEB/8QAFgABAQEAAAAAAAAAAAAAAAAAAAgJ/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/EABgBAQADAQAAAAAAAAAAAAAAAAAHCAkK/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AhNoohcBqw5110AH/2Q=='
 printf 'not an image\n' >"$out/notes.png"
 head -c 40 "$out/reference.png" >"$out/truncated.png"
 inputs_before=$(input_events)
@@ -624,8 +624,8 @@ for item in "${renders[@]}"; do
 done
 # Several views in one image, under a reference (R-VIEW-1, R-VIEW-5).
 sheets=(
-    'front,three_quarter,side,back|body|256|512|4|png|ff0000'
-    'front,side|head|256|256|2|jpg|2040c0'
+    'front,three_quarter,side,back|body|256|512|4|png|ff0000,00ff00'
+    'front,three_quarter,side,back|head|256|256|4|jpg|2040c0,c0a020'
 )
 for item in "${sheets[@]}"; do
     IFS='|' read -r views frame width height count kind colour <<<"$item"

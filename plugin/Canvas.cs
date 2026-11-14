@@ -1,5 +1,5 @@
 // Assembles images for `render` and `thumbnails`. Has no Unity dependencies so
-// tests/protocol can check layout, scaling, and blending directly.
+// tests/protocol can check layout and blending directly.
 namespace VroidBridge;
 
 /// An RGB24 image. `Pixels` runs bottom row first, as Unity's raw texture data
@@ -39,87 +39,31 @@ public class Canvas
             Buffer.BlockCopy(image, row * width * 3, Pixels, Offset(x, top + height - 1 - row), width * 3);
     }
 
-    /// Scales a `width` x `height` RGBA32 image, bottom row first, to fit the
-    /// box at `x`, `top` without changing its aspect ratio, centres it there,
-    /// and blends it over the canvas by its alpha.
-    public void Fit(int x, int top, int boxWidth, int boxHeight, int width, int height, byte[] image)
+    /// The largest size of a `width` x `height` image that fits a `boxWidth` x
+    /// `boxHeight` box without changing its aspect ratio.
+    public static (int Width, int Height) FitSize(int boxWidth, int boxHeight, int width, int height)
     {
-        Inside(x, top, boxWidth, boxHeight);
-        if (width <= 0 || height <= 0 || image.Length != width * height * 4)
-            throw new ArgumentException($"A {width}x{height} image has {image.Length} bytes");
+        if (boxWidth <= 0 || boxHeight <= 0 || width <= 0 || height <= 0)
+            throw new ArgumentException($"Cannot fit a {width}x{height} image in {boxWidth}x{boxHeight}");
         var scale = Math.Min((double)boxWidth / width, (double)boxHeight / height);
-        var fitWidth = Math.Clamp((int)Math.Round(width * scale), 1, boxWidth);
-        var fitHeight = Math.Clamp((int)Math.Round(height * scale), 1, boxHeight);
-        // Premultiplied, so transparent pixels' colours do not bleed into their
-        // neighbours.
-        var source = new float[image.Length];
-        for (var at = 0; at < image.Length; at += 4)
+        return (Math.Clamp((int)Math.Round(width * scale), 1, boxWidth), Math.Clamp((int)Math.Round(height * scale), 1, boxHeight));
+    }
+
+    /// Blends a `width` x `height` RGBA32 image, bottom row first, over the
+    /// canvas by its alpha, with its top-left corner at `x`, `top`.
+    public void Blend(int x, int top, int width, int height, byte[] image)
+    {
+        Inside(x, top, width, height);
+        if (image.Length != width * height * 4) throw new ArgumentException($"A {width}x{height} image has {image.Length} bytes");
+        for (var row = 0; row < height; row++)
         {
-            var alpha = image[at + 3] / 255f;
-            source[at] = image[at] * alpha;
-            source[at + 1] = image[at + 1] * alpha;
-            source[at + 2] = image[at + 2] * alpha;
-            source[at + 3] = alpha;
-        }
-        // Each pass resamples rows and transposes, so two give fitHeight rows
-        // of fitWidth pixels, bottom row first.
-        var scaled = ResampleRows(ResampleRows(source, height, width, fitWidth), fitWidth, height, fitHeight);
-        var left = x + (boxWidth - fitWidth) / 2;
-        var bottom = top + (boxHeight - fitHeight) / 2 + fitHeight - 1;
-        for (var row = 0; row < fitHeight; row++)
-        {
-            var at = Offset(left, bottom - row);
-            for (var column = 0; column < fitWidth; column++, at += 3)
+            var at = Offset(x, top + height - 1 - row);
+            for (int column = 0, from = row * width * 4; column < width; column++, at += 3, from += 4)
             {
-                var from = (row * fitWidth + column) * 4;
-                var keep = 1 - scaled[from + 3];
+                var alpha = image[from + 3];
                 for (var channel = 0; channel < 3; channel++)
-                    Pixels[at + channel] = (byte)Math.Clamp(Math.Round(scaled[from + channel] + Pixels[at + channel] * keep), 0, 255);
+                    Pixels[at + channel] = (byte)((image[from + channel] * alpha + Pixels[at + channel] * (255 - alpha) + 127) / 255);
             }
         }
-    }
-
-    // Resamples each of `rows` rows of `from` RGBA samples to `to` samples and
-    // returns the result transposed: `to` rows of `rows` samples.
-    private static float[] ResampleRows(float[] data, int rows, int from, int to)
-    {
-        var output = new float[to * rows * 4];
-        var weights = Weights(from, to);
-        for (var row = 0; row < rows; row++)
-            for (var sample = 0; sample < to; sample++)
-            {
-                var (first, kernel) = weights[sample];
-                float r = 0, g = 0, b = 0, a = 0;
-                for (int i = 0, at = (row * from + first) * 4; i < kernel.Length; i++, at += 4)
-                {
-                    r += kernel[i] * data[at];
-                    g += kernel[i] * data[at + 1];
-                    b += kernel[i] * data[at + 2];
-                    a += kernel[i] * data[at + 3];
-                }
-                var into = (sample * rows + row) * 4;
-                (output[into], output[into + 1], output[into + 2], output[into + 3]) = (r, g, b, a);
-            }
-        return output;
-    }
-
-    // A triangle filter that widens when shrinking, so every source pixel
-    // contributes: the first source sample and normalized weights per output.
-    private static (int First, float[] Kernel)[] Weights(int from, int to)
-    {
-        var step = (double)from / to;
-        var support = Math.Max(1, step);
-        var weights = new (int, float[])[to];
-        for (var sample = 0; sample < to; sample++)
-        {
-            var centre = (sample + 0.5) * step;
-            var first = Math.Max(0, (int)Math.Floor(centre - support));
-            var last = Math.Min(from - 1, (int)Math.Ceiling(centre + support));
-            var raw = new double[last - first + 1];
-            for (var i = first; i <= last; i++) raw[i - first] = Math.Max(0, 1 - Math.Abs(i + 0.5 - centre) / support);
-            var total = raw.Sum();
-            weights[sample] = (first, raw.Select(weight => (float)(weight / total)).ToArray());
-        }
-        return weights;
     }
 }

@@ -93,7 +93,7 @@ line up:
 ```sh
 vroid-cli demo '{"method": "render", "path": "./side.png", "view": "side"}'
 vroid-cli demo '{"method": "render", "path": "./face.png", "view": "front", "frame": "head"}'
-vroid-cli demo '{"method": "render", "path": "./sheet.png", "view": ["front", "side", "back"], "width": 512, "height": 1024, "reference": "./turnaround.png"}'
+vroid-cli demo '{"method": "render", "path": "./sheet.png", "view": ["front", "three_quarter", "side", "back"], "width": 512, "height": 1024, "reference": "./turnaround.png"}'
 ```
 
 VRoid's built-in items have no names, only thumbnails. `thumbnails` draws

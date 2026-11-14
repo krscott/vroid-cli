@@ -75,8 +75,8 @@ public static class Framing
         return new Vec(Math.Sin(angle), 0, Math.Cos(angle));
     }
 
-    /// The whole model, anchored at the floor below `origin`, the model's root,
-    /// and centred on it. Width comes from the horizontal reach in any
+    /// The whole model, anchored at `origin`, the model's root, which is on the
+    /// floor in VRoid 2.16.0. Width comes from the horizontal reach in any
     /// direction, so every body view of one model at one image size shares its
     /// scale and ground line.
     public static Extent Body(IReadOnlyList<Box> parts, Vec origin)
@@ -107,25 +107,35 @@ public static class Framing
         return Math.Sqrt(x * x + z * z);
     });
 
-    /// The smallest `Shot.Size` that shows `extent` with its margin. The anchor
-    /// sits at a fixed height in the image, so the margin below it is
-    /// `Size * (1 - 1 / Margin)` and the frame shows `2 * Size / Margin` above it.
+    /// The smallest `Shot.Size` that shows `extent` with its margin. The image
+    /// spans `Size * (1 - 1 / Margin)` below the anchor, which is the margin, and
+    /// leaves room for `2 * Size / Margin` above it with the same margin at the
+    /// top. Anything below the anchor keeps `Margin - 1` of its depth clear
+    /// below it.
     public static double Fit(Extent extent, double aspect) => Margin * Math.Max(
         Math.Max(extent.Above / 2, extent.Reach / aspect),
-        extent.Below / (Margin - 1));
+        extent.Below / (1 - 1 / Margin));
+
+    // The smallest `Shot.Size` that shows `extent` at all, without margins: the
+    // image spans `Size * (1 - 1 / Margin)` below the anchor, `Size * (1 + 1 /
+    // Margin)` above it, and `Size * aspect` to each side.
+    private static double Least(Extent extent, double aspect) => Math.Max(
+        Math.Max(extent.Above / (1 + 1 / Margin), extent.Reach / aspect),
+        extent.Below / (1 - 1 / Margin));
 
     /// The `Shot.Size` for an image `height` pixels tall: the fitted one, or
-    /// the one at `scale` pixels per metre, which must show `extent`.
+    /// the one at `scale` pixels per metre, at which nothing of `extent` may be
+    /// cut off.
     public static double Size(Extent extent, double aspect, int height, double? scale)
     {
-        var fit = Fit(extent, aspect);
-        if (scale is not double wanted) return fit;
+        if (scale is not double wanted) return Fit(extent, aspect);
         var size = height / (2 * wanted);
+        var least = Least(extent, aspect);
         // Tolerates rounding when a reported scale is passed back.
-        if (size < fit * (1 - 1e-9))
+        if (size < least * (1 - 1e-9))
             throw new InvalidOperationException(
                 string.Create(CultureInfo.InvariantCulture,
-                    $"At scale {wanted} the character does not fit in the image; the largest scale that fits is {Math.Floor(Scale(fit, height) * 1000) / 1000}"));
+                    $"At scale {wanted} the image would cut off the character; the largest scale that fits is {Math.Floor(Scale(least, height) * 1000) / 1000}"));
         return size;
     }
 

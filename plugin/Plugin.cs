@@ -836,7 +836,7 @@ public sealed partial class Plugin : BasePlugin
                 var views = request.Body.GetProperty("view").EnumerateArray().Select(view => Framing.ParseView(view.GetString()!)).ToArray();
                 var reference = request.Body.GetProperty("reference");
                 var scale = request.Body.GetProperty("scale");
-                var (png, used) = CharacterRender.Sheet(origin, views, Framing.ParseFrame(request.Text("frame")),
+                var (png, used) = CharacterRender.Png(origin, views, Framing.ParseFrame(request.Text("frame")),
                     request.Body.GetProperty("width").GetInt32(), request.Body.GetProperty("height").GetInt32(),
                     reference.ValueKind == JsonValueKind.Null ? null : reference.GetString(),
                     scale.ValueKind == JsonValueKind.Null ? null : scale.GetDouble());

@@ -680,17 +680,16 @@ it is copied. `thumbnails` finds the category as `items` does, which switches
 the editor's section, and sets the edit root's `EditMode` back when it ends,
 whether or not it succeeds. It waits for each task between frames, and fails if
 one faults or returns null, or if a thumbnail is not 300x400. It blits each
-texture with bilinear filtering into a 150x200 `RenderTexture`, restoring the
-active render texture that `Blit` changes, reads that into a reused RGB24
-`Texture2D`, and copies the raw bytes into a `Sheet` (`plugin/Sheet.cs`, a
-`Canvas`, below, which `tests/protocol` also builds). The sheet lays cells out in rows of 10 in
-`items` order, separated by a 4-pixel white gutter, and draws each identifier
-below its thumbnail with an embedded 5x9 bitmap font at twice its size, so no
-Unity font, canvas, or UI is involved. The font covers exactly the characters
-an identifier may hold; a label longer than 12 characters fails as a VRoid
-difference. One RGB24 texture loads the sheet's bytes for `EncodeToPNG`. A
-category of 82 items takes about 2 s. The PNG is published like `render`'s,
-below (R-VIEW-3).
+texture with bilinear filtering into a 150x200 `RenderTexture`, reads that
+into an RGB24 `Texture2D`, and copies the raw bytes into a `Sheet`
+(`plugin/Sheet.cs`, a `Canvas`, below, which `tests/protocol` also builds).
+The sheet lays cells out in rows of 10 in `items` order, separated by a
+4-pixel white gutter, and draws each identifier below its thumbnail with an
+embedded 5x9 bitmap font at twice its size, so no Unity font, canvas, or UI is
+involved. The font covers exactly the characters an identifier may hold; a
+label longer than 12 characters fails as a VRoid difference. One RGB24
+texture loads the sheet's bytes for `EncodeToPNG`. A category of 82 items
+takes about 2 s. The PNG is published like `render`'s, below (R-VIEW-3).
 
 ### Rendering
 
@@ -730,29 +729,30 @@ The fitted size shows that region with a 5% margin, so the bounds, which
 include everything worn, set the scale: an item that makes the model taller or
 wider, such as an ahoge, a hat, or a long top, changes it. Every render reports
 its scale in pixels per metre, and a request may give one instead (R-VIEW-6).
-Since the anchor's pixel depends only on the image height, renders of one view,
-frame, and size at one scale line up across character states. A given scale
-that cannot show the region is refused, and the error names the largest that
-can, rounded down to 0.001 so it can be passed back; the check tolerates the
-rounding of a reported scale passed back, and a given scale is reported as
-given. The camera stands outside the bounds, so no part of the model is
-clipped.
+Since the anchor's pixel depends only on the image size, renders of one view,
+frame, and size at one scale line up across character states. A given scale at
+which the region would reach past the image's edges is refused, and the error
+names the largest that would not, rounded down to 0.001 so it can be passed
+back; the check tolerates the rounding of a reported scale passed back, and a
+given scale is reported as given. The camera stands outside the bounds, so no
+part of the model is clipped.
 
 All views of one request share one size, so they share their scale (R-VIEW-1).
 `plugin/Canvas.cs`, which `tests/protocol` also builds, assembles the image
-from the views' raw RGB bytes, left to right. Its background is the first
-view's top-left pixel, which every frame's margin leaves background. With a
-`reference`, a row as wide as the views and as tall as one sits above them
-(R-VIEW-5). The bridge reads the file and decodes it with
-`ImageConversion.LoadImage(Texture2D, byte[])`, which handles PNG and JPEG and
-returns false otherwise; the IL2CPP build has a second two-argument overload,
-so the bridge selects this one by its parameter types. A `Graphics.Blit` into
-an ARGB `RenderTexture` and a read into an RGBA32 `Texture2D` convert whichever
-format `LoadImage` chose. The canvas scales the pixels with a separable
-triangle filter that widens when shrinking, so every source pixel contributes,
-on premultiplied alpha, then centres them in the row and blends them over the
-background. One RGB24 texture loads the canvas's bytes for `EncodeToPNG`. A
-four-view sheet at 512x1024 per view with a 1774x887 reference takes about 1 s.
+from the views' raw RGB bytes, left to right, on the background colour, which
+the camera reads from a render of nothing first. With a `reference`, a row as
+wide as the views and as tall as one sits above them (R-VIEW-5). The bridge
+reads the file and decodes it with `ImageConversion.LoadImage(Texture2D,
+byte[])` into a texture with mipmaps; it handles PNG and JPEG and returns false
+otherwise. The IL2CPP build has a second two-argument overload, so the bridge
+selects this one by its parameter types. A trilinear, clamped `Graphics.Blit`
+scales the image to fit the row without changing its aspect ratio, into an ARGB
+`RenderTexture` read into an RGBA32 `Texture2D`, so a shrink averages the
+pixels it skips and only the fitted pixels reach managed memory. The canvas
+centres them in the row and blends them over the background by their alpha.
+`plugin/Textures.cs` holds the blit, readback, and PNG encoding that `render`
+and `thumbnails` share. A four-view sheet at 512x1024 per view with a 1774x887
+reference takes about 1 s.
 
 The bridge writes the PNG of `render` or `thumbnails` to the path it is given
 with `FileMode.CreateNew` and deletes the file if the write fails. The CLI

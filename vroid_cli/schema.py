@@ -470,10 +470,11 @@ class Render(Model):
         "turnaround, drawn in a row above the views as wide as all of them and "
         "as tall as one, scaled to fit without changing its aspect ratio",
     )
-    scale: PositiveFloat | None = Field(
+    scale: Annotated[float, Field(ge=1)] | None = Field(
         None,
-        description="pixels per metre, as an earlier result reports it; omit it "
-        "to fit the frame. Refused if the frame would not fit.",
+        description="pixels per metre, such as an earlier result's `scale` or a "
+        "fraction of it; omit it to fit the frame. Refused if it would cut off "
+        "the character.",
     )
 
     @field_validator("path")

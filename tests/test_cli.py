@@ -1114,7 +1114,7 @@ def test_status_of_a_new_session_is_one_json_value(tmp_path: Path) -> None:
         ({"view": ["front", "left"]}, "or a non-empty list of them"),
         ({"view": ["front"] * 5}, "the image would be 5120x1024 pixels"),
         ({"reference": "ref.png", "height": 2049}, "image would be 1024x4098"),
-        ({"scale": 0}, "scale: Input should be greater than 0"),
+        ({"scale": 0.9}, "scale: Input should be greater than or equal to 1"),
         ({"scale": "500"}, "scale: Input should be a valid number"),
         ({"reference": "missing.png"}, "missing.png is not an existing file"),
         ({"reference": "notes.png"}, "notes.png is not a PNG or JPEG image"),
