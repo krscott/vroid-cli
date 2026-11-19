@@ -1269,7 +1269,7 @@ PUBLISHED: dict[str, tuple[dict[str, Any], str]] = {
     "render": ({"view": "front"}, "image.png"),
     "thumbnails": ({"section": "Outfit", "category": "Tops"}, "image.png"),
     "export": ({"index": 1}, "ears.vroidcustomitem"),
-    "export_vrm": ({"title": "Alice", "author": "Kris"}, "alice.vrm"),
+    "export_vrm": ({"title": "Alice", "author": "Sam"}, "alice.vrm"),
 }
 
 
@@ -1333,7 +1333,7 @@ def test_files_are_published_at_the_callers_path(tmp_path: Path, method: str) ->
         assert request["index"] == 1
     elif method == "export_vrm":
         assert temporary.name.startswith(".vroid-vrm-")
-        assert (request["title"], request["author"]) == ("Alice", "Kris")
+        assert (request["title"], request["author"]) == ("Alice", "Sam")
         assert request["vrm_version"] == "1.0"
     else:
         assert temporary.name.startswith(".vroid-render-")
@@ -1431,7 +1431,7 @@ def test_invalid_custom_item_requests_are_rejected_without_state(
         ({"title": None}, "title: Input should be a valid string"),
         ({"title": ""}, "title: String should match pattern"),
         ({"author": " \t"}, "author: String should match pattern"),
-        ({"author": ["Kris"]}, "author: Input should be a valid string"),
+        ({"author": ["Sam"]}, "author: Input should be a valid string"),
         ({"vrm_version": "1"}, "vrm_version: Input should be '1.0' or '0.0'"),
         ({"vrm_version": 1.0}, "vrm_version: Input should be '1.0' or '0.0'"),
         ({"licence": "CC0"}, "licence: Extra inputs"),
@@ -1446,7 +1446,7 @@ def test_invalid_vrm_requests_are_rejected_without_state(
         "method": "export_vrm",
         "path": "alice.vrm",
         "title": "Alice",
-        "author": "Kris",
+        "author": "Sam",
     } | fields
     result = run_cli(tmp_path, "test", json.dumps(request))
     assert result.returncode == 2
@@ -1470,7 +1470,7 @@ def test_export_vrm_sends_the_version_it_is_given(tmp_path: Path) -> None:
             "export_vrm",
             path="alice.vrm",
             title="Alice",
-            author="Kris",
+            author="Sam",
             vrm_version="0.0",
         )
     assert result.returncode == 0, result.stderr

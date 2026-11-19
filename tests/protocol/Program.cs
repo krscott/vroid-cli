@@ -733,12 +733,12 @@ Test("a VRM file names its version, title, and author", _ =>
         }
         return new MemoryStream(body.ToArray()[..^cut]);
     }
-    const string Vrm1 = """{"asset": {"version": "2.0"}, "extensions": {"VRMC_vrm": {"specVersion": "1.0", "meta": {"name": "Alice", "authors": ["Kris", "Sam"]}}}}""";
-    const string Vrm0 = """{"asset": {"version": "2.0"}, "extensions": {"VRM": {"specVersion": "0.0", "meta": {"title": "Alice", "author": "Kris"}}}}""";
+    const string Vrm1 = """{"asset": {"version": "2.0"}, "extensions": {"VRMC_vrm": {"specVersion": "1.0", "meta": {"name": "Alice", "authors": ["Sam", "Ada"]}}}}""";
+    const string Vrm0 = """{"asset": {"version": "2.0"}, "extensions": {"VRM": {"specVersion": "0.0", "meta": {"title": "Alice", "author": "Sam"}}}}""";
     using (var file = Glb(Vrm1))
-        Check(VrmFile.Read(file) == new VrmMeta("1.0", "Alice", "Kris"), "VRM 1.0 metadata");
+        Check(VrmFile.Read(file) == new VrmMeta("1.0", "Alice", "Sam"), "VRM 1.0 metadata");
     using (var file = Glb(Vrm0))
-        Check(VrmFile.Read(file) == new VrmMeta("0.0", "Alice", "Kris"), "VRM 0.0 metadata");
+        Check(VrmFile.Read(file) == new VrmMeta("0.0", "Alice", "Sam"), "VRM 0.0 metadata");
     // VRoid leaves empty VRM 0.0 fields out.
     using (var file = Glb("""{"extensions": {"VRM": {"meta": {}}}}"""))
         Check(VrmFile.Read(file) == new VrmMeta("0.0", "", ""), "empty VRM 0.0 metadata");
