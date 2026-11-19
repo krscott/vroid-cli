@@ -1,8 +1,8 @@
 // Exercises plugin/Bridge.cs, the app side of the file protocol, the colour
 // rules in plugin/Colors.cs, custom item files in plugin/CustomItemFile.cs,
-// the camera placement in plugin/Framing.cs, item identifiers and accessory
-// matching in plugin/ItemIds.cs, and the image layout in plugin/Canvas.cs and
-// plugin/Sheet.cs, without Unity.
+// VRM files in plugin/VrmFile.cs, the camera placement in plugin/Framing.cs,
+// item identifiers and accessory matching in plugin/ItemIds.cs, and the image
+// layout in plugin/Canvas.cs and plugin/Sheet.cs, without Unity.
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
@@ -702,6 +702,69 @@ Test("a custom item file names its kind", directory =>
                  (Zip(("v1customitem/meta.json", "[]")), "not a VRoid custom item file"),
                  (Zip(("v1customitem/meta.json", "{")), "not a VRoid custom item file"),
                  (Zip(("v1customitem/meta.json", "{}")), "names no rootTransferableGroupTypeId"),
+             })
+        using (file)
+            Check(Refusal(file).Contains(reason), Refusal(file));
+});
+
+// R-EDIT-18
+Test("a VRM file names its version, title, and author", _ =>
+{
+    // A binary glTF with `json` as its JSON chunk and a BIN chunk, padded to
+    // 4 bytes as glTF requires. `cut` drops bytes from the end; `declared`
+    // replaces the header's length; `chunk` replaces the JSON chunk's type.
+    MemoryStream Glb(string json, int cut = 0, uint? declared = null, uint chunk = 0x4E4F534A, uint version = 2)
+    {
+        var text = Encoding.UTF8.GetBytes(json);
+        text = text.Concat(Enumerable.Repeat((byte)' ', (4 - text.Length % 4) % 4)).ToArray();
+        var bin = new byte[8];
+        var body = new MemoryStream();
+        using (var writer = new BinaryWriter(body, Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(0x46546C67u);
+            writer.Write(version);
+            writer.Write(declared ?? (uint)(12 + 8 + text.Length + 8 + bin.Length));
+            writer.Write((uint)text.Length);
+            writer.Write(chunk);
+            writer.Write(text);
+            writer.Write((uint)bin.Length);
+            writer.Write(0x004E4942u);
+            writer.Write(bin);
+        }
+        return new MemoryStream(body.ToArray()[..^cut]);
+    }
+    const string Vrm1 = """{"asset": {"version": "2.0"}, "extensions": {"VRMC_vrm": {"specVersion": "1.0", "meta": {"name": "Alice", "authors": ["Kris", "Sam"]}}}}""";
+    const string Vrm0 = """{"asset": {"version": "2.0"}, "extensions": {"VRM": {"specVersion": "0.0", "meta": {"title": "Alice", "author": "Kris"}}}}""";
+    using (var file = Glb(Vrm1))
+        Check(VrmFile.Read(file) == new VrmMeta("1.0", "Alice", "Kris"), "VRM 1.0 metadata");
+    using (var file = Glb(Vrm0))
+        Check(VrmFile.Read(file) == new VrmMeta("0.0", "Alice", "Kris"), "VRM 0.0 metadata");
+    // VRoid leaves empty VRM 0.0 fields out.
+    using (var file = Glb("""{"extensions": {"VRM": {"meta": {}}}}"""))
+        Check(VrmFile.Read(file) == new VrmMeta("0.0", "", ""), "empty VRM 0.0 metadata");
+    string Refusal(Stream file)
+    {
+        try
+        {
+            return $"read {VrmFile.Read(file)}";
+        }
+        catch (ArgumentException error)
+        {
+            return error.Message;
+        }
+    }
+    foreach (var (file, reason) in new (Stream, string)[]
+             {
+                 (new MemoryStream(Encoding.UTF8.GetBytes("garbage, not glTF")), "it is not a binary glTF file"),
+                 (new MemoryStream(Encoding.UTF8.GetBytes("glTF")), "not a VRM file"),
+                 (Glb(Vrm1, version: 1), "it is glTF version 1, not 2"),
+                 (Glb(Vrm1, cut: 4), "its header gives"),
+                 (Glb(Vrm1, declared: 12), "its header gives 12 bytes"),
+                 (Glb(Vrm1, chunk: 0x004E4942), "its first chunk is not JSON"),
+                 (Glb("""{"asset": {"version": "2.0"}}"""), "it has no VRMC_vrm or VRM extension"),
+                 (Glb("""{"extensions": {"VRMC_vrm": {}}}"""), "has no meta object"),
+                 (Glb("""{"extensions": 3}"""), "it has no VRMC_vrm or VRM extension"),
+                 (Glb("{"), "not a VRM file"),
              })
         using (file)
             Check(Refusal(file).Contains(reason), Refusal(file));

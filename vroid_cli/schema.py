@@ -464,6 +464,41 @@ class Export(Model):
         return new_file(item_path(value))
 
 
+# Text with at least one character that is not white space, which VRoid's
+# own export dialog requires of a VRM's title and author.
+MetaText = Annotated[str, StringConstraints(pattern=r"\S")]
+VrmVersion = Literal["1.0", "0.0"]
+
+
+class ExportVrm(Model):
+    """Write the open character to a new .vrm file in an existing directory
+    through VRoid's own VRM export, without changing the project. The export
+    uses VRoid's defaults: no polygon, material, or bone reduction, textures at
+    their own size, and VRoid's most restrictive licence, which allows use by
+    the author only and no redistribution or modification."""
+
+    method: Literal["export_vrm"]
+    path: Path
+    title: MetaText = Field(
+        description="the model's name in the file's metadata (VRM 1.0 `name`, "
+        "VRM 0.0 `title`), such as the character's name"
+    )
+    author: MetaText = Field(
+        description="the author in the file's metadata (VRM 1.0 `authors`, VRM "
+        "0.0 `author`); ask the user rather than guess"
+    )
+    vrm_version: VrmVersion = Field(
+        "1.0",
+        description="1.0, the current VRM, or 0.0 for apps that read only VRM "
+        "0.x; Blender's VRM add-on reads both",
+    )
+
+    @field_validator("path")
+    @classmethod
+    def new(cls, value: Path) -> Path:
+        return new_file(resolved(value, ".vrm", "VRM"))
+
+
 class Save(Model):
     """Save the project to a new .vroid path in an existing directory."""
 
@@ -604,6 +639,7 @@ Request = Annotated[
     | Apply
     | Import
     | Export
+    | ExportVrm
     | Save
     | Render
     | Thumbnails,
@@ -620,6 +656,7 @@ BridgeRequest = (
     | Apply
     | Import
     | Export
+    | ExportVrm
     | Save
     | Render
     | Thumbnails
@@ -761,6 +798,10 @@ class Exported(Model):
     bytes: int
 
 
+class ExportedVrm(Exported):
+    vrm_version: VrmVersion
+
+
 class Saved(Model):
     saved: str
     bytes: int
@@ -800,6 +841,7 @@ RESULTS: dict[str, TypeAdapter[Any]] = {
     "apply": TypeAdapter(Applied),
     "import": TypeAdapter(Imported),
     "export": TypeAdapter(Exported),
+    "export_vrm": TypeAdapter(ExportedVrm),
     "save": TypeAdapter(Saved),
     "render": TypeAdapter(RenderedViews),
     "thumbnails": TypeAdapter(Thumbnailed),

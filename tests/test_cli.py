@@ -1259,7 +1259,7 @@ def published_files(directory: Path) -> list[str]:
     return sorted(
         path.name
         for path in directory.iterdir()
-        if path.suffix in (".png", ".vroidcustomitem")
+        if path.suffix in (".png", ".vroidcustomitem", ".vrm")
     )
 
 
@@ -1269,12 +1269,15 @@ PUBLISHED: dict[str, tuple[dict[str, Any], str]] = {
     "render": ({"view": "front"}, "image.png"),
     "thumbnails": ({"section": "Outfit", "category": "Tops"}, "image.png"),
     "export": ({"index": 1}, "ears.vroidcustomitem"),
+    "export_vrm": ({"title": "Alice", "author": "Kris"}, "alice.vrm"),
 }
 
 
 def published_result(request: dict[str, Any], size: int) -> dict[str, Any]:
     if request["method"] == "export":
         return {"exported": request["path"], "bytes": size}
+    if request["method"] == "export_vrm":
+        return {"exported": request["path"], "bytes": size, "vrm_version": "1.0"}
     result: dict[str, Any] = {"rendered": request["path"], "bytes": size}
     if request["method"] == "render":
         result["scale"] = 512.5
@@ -1310,7 +1313,7 @@ def publish(tmp_path: Path, method: str) -> subprocess.CompletedProcess[str]:
 
 @pytest.mark.parametrize("method", PUBLISHED)
 def test_files_are_published_at_the_callers_path(tmp_path: Path, method: str) -> None:
-    # R-VIEW-3, R-EDIT-16
+    # R-VIEW-3, R-EDIT-16, R-EDIT-19
     rpc = bridge(tmp_path)
     name = PUBLISHED[method][1]
     with answer(rpc, writes_file(b"written")) as received:
@@ -1328,6 +1331,10 @@ def test_files_are_published_at_the_callers_path(tmp_path: Path, method: str) ->
     if method == "export":
         assert temporary.name.startswith(".vroid-export-")
         assert request["index"] == 1
+    elif method == "export_vrm":
+        assert temporary.name.startswith(".vroid-vrm-")
+        assert (request["title"], request["author"]) == ("Alice", "Kris")
+        assert request["vrm_version"] == "1.0"
     else:
         assert temporary.name.startswith(".vroid-render-")
     if method == "render":
@@ -1341,7 +1348,7 @@ def test_files_are_published_at_the_callers_path(tmp_path: Path, method: str) ->
 def test_files_never_replace_a_destination_created_meanwhile(
     tmp_path: Path, method: str
 ) -> None:
-    # R-VIEW-3, R-EDIT-16
+    # R-VIEW-3, R-EDIT-16, R-EDIT-19
     rpc = bridge(tmp_path)
     destination = tmp_path / PUBLISHED[method][1]
     with answer(
@@ -1358,7 +1365,7 @@ def test_files_never_replace_a_destination_created_meanwhile(
 
 @pytest.mark.parametrize("method", PUBLISHED)
 def test_failed_files_leave_no_file(tmp_path: Path, method: str) -> None:
-    # R-VIEW-3, R-EDIT-16
+    # R-VIEW-3, R-EDIT-16, R-EDIT-19
     error = "Open or create a character first"
     rpc = bridge(tmp_path)
     with answer(rpc, writes_file(b"partial", error=error)):
@@ -1413,6 +1420,66 @@ def test_invalid_custom_item_requests_are_rejected_without_state(
     assert (tmp_path / "existing.vroidcustomitem").read_bytes() == b"earlier item"
     assert not (tmp_path / "x.vroidcustomitem").exists()
     assert not (tmp_path / "state").exists()
+
+
+@pytest.mark.parametrize(
+    ("fields", "reason"),
+    [
+        ({"path": "alice.glb"}, "path: VRM paths must end in .vrm"),
+        ({"path": "existing.vrm"}, "path: refusing to overwrite"),
+        ({"path": "missing/alice.vrm"}, "is not a directory"),
+        ({"title": None}, "title: Input should be a valid string"),
+        ({"title": ""}, "title: String should match pattern"),
+        ({"author": " \t"}, "author: String should match pattern"),
+        ({"author": ["Kris"]}, "author: Input should be a valid string"),
+        ({"vrm_version": "1"}, "vrm_version: Input should be '1.0' or '0.0'"),
+        ({"vrm_version": 1.0}, "vrm_version: Input should be '1.0' or '0.0'"),
+        ({"licence": "CC0"}, "licence: Extra inputs"),
+    ],
+)
+def test_invalid_vrm_requests_are_rejected_without_state(
+    tmp_path: Path, fields: dict[str, Any], reason: str
+) -> None:
+    # R-CLI-3, R-EDIT-19
+    (tmp_path / "existing.vrm").write_bytes(b"earlier model")
+    request = {
+        "method": "export_vrm",
+        "path": "alice.vrm",
+        "title": "Alice",
+        "author": "Kris",
+    } | fields
+    result = run_cli(tmp_path, "test", json.dumps(request))
+    assert result.returncode == 2
+    assert reason in result.stderr
+    assert (tmp_path / "existing.vrm").read_bytes() == b"earlier model"
+    assert not (tmp_path / "alice.vrm").exists()
+    assert not (tmp_path / "state").exists()
+
+
+def test_export_vrm_sends_the_version_it_is_given(tmp_path: Path) -> None:
+    rpc = bridge(tmp_path)
+
+    def reply(request: dict[str, Any]) -> dict[str, Any]:
+        Path(request["path"][2:]).write_bytes(b"glTF")
+        result = {"exported": request["path"], "bytes": 4, "vrm_version": "0.0"}
+        return {"ok": True, "result": result, "error": None}
+
+    with answer(rpc, reply) as received:
+        result = invoke(
+            tmp_path,
+            "export_vrm",
+            path="alice.vrm",
+            title="Alice",
+            author="Kris",
+            vrm_version="0.0",
+        )
+    assert result.returncode == 0, result.stderr
+    assert received[0]["vrm_version"] == "0.0"
+    assert json.loads(result.stdout) == {
+        "exported": str(tmp_path / "alice.vrm"),
+        "bytes": 4,
+        "vrm_version": "0.0",
+    }
 
 
 IMPORTED = {

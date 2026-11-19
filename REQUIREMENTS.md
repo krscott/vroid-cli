@@ -385,6 +385,32 @@ backfill unrelated requirements.
   The order of the angles is fixed, because a request whose angles changed
   meaning between versions would place accessories wrongly without an error.
 
+- **R-EDIT-18** [manual] `export_vrm` writes the open character to a new VRM
+  1.0 or VRM 0.0 file without a dialog and changes nothing in the project. The
+  file names the title and author that the request gives. Blender's VRM add-on
+  imports the file as a humanoid armature with the character's meshes and
+  materials.
+
+  Rationale: Blender, game engines, and VRM viewers read VRM, not `.vroid`
+  projects. Agents finish characters there with parts that VRoid has no item
+  for, such as bags and belts. VRoid's own export opens dialogs that no one can
+  close on the private display. An export that changed the project would make
+  a hand-off look like an edit.
+
+  Manual test: `just gui-smoke` exports an edited character as VRM 1.0 and as
+  VRM 0.0. It checks that `dump`, `modified`, a render, and the Framewisp input
+  log are unchanged, and that each file is a binary glTF with the VRM extension
+  of its version, the title, the author, and the humanoid bones. After a change
+  to the VRoid pin, also import both files with Blender's VRM add-on as
+  DESIGN.md's Testing section says, and check the armature, meshes, materials,
+  title, and author.
+
+- **R-EDIT-19** [test] `export_vrm` refuses an existing destination and leaves
+  it unchanged. The destination never holds a partial file.
+
+  Rationale: The destination may be an earlier deliverable. Blender or another
+  tool that finds the file must be able to import it.
+
 ## Views (VIEW)
 
 - **R-VIEW-1** [manual] `render` writes a PNG of the open character from the

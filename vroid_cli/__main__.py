@@ -73,19 +73,26 @@ def with_path(result: Any, key: str, path: Path) -> Any:
 # os.link errors that mean the filesystem has no hard links.
 NO_HARD_LINKS = {errno.EPERM, errno.EOPNOTSUPP, errno.ENOTSUP, errno.EXDEV}
 
+Published = schema.Render | schema.Thumbnails | schema.Export | schema.ExportVrm
+# Per method that publishes a file: the hidden file's kind and the result key
+# that names the file.
+PUBLISHED: dict[str, tuple[str, str]] = {
+    "render": ("render", "rendered"),
+    "thumbnails": ("render", "rendered"),
+    "export": ("export", "exported"),
+    "export_vrm": ("vrm", "exported"),
+}
 
-def publish(
-    session: sessions.Session,
-    request: schema.Render | schema.Thumbnails | schema.Export,
-) -> Any:
+
+def publish(session: sessions.Session, request: Published) -> Any:
     """Have the bridge write a hidden file beside the destination, then link it.
 
     The link is atomic and never replaces an existing file (R-VIEW-3,
-    R-EDIT-16). The hidden file is removed whatever happens; one left by a
-    crash is named `.vroid-render-*.png` or `.vroid-export-*.vroidcustomitem`.
+    R-EDIT-16, R-EDIT-19). The hidden file is removed whatever happens; one
+    left by a crash is named `.vroid-KIND-*` with the destination's suffix.
     """
     method = request.method
-    kind, key = ("export", "exported") if method == "export" else ("render", "rendered")
+    kind, key = PUBLISHED[method]
     temporary = request.path.with_name(
         f".vroid-{kind}-{uuid.uuid4().hex}{request.path.suffix}"
     )
@@ -96,7 +103,7 @@ def publish(
             os.link(temporary, request.path)
         except FileExistsError:
             raise RuntimeError(
-                f"refusing to overwrite {request.path}, created while drawing it"
+                f"refusing to overwrite {request.path}, created while writing it"
             ) from None
         except OSError as error:
             hint = (
@@ -127,7 +134,9 @@ def run(session: sessions.Session, request: schema.Request) -> Any:
             )
             key = "opened" if isinstance(request, schema.Open) else "saved"
             return with_path(result, key, request.path)
-        case schema.Render() | schema.Thumbnails() | schema.Export():
+        case (
+            schema.Render() | schema.Thumbnails() | schema.Export() | schema.ExportVrm()
+        ):
             return publish(session, request)
         case _:
             return sessions.request(

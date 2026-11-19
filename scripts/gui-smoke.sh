@@ -3,8 +3,9 @@
 # template round trip, then new characters and an imported accessory,
 # checking R-EDIT-1, R-EDIT-3, R-EDIT-5, R-EDIT-6, R-EDIT-7, R-EDIT-8,
 # R-EDIT-9, R-EDIT-11, R-EDIT-12, R-EDIT-13, R-EDIT-14 except its by-hand
-# offline check, R-EDIT-15, R-EDIT-16, R-SES-4, R-VIEW-1, R-VIEW-2, R-VIEW-4,
-# R-VIEW-5, and R-VIEW-6.
+# offline check, R-EDIT-15, R-EDIT-16, R-EDIT-18 except its by-hand Blender
+# import, R-EDIT-19, R-SES-4, R-VIEW-1, R-VIEW-2, R-VIEW-4, R-VIEW-5, and
+# R-VIEW-6.
 # Needs graphics access.
 set -euo pipefail
 shopt -s failglob
@@ -20,7 +21,8 @@ usage() {
         'the cat ears, undoing and redoing both edits and rendering at one scale' \
         'before and after, undoes a removal of the cat ears and a refused cat' \
         'tail, recolours the new top, undoing that and a later change of top,' \
-        'saves a copy, renders each view alone and in sheets under a reference,' \
+        'exports VRM 1.0 and 0.0 files, saves a copy, renders each view alone' \
+        'and in sheets under a reference,' \
         'draws the thumbnails of those two categories, restarts, checks the' \
         'saved values,' \
         'renders the cat ears hidden, then shown with their default name, and' \
@@ -94,6 +96,46 @@ same() {
     jq -en --argjson a "$1" --argjson b "$2" \
         'if ($a | type) == "string" then ($a | ascii_upcase) == ($b | ascii_upcase) else (($a - $b) | fabs) < 0.0001 end' \
         >/dev/null
+}
+
+# Check a VRM file: check_vrm PATH VERSION TITLE AUTHOR. It must be a binary
+# glTF 2.0 file as long as its header says, whose VRM extension of VERSION
+# names TITLE and AUTHOR and maps every humanoid bone VRM requires to a node,
+# with meshes and materials.
+check_vrm() {
+    python3 - "$@" <<'PY' || fatal "$1 is not the VRM expected; see the error above"
+import json
+import struct
+import sys
+
+path, version, title, author = sys.argv[1:]
+data = open(path, "rb").read()
+header = struct.unpack_from("<4sII", data)
+assert header == (b"glTF", 2, len(data)), header
+size, kind = struct.unpack_from("<I4s", data, 12)
+assert kind == b"JSON", kind
+gltf = json.loads(data[20 : 20 + size])
+if version == "1.0":
+    vrm = gltf["extensions"]["VRMC_vrm"]
+    meta = (vrm["meta"]["name"], vrm["meta"]["authors"])
+    expected = (title, [author])
+    bones = {name: bone["node"] for name, bone in vrm["humanoid"]["humanBones"].items()}
+else:
+    vrm = gltf["extensions"]["VRM"]
+    meta = (vrm["meta"]["title"], vrm["meta"]["author"])
+    expected = (title, author)
+    bones = {bone["bone"]: bone["node"] for bone in vrm["humanoid"]["humanBones"]}
+assert vrm["specVersion"] == version, vrm["specVersion"]
+assert meta == expected, meta
+required = {
+    "hips", "spine", "head",
+    "leftUpperArm", "leftLowerArm", "leftHand", "rightUpperArm", "rightLowerArm", "rightHand",
+    "leftUpperLeg", "leftLowerLeg", "leftFoot", "rightUpperLeg", "rightLowerLeg", "rightFoot",
+}
+assert required <= bones.keys(), required - bones.keys()
+assert all(0 <= node < len(gltf["nodes"]) for node in bones.values()), bones
+assert gltf["meshes"] and gltf["materials"], "no meshes or materials"
+PY
 }
 
 # Print a category's `items` result.
@@ -578,6 +620,36 @@ render front body 64 128 "$out/unsaved.png" >/dev/null
 [[ $(modified) == true ]] || fatal "rendering cleared the unsaved state"
 thumbnails Body 'Whole Body' "$out/unsaved-thumbnails.png" >/dev/null
 [[ $(modified) == true ]] || fatal "drawing thumbnails cleared the unsaved state"
+
+# Exporting a VRM of each version changes nothing in the app: values, unsaved
+# state, and a render stay the same, and the source project is left alone.
+# VRoid rebuilds the model on its way back to the editor, which each export
+# waits for. Each file names the title and author it was given (R-EDIT-18). An
+# existing destination is refused and left unchanged (R-EDIT-19).
+vroid '{"method": "dump"}' >"$out/before-vrm.json"
+render front body 64 128 "$out/before-vrm.png" >/dev/null
+source_sum=$(cksum <"$source")
+for version in 1.0 0.0; do
+    vrm=$out/smoke-$version.vrm
+    export_vrm=$(jq -cn --arg path "$vrm" --arg version "$version" \
+        '{method: "export_vrm", path: $path, title: "Smoke Test", author: "vroid-cli gui-smoke", vrm_version: $version}')
+    vroid "$export_vrm" | jq -e --arg version "$version" '.vrm_version == $version' >/dev/null ||
+        fatal "export_vrm did not report VRM $version"
+    vroid '{"method": "status"}' | jq -e '.bridge.updating == false' >/dev/null ||
+        fatal "export_vrm returned while the model was rebuilding"
+    check_vrm "$vrm" "$version" 'Smoke Test' 'vroid-cli gui-smoke'
+done
+[[ $(modified) == true ]] || fatal "exporting a VRM cleared the unsaved state"
+vroid '{"method": "dump"}' | cmp -s - "$out/before-vrm.json" || fatal "dump changed while exporting a VRM"
+render front body 64 128 "$out/after-vrm.png" >/dev/null
+cmp -s "$out/before-vrm.png" "$out/after-vrm.png" ||
+    fatal "a render changed while exporting a VRM; compare $out/before-vrm.png and $out/after-vrm.png"
+[[ $(cksum <"$source") == "$source_sum" ]] || fatal "exporting a VRM changed $source"
+cp "$vrm" "$out/vrm.copy"
+if vroid "$export_vrm" >/dev/null 2>&1; then
+    fatal "second export_vrm to $vrm succeeded"
+fi
+cmp -s "$vrm" "$out/vrm.copy" || fatal "a refused export_vrm changed $vrm"
 
 save=$(jq -cn --arg path "$edited" '{method: "save", path: $path}')
 vroid "$save" >/dev/null
