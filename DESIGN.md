@@ -266,7 +266,9 @@ The bridge tracks these app objects:
   calls the Outfit editor `ClothingEditor`.
 - Rebuilds: `VRoidCoreModelUpdater.set_IsUpdatingModel` counts each
   true-to-false transition and captures the updater, whose `ModelOrigin` is
-  the root transform of the model on screen.
+  the root transform of the model on screen. It skips the bus's
+  `PreviewModelUpdater`, which rebuilds the copy that VRoid's VRM export
+  screen shows (below).
 
 Operations:
 
@@ -282,6 +284,7 @@ Operations:
 | `apply` | Items, then accessories, below; then `parameters` for each named category, and parameter `set_CombinedValue` or `set_Value`, or a colour's setter, per changed value | One rebuild finished per changed item, accessory, accessory bone, placement, hidden or locked flag, and value (R-EDIT-6) |
 | `import` | The custom item registry's `ImportCustomItemByTransferableType`, below | Task completed, one more instance listed, its rebuilds finished, and its colour fields built |
 | `export` | The custom item registry's `ExportAccessoryTemplate`, below | Call returned and the file names the accessory's kind |
+| `export_vrm` | Edit root `EnterToVRMExport`, then the photo booth's `OnVRM1SettingChanged` or `OnVRMSettingChanged`, below | Task true, the file names the version, title, and author, and the editor is back with no rebuild for 20 frames |
 | `save` | Edit root `_mainActionHandler.SaveSync(path, true)` | Call returned true and the file is nonempty |
 | `render` | A temporary Unity camera renders `ModelOrigin`, below | PNG written to a new file |
 | `thumbnails` | The category's options' `Preview.Create()`, below | PNG written to a new file |
@@ -604,6 +607,48 @@ restores the editor's section afterwards. Without this, `dump` would drop the
 colour and `apply` would refuse it until the accessory was saved shown and
 unlocked and reopened.
 
+### VRM export
+
+VRoid's Export as VRM screen (`VRoid.Studio.VRMExportScreen.ViewModel`) shows
+a copy of the model that the legacy photo booth
+(`VRoidStudio.GUI.AvatarEditor.PhotoBooth.PhotoBoothViewModel`, the edit
+root's `obsoleteLegacyPhotoBoothViewModel`) builds through the bus's
+`PreviewModelUpdater`. Its Export button opens a metadata dialog and a save
+dialog, then calls `OnVRM1SettingChanged(VRM10ObjectMeta, path,
+TaskCompletionSource<bool>)`, or `OnVRMSettingChanged` with a `glTF_VRM_Meta`
+for VRM 0.0, which starts the export and completes the task with whether it
+wrote the file, in about 1.5 s for a base character. `export_vrm` calls the
+edit root's `EnterToVRMExport`, waits until the bus's `ScreenNavigation` shows
+the screen a frame later, and makes that call (R-EDIT-18). Its metadata is
+`VRoidStudioExportUtil.BuildDefaultVRM10MetaData()` or
+`BuildDefaultVRM0MetaData()`, which hold VRoid's most restrictive licence, with
+the request's title and author. VRM 1.0 refuses an empty name or author list,
+and VRoid's dialog refuses an empty title or author for both versions, so the
+CLI does too. VRoid's dialog starts at VRM 1.0, as the request does.
+
+The photo booth's `ExportSettings` hold the export's options: polygon, hair
+bone, and material reduction, the atlas size, texture size, and hair mesh
+combination. They start at VRoid's defaults, no reduction and textures at
+their own size, in every app run, and keep their values between exports.
+Setting them rebuilds the preview, and vroid-cli never changes them, so the
+bridge only checks that they are at the defaults.
+
+The bridge reads the file with `plugin/VrmFile.cs`, which `tests/protocol` also
+builds, and checks its version, title, and author. It then pops the screen and
+waits until rebuilds stop for 20 frames: VRoid rebuilds the model from the
+unchanged project on its way back to the editor, in about 100 frames. The
+project, `modified`, and `dump` stay as they were. VRoid leaves hidden
+accessories out of the file, as `render` does. It refuses while VRoid
+shows a dialog or the editor is not the active screen.
+
+A failed export completes the task with false, logs the exception in
+`player.log`, and opens VRoid's `ExportFailedDialog`, which no one could close
+on the private display. The bridge dismisses it through the bus's
+`DialogProvider`, pops the screen, deletes the file, and reports the failure
+and where its reason is: a Harmony hook on VRoid's error callback crashed the
+app. That cleanup runs as the request ends, so it does not wait for the model's
+rebuild; requests that read the model wait for rebuilds themselves.
+
 ### Colours
 
 A colour is a field in a category's editor panel, or for outfits in the
@@ -783,8 +828,9 @@ with `FileMode.CreateNew` and deletes the file if the write fails. The CLI
 gives it a hidden `.vroid-render-HEX.png` beside the destination, publishes it
 with `os.link`, which is atomic and fails if the destination exists, and
 removes the hidden file in a `finally`, so a destination is never replaced or
-partly written (R-VIEW-3). `export` works the same way with a hidden
-`.vroid-export-HEX.vroidcustomitem` (R-EDIT-16). A CLI that stops waiting
+partly written (R-VIEW-3). `export` and `export_vrm` work the same way with a
+hidden `.vroid-export-HEX.vroidcustomitem` (R-EDIT-16) or `.vroid-vrm-HEX.vrm`
+(R-EDIT-19). A CLI that stops waiting
 before the bridge answers, because it was killed, interrupted, or timed out,
 can leave one.
 
@@ -809,9 +855,11 @@ stdin. Every method is a request, so saved requests work in any session.
 misspelled fields (R-CLI-3). Its JSON parser keeps the last of repeated keys,
 so the CLI rejects repeated keys first. Validation refuses non-finite values
 and colours that are not `#RRGGBB` in either case (R-EDIT-2) and checks
-`.vroid`, `.png`, and `.vroidcustomitem` suffixes, an existing `open` or
-`import` source, a new `save`, `render`, `thumbnails`, or `export`
-destination in an existing directory (R-EDIT-4, R-VIEW-3, R-EDIT-16), a
+`.vroid`, `.png`, `.vroidcustomitem`, and `.vrm` suffixes, an existing `open`
+or `import` source, a new `save`, `render`, `thumbnails`, `export`, or
+`export_vrm` destination in an existing directory (R-EDIT-4, R-VIEW-3,
+R-EDIT-16, R-EDIT-19), an `export_vrm` title and author that are not only
+white space, a
 `render` reference that exists and starts with a PNG or JPEG signature
 (R-VIEW-5), and a `render` image of at most 4096 pixels per side, all before
 touching session state. The CLI always sends `render`'s `view` as a list,
@@ -821,8 +869,8 @@ then x about x, then y about y, the order of Unity's `Quaternion.Euler`
 (R-EDIT-17). The bridge, `dump`, and undo files therefore know only
 quaternions, and the bridge's unit-length check (R-EDIT-3) passes every
 converted angle. Paths resolve against the current directory,
-and `open`, `save`, `render`, `thumbnails`, and `export` report the resolved
-path rather than the bridge's Wine path. The bridge rechecks the destination
+and `open`, `save`, `render`, `thumbnails`, `export`, and `export_vrm` report
+the resolved path rather than the bridge's Wine path. The bridge rechecks the destination
 before saving. Validation errors print one `FIELD: REASON` line each. Output is
 indented JSON, so saved templates diff line by line.
 
@@ -843,7 +891,7 @@ errors (R-CLI-2).
 - `tests/test_launcher.py`: the launcher against a stand-in Wine and a
   read-only stand-in store.
 - `tests/protocol`: the bridge's file protocol, colour rules, custom item
-  files, camera placement and scale, item identifiers, accessory matching and
+  files, VRM files, camera placement and scale, item identifiers, accessory matching and
   bones, image layout and reference fitting, and thumbnail sheet layout and
   font under the .NET SDK.
 
@@ -854,7 +902,11 @@ renamed, hidden, and locked, with front renders at one scale before and after
 that must line up while the fitted scale shrinks and the first fitted scale is
 refused (R-VIEW-6), a check that an accessory slider's listed bounds
 match `apply`'s refusal, and the undo of its removal, outfit colour edits that
-keep the item built in (R-EDIT-12), refusal, save, an export of the moved cat
+keep the item built in (R-EDIT-12), refusal, VRM 1.0 and 0.0 exports with
+unsaved changes that keep `dump`, `modified`, a render, and the source project
+as they were, return with no rebuild running, name their title, author, and
+required humanoid bones, and refuse an existing destination (R-EDIT-18,
+R-EDIT-19), save, an export of the moved cat
 ears that changes nothing and refuses an existing destination (R-EDIT-16),
 rendering every view alone and in sheets under a PNG and a JPEG reference it
 writes itself, with refusals of a missing reference, a text file, and a
@@ -876,6 +928,28 @@ size, the framing of each view, a shared lowest row, and the reference row,
 checks each thumbnail sheet's size and items, and compares
 `dump` and an editor screenshot before and after rendering and drawing
 thumbnails. It needs graphics access.
+
+R-EDIT-18's Blender import is by hand: export one character as VRM 1.0 and
+0.0, then import both headless with the
+[VRM add-on](https://github.com/saturday06/VRM-Addon-for-Blender)'s release
+zip unpacked as `ADDONS/addons/io_scene_vrm`. Each file must print
+`{'FINISHED'}`, one armature, its meshes and materials, and the title and
+author:
+
+```sh
+BLENDER_USER_SCRIPTS=ADDONS nix run nixpkgs#blender -- -b --factory-startup --python-expr '
+import addon_utils, bpy, sys
+for path in sys.argv[sys.argv.index("--") + 1:]:
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    addon_utils.enable("io_scene_vrm", default_set=True)
+    result = bpy.ops.import_scene.vrm(filepath=path)
+    kinds = [o.type for o in bpy.data.objects]
+    ext = next(o for o in bpy.data.objects if o.type == "ARMATURE").data.vrm_addon_extension
+    meta = ext.vrm1.meta if ext.is_vrm1() else ext.vrm0.meta
+    names = (meta.vrm_name, [a.value for a in meta.authors]) if ext.is_vrm1() else (meta.title, meta.author)
+    print(path, result, kinds.count("ARMATURE"), kinds.count("MESH"), len(bpy.data.materials), names)
+' -- A.vrm B.vrm
+```
 
 R-EDIT-14's offline check is by hand: for each base, launch a session without
 network access, then run `new` as usual; the app keeps the namespaces `launch`

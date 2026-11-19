@@ -87,6 +87,7 @@ public sealed partial class Plugin : BasePlugin
     // A completed rebuild is the only completion signal for opens and edits.
     public static void ModelUpdating(object __instance, bool value)
     {
+        if (IsPreviewUpdater(__instance)) return;
         updater = __instance;
         if (!value && updating) rebuilt++;
         updating = value;
@@ -813,6 +814,9 @@ public sealed partial class Plugin : BasePlugin
                 break;
             case "export":
                 foreach (var step in Export(request)) yield return step;
+                break;
+            case "export_vrm":
+                foreach (var step in ExportVrm(request)) yield return step;
                 break;
             case "save":
             {

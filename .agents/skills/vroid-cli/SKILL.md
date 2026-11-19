@@ -39,6 +39,7 @@ vroid-cli alice '{"method": "export", "index": 0, "path": "./ears.vroidcustomite
 vroid-cli alice '{"method": "dump"}' > alice.json
 vroid-cli alice @alice.json
 vroid-cli alice '{"method": "save", "path": "./alice-v2.vroid"}'
+vroid-cli alice '{"method": "export_vrm", "path": "./alice.vrm", "title": "Alice", "author": "Sam"}'
 vroid-cli alice '{"method": "render", "path": "./alice-side.png", "view": "side"}'
 vroid-cli alice '{"method": "render", "path": "./alice-sheet.png", "view": ["front", "three_quarter", "side", "back"], "width": 512, "height": 1024, "reference": "./turnaround.png"}'
 vroid-cli alice '{"method": "stop"}'
@@ -62,11 +63,13 @@ accessory, imports accessories from `.vroidcustomitem` files the user provides
 and places, recolours, and reshapes them, exports worn accessories to such
 files, renders the character to PNG from the front, three-quarter, side, or
 back, one view or several side by side, optionally under a PNG or JPEG
-reference image, at a fitted or given scale, and saves projects. It can't
-change outfit or accessory textures or the colours of other custom items,
-import outfit custom items or XWear (`.xwear`) items such as bags and belts,
-design new custom items, create characters from VRoid's sample models (`open` a
-sample's `.vroid` instead), or export VRM. To see the character, use `render`,
+reference image, at a fitted or given scale, saves projects, and exports the
+character as VRM 1.0 or 0.0 for Blender, game engines, and VRM viewers. It
+can't change outfit or accessory textures or the colours of other custom
+items, import outfit custom items or XWear (`.xwear`) items such as bags and
+belts, design new custom items, create characters from VRoid's sample models
+(`open` a sample's `.vroid` instead), or choose a VRM's licence or reduce its
+polygons, materials, or bones. To see the character, use `render`,
 not screenshots of the editor window. Edits go through `vroid-cli`, never
 Framewisp input. When a request needs anything vroid-cli can't do, do the parts
 it can and tell the user which parts you couldn't.
@@ -250,6 +253,16 @@ and tails are accessories.
   directory, not the request file's.
 - `save` needs a new `.vroid` path in an existing directory. It never
   overwrites. Choose a new versioned filename.
+- `export_vrm` writes the open character to a new `.vrm` through VRoid's own
+  export in a few seconds, without changing the project. Blender's VRM
+  add-on, game engines, and VRM viewers import it, so finish a character
+  there with parts VRoid lacks, such as a bag. `title` names the model, such
+  as the character's name; `author` is who gets credit, so ask the user
+  rather than guess. `vrm_version` is `"1.0"`, the default, or `"0.0"` for
+  apps that read only VRM 0.x. The file has VRoid's most restrictive licence
+  (use by the author only, no redistribution or modification) and no polygon,
+  material, or bone reduction; tell the user, who can change the licence in
+  Blender's VRM add-on. Hidden accessories are left out of the file.
 - `render` writes a new `.png` of the open character, without changing it:
   `view` is `front`, `three_quarter`, `side`, or `back`, or a list of them
   drawn left to right in one image; `three_quarter` and `side` show its left
