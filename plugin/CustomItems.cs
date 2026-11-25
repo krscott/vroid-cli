@@ -139,7 +139,7 @@ public sealed partial class Plugin
         var chosen = worn[order[index]];
         var registry = CustomItemRegistry();
         var errors = new List<string>();
-        // Unlike the import, this call writes the file before it returns.
+        // This call writes the file before it returns; the import's returns a task.
         Reflect.Call(registry.Self, "ExportAccessoryTemplate", chosen.Id, chosen.Group, registry.Bus, path, registry.Context, registry.Engine,
             OnError(errors));
         if (errors.Count > 0)

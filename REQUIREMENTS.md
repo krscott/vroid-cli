@@ -415,7 +415,8 @@ backfill unrelated requirements.
   [VRM add-on](https://github.com/saturday06/VRM-Addon-for-Blender)'s release
   zip unpacked as `ADDONS/addons/io_scene_vrm`. Each file must print
   `{'FINISHED'}`, one armature, its meshes and materials, and the title and
-  author:
+  author. Run the command without this list's two-space indent, which Python
+  would reject:
 
   ```sh
   BLENDER_USER_SCRIPTS=ADDONS nix run nixpkgs#blender -- -b --factory-startup --python-expr '

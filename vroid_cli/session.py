@@ -105,8 +105,8 @@ def controller(session: Session) -> Generator[None]:
 
 def desktop_state(session: Session) -> Desktop:
     if not (session.desktop / "session.json").exists():
-        # Framewisp's ownership journal outlives session.json only when its
-        # runner died.
+        # Framewisp's ownership journal without session.json is taken to mean
+        # that its runner died.
         if (session.desktop / ".headless-owner.json").exists():
             raise RuntimeError(abandoned(session))
         return Desktop.STOPPED

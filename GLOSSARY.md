@@ -50,14 +50,16 @@ The kind of a request, such as `apply` or `render`.
 _Avoid_: operation, subcommand
 
 **Pending request**:
-A request sent to an app instance that has no result yet.
+A request sent to an app instance that the bridge has not finished with. A
+session has at most one.
 
 **Unknown outcome**:
 What a request has when its app instance ended before reporting a result.
 
 **Refuse**:
-To decline a request because of what it asks for. Whether anything changed
-before the refusal is stated separately.
+To decline a request on purpose, because of what it asks for or the state it
+would act on, instead of failing while carrying it out. Whether anything
+changed before the refusal is stated separately.
 _Avoid_: reject
 
 **VRoid limit**:
@@ -68,7 +70,7 @@ A refusal caused by how VRoid behaves, not by a mistake in the request.
 **Character**:
 The figure an app instance has open for editing. It is saved as a `.vroid`
 file and may have unsaved changes.
-_Avoid_: project, avatar, model
+_Avoid_: project, avatar, model (for the character)
 
 **Base**:
 One of the two starting characters VRoid ships, feminine and masculine.
@@ -121,7 +123,7 @@ _Avoid_: template (for the design an accessory is made from), preset
 
 **Undo file**:
 The template that `apply` or `import` writes before its first change. Applying
-it restores what the request changes.
+it puts back what the request changed, apart from what it discarded.
 _Avoid_: undo template
 
 ### Items and accessories
@@ -131,18 +133,19 @@ A wearable design, such as a hair part, an outfit piece, or a pair of cat ears.
 _Avoid_: preset, accessory template
 
 **Built-in item**:
-An item that has an identifier. VRoid's editor lists these under Presets.
+An item that VRoid's editor offers for a category, or an accessory item that
+ships with VRoid. It has an identifier.
 
 **Custom item**:
-An item that has no identifier. This is broader than VRoid's own "Custom Item":
-a sample model's parts count too.
+Any other item. It has no identifier. This is broader than VRoid's own "Custom
+Item": a sample model's parts count too.
 _Avoid_: not built in, non-built-in, imported item
 
 **Custom item file**:
 A `.vroidcustomitem` file, which carries one custom item between characters.
 
 **Identifier**:
-The stable name of a built-in item.
+The stable name by which requests refer to a built-in item.
 _Avoid_: ID, name
 
 **Set**:
@@ -159,15 +162,15 @@ _Avoid_: instance
 
 **Accessory kind**:
 One of the four families of accessory items: glasses, ears, tails, and hats.
-_Avoid_: group, type
+_Avoid_: type
 
 **Accessory entry**:
 An accessory as a template describes it.
 _Avoid_: entry (alone)
 
 **Bone**:
-The joint of the character that an accessory is attached to. Each accessory
-item has a default bone, where a new accessory of that item starts.
+The joint of the character that an accessory is attached to. Each built-in
+accessory item has a default bone, where a new accessory of that item starts.
 
 **Placement**:
 An accessory's position, rotation, and scale relative to its bone. The bone is

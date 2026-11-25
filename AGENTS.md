@@ -2,23 +2,24 @@
 
 Read `REQUIREMENTS.md` and `GLOSSARY.md` before changing behaviour.
 
-## Requirements, glossary and decisions
+## Glossary and decisions
 
-- `REQUIREMENTS.md` lists the observable behaviours and invariants vroid-cli
-  must keep, by stable ID.
 - `GLOSSARY.md` defines the domain terms. It is the naming authority for code,
-  the CLI, file formats and docs: use its terms and none of the words it lists
-  under _Avoid_. When a concept has no term, or a term no longer fits, change
-  the glossary in the same PR. Keep implementation detail out of it.
+  the CLI, file formats and docs: use its terms, and do not use a word listed
+  under a term's _Avoid_ for that term's concept. When a concept has no term,
+  or a term no longer fits, change the glossary in the same PR. Keep
+  implementation detail out of it.
   Existing code and docs still use some avoided words; issues #61 to #63
-  rename them. Use the glossary's terms in new work.
+  rename them. Use the glossary's terms in new work, but keep the spelling of
+  request and result fields and values, such as `"Hair"` and `modified`, until
+  #61 changes them.
   TODO: remove these two sentences once #61 to #63 are closed.
 - `docs/adr/` records decisions that are hard to reverse, surprising without
   context, and the result of a real trade-off. Read the ADRs for an area before
   changing it, and add one only when all three hold.
 - A reason that explains one piece of code belongs in a comment at that code.
-  So does anything VRoid, Unity, BepInEx, or Wine was observed to do that the
-  code depends on: nothing else records it.
+  So does anything an external tool, such as VRoid or Wine, was observed to
+  do that the code depends on: nothing else records it.
 
 ## Change order
 

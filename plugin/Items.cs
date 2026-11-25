@@ -350,8 +350,7 @@ public sealed partial class Plugin
     }
 
     // VRoid's own Duplicate appends a copy of the accessory, with its bone,
-    // placement, colours, and shape.
-    // It also copies the name and the hidden and locked flags.
+    // placement, colours, shape, name, and hidden and locked flags.
     private static IEnumerable<bool> DuplicateAccessory(int index)
     {
         var count = Instances().Length;
@@ -793,13 +792,13 @@ public sealed partial class Plugin
 
     // VRoid 2.16.0 builds an accessory's colour fields once, when the project
     // opens or the accessory is imported, and builds none for one that is hidden
-    // or locked then, which its own editor shows too. So `open` and `import`
-    // briefly show and unlock each such accessory while they build them again,
-    // then restore both; the accessories end as they were. Only these reads run
-    // for every accessory, so an accessory `dump` cannot read does not stop them.
-    // Showing or unlocking such an accessory later builds none either, though the
-    // character keeps its colour, so without this `dump` would drop the colour
-    // and `apply` would refuse it.
+    // or locked then, which its own editor shows too. Showing or unlocking such
+    // an accessory later builds none either, though the character keeps its
+    // colour, so `dump` would drop the colour and `apply` would refuse it. So
+    // `open` and `import` briefly show and unlock each such accessory while they
+    // build them again, then restore both; the accessories end as they were.
+    // Only these reads run for every accessory, so an accessory `dump` cannot
+    // read does not stop them.
     private static IEnumerable<bool> RebuildAccessoryColors()
     {
         var mode = Reflect.Get(Root, "EditMode") ?? throw Differs("the editor's section");

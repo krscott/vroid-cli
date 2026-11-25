@@ -20,8 +20,6 @@ public sealed partial class Plugin
         var context = Reflect.Get(engine, "Context") ?? throw Differs("the engine context");
         var model = Reflect.Get(context, "ActiveModel") ?? throw Differs("the active model");
         // The texture editor's own query; it changes nothing.
-        // The texture editor's advanced edit (`BeginClothingAdvancedEditCommand`),
-        // which prepares textures for painting, is never run.
         var result = Reflect.Call(Reflect.New("VRoidCore.Editing.Query.AdvancedEdit.GetClothingQuery", slot.Type), "Execute", model);
         var swatches = new List<Swatch>();
         foreach (var part in Reflect.Items(Reflect.Get(result, "sections")))

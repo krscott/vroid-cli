@@ -214,7 +214,9 @@ public sealed partial class Plugin : BasePlugin
     }
 
     // Rewrites the undo file after a custom accessory was dropped from `undo`,
-    // so a crash leaves a file that still applies (R-EDIT-11).
+    // so a crash leaves a file that still applies (R-EDIT-11). A crash between
+    // the removal and this rewrite leaves the accessory in the file, which
+    // apply then refuses.
     private static void SaveUndo()
     {
         // The latest write holds the whole template, so only its outcome counts.
@@ -629,7 +631,7 @@ public sealed partial class Plugin : BasePlugin
             // Categories share parameters by label; list each under the first category
             // that has it, and fail if a later copy disagrees.
             // Observed in VRoid 2.16.0, where Face Sets, Eyes Sets, and Eyeliner all hold
-            // "Eye Size X"; check it again when the VRoid pin changes.
+            // "Eye Size X".
             var listed = new Dictionary<string, (string Category, object? Value)>();
             foreach (var category in Visit(section, null, new List<string>()))
             {

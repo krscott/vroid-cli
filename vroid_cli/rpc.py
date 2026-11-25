@@ -12,9 +12,9 @@ from typing import Any, cast
 PROTOCOL = 12
 # The bridge writes a heartbeat about once a second from Unity's main thread.
 HEARTBEAT_STALE_MS = 5000
-# The bridge stops waiting on an operation after this long. A whole template
-# takes tens of seconds to apply, since each item it changes waits for its
-# section to settle...
+# A whole template takes tens of seconds to apply, since each item it changes
+# waits for its section to settle. The bridge stops waiting on an operation
+# after this long...
 ENGINE_TIMEOUT_MS = 90_000
 # ...which leaves this margin before the CLI stops waiting for its result.
 RESPONSE_MARGIN_S = 30.0

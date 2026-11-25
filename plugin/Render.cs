@@ -78,8 +78,6 @@ internal static class CharacterRender
             fill.LoadRawTextureData(new Il2CppStructArray<byte>(background));
             fill.Apply();
             texture = New("UnityEngine.Texture2D", 2, 2, Format("RGBA32"), false);
-            // IL2CPP keeps several LoadImage overloads of this length, so pick
-            // one by its types.
             var load = Reflect.Type("UnityEngine.ImageConversion")
                 .GetMethod("LoadImage", new[] { Reflect.Type("UnityEngine.Texture2D"), typeof(Il2CppStructArray<byte>) })!;
             if (!(bool)load.Invoke(null, new object[] { (object)texture, new Il2CppStructArray<byte>(bytes) })!)
@@ -97,7 +95,8 @@ internal static class CharacterRender
             {
                 Reflect.CallStatic("UnityEngine.GL", "LoadPixelMatrix", 0f, (float)width, (float)height, 0f);
                 // Without a material, DrawTexture blends by alpha. IL2CPP keeps
-                // several overloads of this length, so pick one by its types.
+                // several overloads of this length, as of LoadImage above, so
+                // pick one by its types.
                 var rect = Reflect.Type("UnityEngine.Rect");
                 var draw = Reflect.Type("UnityEngine.Graphics").GetMethod("DrawTexture", new[]
                 {

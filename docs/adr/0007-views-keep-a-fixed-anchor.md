@@ -2,12 +2,12 @@
 
 Every view puts one anchor at a pixel that depends only on the image size: on
 the vertical centre line, a fixed distance above the bottom edge. The anchor is
-the floor under the character in a body frame and the neck in a head frame. The
-framed part is fitted around it by the farthest anything reaches from the
-anchor in any horizontal direction, not by the width the view's own direction
-shows. Renders of one view, frame, size, and scale therefore line up before and
-after an edit, and every view of one size shares a fitted scale (R-VIEW-1,
-R-VIEW-6).
+the floor under the character in a body frame and the neck's height below the
+head in a head frame, and the framed part is fitted around it by the farthest
+anything reaches from it in any horizontal direction, not by the width the
+view's own direction shows. Renders of one view, frame, size, and scale
+therefore line up before and after an edit, and every view of one size shares a
+fitted scale (R-VIEW-1, R-VIEW-6).
 
 ## Consequences
 
@@ -15,8 +15,7 @@ An image that is narrow for its height leaves all its spare height above the
 framed part.
 
 A part that sticks out, such as a tail, shrinks the character in every body
-view, by about a quarter in 512 by 1024 views. Agents hide the part to compare
-the body at its size without it.
+view.
 
 ## Considered options
 
