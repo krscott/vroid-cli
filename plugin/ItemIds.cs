@@ -168,7 +168,7 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
     /// the `imported` kinds.
     /// Removing a kind's accessories and adding them again reaches every
     /// arrangement of bones VRoid's own controls can make for built-in
-    /// accessories, so a template can restore any of them (R-EDIT-7, R-EDIT-11).
+    /// accessories (R-EDIT-7, R-EDIT-11).
     public static AccessoryPlan Of(IReadOnlyList<WornAccessory> worn, IReadOnlyList<WantedAccessory> wanted,
         Func<int, int, bool>? same = null, IReadOnlySet<string>? imported = null)
     {

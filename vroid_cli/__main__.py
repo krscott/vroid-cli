@@ -88,9 +88,8 @@ def publish(session: sessions.Session, request: Published) -> Any:
     """Have the bridge write a hidden file beside the destination, then link it.
 
     The link is atomic and never replaces an existing file (R-VIEW-3,
-    R-EDIT-16, R-EDIT-19). The hidden file is removed when the command ends. A
-    CLI that is killed, or that stops waiting before the bridge writes the
-    file because it was interrupted or timed out, can leave one, named
+    R-EDIT-16, R-EDIT-19). The hidden file is removed when the command ends,
+    but a CLI that is killed, interrupted, or timed out can leave one, named
     `.vroid-KIND-*` with the destination's suffix.
     """
     method = request.method

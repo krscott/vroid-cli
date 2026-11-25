@@ -8,6 +8,6 @@ character in every session, wearing only built-in items (R-EDIT-14).
 
 - VRoid's sample models: rejected because VRoid downloads them on first use
   through a remote catalog that the pinned VRoid version does not fix, they
-  come with their own terms of use, and their items are custom items, which a
+  come with their own terms of use, and they wear custom items, which a
   template cannot carry to another character (R-EDIT-10). A sample model saved
   as a `.vroid` file can still be opened with `open`.

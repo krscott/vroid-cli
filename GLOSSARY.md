@@ -138,7 +138,8 @@ item that ships with VRoid. It has an identifier.
 
 **Custom item**:
 An item that is not a built-in item, so it has no identifier. This is broader
-than VRoid's own "Custom Item": a sample model's items count too.
+than VRoid's own "Custom Item": an item that a sample model wears and the
+editor does not list counts too.
 _Avoid_: not built in, non-built-in, imported item
 
 **Custom item file**:

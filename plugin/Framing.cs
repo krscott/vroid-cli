@@ -138,7 +138,7 @@ public static class Framing
         // above it, and `Size * aspect` to each side. Each view's own width
         // counts, not `Reach`, so sideways a part limits a view only by how
         // far it reaches in it: a tail straight behind the character does not
-        // narrow the front view.
+        // limit the front view.
         var least = Math.Max(
             Math.Max(extent.Above / (1 + 1 / Margin), directions.Max(extent.HalfWidth) / aspect),
             extent.Below / (1 - 1 / Margin));

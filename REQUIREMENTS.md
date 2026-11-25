@@ -332,9 +332,9 @@ backfill unrelated requirements.
   that `dump` names no `"custom"` item and that it matches a `dump` of the
   same base taken after a restart, and renders it. After a change to the
   VRoid pin, also check by hand that `new` succeeds with each base in a
-  session launched without network access: for each base, launch a session
-  that is not running as below, then run `new` as usual; the app instance
-  keeps the namespaces `launch` started it in. In this
+  session launched without network access: for each base, take a session that
+  is not running, launch it as below, then run `new` as usual; the app
+  instance keeps the namespaces `launch` started it in. In this
   unprivileged launch, the outer user namespace may mount a tmpfs, which gives
   Xwayland a socket directory it owns, and the inner one restores the user
   that owns the session:
