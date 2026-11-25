@@ -50,8 +50,8 @@ The kind of a request, such as `apply` or `render`.
 _Avoid_: operation, subcommand
 
 **Pending request**:
-A request sent to an app instance that the bridge has not finished with. A
-session has at most one.
+A request that was sent to an app instance and that the bridge has not
+finished with. A session has at most one.
 
 **Unknown outcome**:
 What a request has when its app instance ended before reporting a result.
@@ -133,12 +133,12 @@ A wearable design, such as a hair part, an outfit piece, or a pair of cat ears.
 _Avoid_: preset, accessory template
 
 **Built-in item**:
-An item that VRoid's editor offers for a category, or an accessory item that
-ships with VRoid. It has an identifier.
+An item that VRoid's editor lists under a category's Presets, or an accessory
+item that ships with VRoid. It has an identifier.
 
 **Custom item**:
-Any other item. It has no identifier. This is broader than VRoid's own "Custom
-Item": a sample model's parts count too.
+An item that is not a built-in item, so it has no identifier. This is broader
+than VRoid's own "Custom Item": a sample model's items count too.
 _Avoid_: not built in, non-built-in, imported item
 
 **Custom item file**:

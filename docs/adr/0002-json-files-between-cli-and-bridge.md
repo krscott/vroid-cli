@@ -1,9 +1,10 @@
 # The CLI and the bridge exchange JSON files
 
-A command reaches the bridge as a request file in the session's directory, and
-the bridge answers with a result file. Each file is written whole and renamed
-into place. We kept files instead of a socket or a server because they need no
-port allocation, no MCP dependency, and no setup specific to one agent harness.
+A request that the bridge carries out reaches it as a file in the session's
+directory, and the bridge answers with a result file. Each file is written
+whole and renamed into place. We kept files instead of a socket or a server
+because they need no port allocation, no MCP dependency, and no setup specific
+to one agent harness.
 
 ## Consequences
 

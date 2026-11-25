@@ -75,8 +75,9 @@ mkdir -p "${profiles[0]}/LocalLow/pixiv/VRoid Studio/custom_items"
 
 # BepInEx's root: its own files are links into the store; config, cache, and
 # logs are the session's. BepInEx rewrites its config, so it gets a copy.
-# Every launch replaces both links and the config copy, so a session runs this build's BepInEx and
-# bridge (R-SES-9) and a stopped session needs nothing from the store.
+# Every launch replaces both links and the config copy, so a session runs this
+# build's BepInEx and bridge (R-SES-9) and a stopped session needs nothing
+# from the store.
 root=$VROID_SESSION_DIR/bepinex
 mkdir -p "$root/config"
 ln -sfn "$VROID_BEPINEX/BepInEx/core" "$root/core"

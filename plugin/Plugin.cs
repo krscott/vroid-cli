@@ -214,9 +214,9 @@ public sealed partial class Plugin : BasePlugin
     }
 
     // Rewrites the undo file after a custom accessory was dropped from `undo`,
-    // so a crash leaves a file that still applies (R-EDIT-11). A crash between
-    // the removal and this rewrite leaves the accessory in the file, which
-    // apply then refuses.
+    // so a later crash leaves a file that still applies (R-EDIT-11). A crash
+    // between the removal and this rewrite leaves the accessory in the file,
+    // which apply then refuses.
     private static void SaveUndo()
     {
         // The latest write holds the whole template, so only its outcome counts.

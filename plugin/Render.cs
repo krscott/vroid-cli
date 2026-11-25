@@ -95,7 +95,7 @@ internal static class CharacterRender
             {
                 Reflect.CallStatic("UnityEngine.GL", "LoadPixelMatrix", 0f, (float)width, (float)height, 0f);
                 // Without a material, DrawTexture blends by alpha. IL2CPP keeps
-                // several overloads of this length, as of LoadImage above, so
+                // several overloads of this length, as it does of LoadImage above, so
                 // pick one by its types.
                 var rect = Reflect.Type("UnityEngine.Rect");
                 var draw = Reflect.Type("UnityEngine.Graphics").GetMethod("DrawTexture", new[]

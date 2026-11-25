@@ -136,9 +136,9 @@ public static class Framing
         // The smallest size that cuts nothing off: the image spans
         // `Size * (1 - 1 / Margin)` below the anchor, `Size * (1 + 1 / Margin)`
         // above it, and `Size * aspect` to each side. Each view's own width
-        // counts, not `Reach`, so a part limits a view only by how far it
-        // reaches sideways in it: a tail behind the character does not limit
-        // the front view.
+        // counts, not `Reach`, so sideways a part limits a view only by how
+        // far it reaches in it: a tail straight behind the character does not
+        // narrow the front view.
         var least = Math.Max(
             Math.Max(extent.Above / (1 + 1 / Margin), directions.Max(extent.HalfWidth) / aspect),
             extent.Below / (1 - 1 / Margin));

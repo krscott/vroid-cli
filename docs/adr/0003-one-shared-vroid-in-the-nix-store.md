@@ -9,8 +9,6 @@ partly copied (R-SES-9).
 
 ## Consequences
 
-A new session is ready in about 15 seconds and uses about 600 MB.
-
 vroid-cli needs Nix. An upgrade is a new store path, so no install is copied
 into a session and no marker records a version.
 
