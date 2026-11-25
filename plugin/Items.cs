@@ -79,6 +79,9 @@ public sealed partial class Plugin
         // True whenever the category wears an item, built in or not; always false for sets.
         // Some worn items that are not built in, such as a sample model's socks, show
         // no selected option at all.
+        // A texture-edited outfit is a custom item too: its group is a
+        // `user/VRoid/CustomItem/...` resource, and the built-in item's resource
+        // stays in `OriginalResourceName`.
         if (Reflect.Get(Reflect.Get(slot.Presets, "TemporaryCustomItem"), "WearingCustomItemSavableTransferableGroup") is not bool wearing)
             throw Differs($"whether {slot.Path} wears an item");
         return wearing ? ItemIds.Custom : null;
@@ -128,6 +131,8 @@ public sealed partial class Plugin
 
     // The name the user gave an accessory, or null for VRoid's default name for its
     // item, and whether VRoid hides and locks it.
+    // "" is a name: VRoid's Rename dialog cannot enter it, but VRoid saves and
+    // reopens it.
     private sealed record Flags(string? Name, bool Hidden, bool Locked);
 
     // Where an accessory hangs: VRoid's joint name for its bone, and its position,
@@ -164,6 +169,7 @@ public sealed partial class Plugin
         var display = Reflect.Call(Reflect.New("VRoidCore.Editing.Query.GetTransferableDisplayNameQuery", id), "Execute", model);
         var item = ItemIds.Accessory(Reflect.Get(display, "LocalizationKey") as string, resource, AttachmentIds);
         var swatches = new List<Swatch>();
+        // Each accessory has its own colours, never shared, so they have no keys.
         foreach (var selection in Reflect.Items(Reflect.Get(Reflect.Get(instance, "CategoryColorSelection"), "_colorSelections")))
         {
             if (Reflect.Get(selection, "IsAvailable") is not bool available) throw Differs($"colour availability for accessory {name}");
@@ -200,6 +206,8 @@ public sealed partial class Plugin
     // for, and those it has a group an import started for. VRoid keeps a kind's
     // group after its last accessory is removed, even across a save, and adds
     // every accessory of the kind to it.
+    // VRoid's own `RemoveTransferableGroupAndChildrenCommand` reports success on
+    // an empty group but leaves it in place.
     private static (HashSet<string> BuiltIn, HashSet<string> Imported) AccessoryGroups()
     {
         var model = Reflect.Get(EditContext(AccessoryEditor), "editingModel") ?? throw Differs("the editing model");
@@ -227,6 +235,8 @@ public sealed partial class Plugin
             entry["rotation"] = worn.Pose.Rotation;
             entry["scale"] = worn.Pose.Scale;
         }
+        // Always written: an omitted key keeps the worn value, so a template that
+        // left out the defaults could not restore them (R-EDIT-7, R-EDIT-11).
         entry["name"] = worn.Flags.Name;
         entry["hidden"] = worn.Flags.Hidden;
         entry["locked"] = worn.Flags.Locked;
@@ -331,6 +341,9 @@ public sealed partial class Plugin
         var count = Instances().Length;
         var before = rebuilt;
         modified = true;
+        // Setting `SelectedTemplate` adds an accessory only when its value changes,
+        // so it is set to null first, which lets one item be added again.
+        // `AddSelectedTemplate` after this would add a second accessory.
         Reflect.Call(AccessoryEditor, "set_SelectedTemplate", new object[] { null! });
         Reflect.Call(AccessoryEditor, "set_SelectedTemplate", template);
         foreach (var step in WaitForAccessories(before, count + 1)) yield return step;
@@ -338,6 +351,7 @@ public sealed partial class Plugin
 
     // VRoid's own Duplicate appends a copy of the accessory, with its bone,
     // placement, colours, and shape.
+    // It also copies the name and the hidden and locked flags.
     private static IEnumerable<bool> DuplicateAccessory(int index)
     {
         var count = Instances().Length;
@@ -702,6 +716,8 @@ public sealed partial class Plugin
 
     // Moves the accessory listed at `index` to `bone`, which VRoid's command does
     // only while no other accessory of its kind is worn.
+    // The command resets the placement to the identity, so the placement is set
+    // after the bone.
     private static IEnumerable<bool> MoveBone(int index, string? bone, string path)
     {
         var worn = WornAccessories();
@@ -733,6 +749,8 @@ public sealed partial class Plugin
                 var worn = Find();
                 var before = rebuilt;
                 modified = true;
+                // The editor's own setters, such as `PartOriginLocalScale`, only change
+                // what its gizmo shows.
                 Run(worn.Instance, "SetPartOriginTransformCommand", worn.Id, Reflect.New("VRoidCore.Common.Types.Transform",
                     Unity("UnityEngine.Vector3", want.Position!), Unity("UnityEngine.Quaternion", want.Rotation!), Unity("UnityEngine.Vector3", want.Scale!)));
                 Changed.Add($"{path}/placement");
@@ -779,6 +797,9 @@ public sealed partial class Plugin
     // briefly show and unlock each such accessory while they build them again,
     // then restore both; the accessories end as they were. Only these reads run
     // for every accessory, so an accessory `dump` cannot read does not stop them.
+    // Showing or unlocking such an accessory later builds none either, though the
+    // character keeps its colour, so without this `dump` would drop the colour
+    // and `apply` would refuse it.
     private static IEnumerable<bool> RebuildAccessoryColors()
     {
         var mode = Reflect.Get(Root, "EditMode") ?? throw Differs("the editor's section");

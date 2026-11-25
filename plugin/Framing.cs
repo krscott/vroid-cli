@@ -94,7 +94,8 @@ public static class Framing
     /// The whole model, anchored at `origin`, the model's root, which is on the
     /// floor in VRoid 2.16.0. Width comes from the horizontal reach in any
     /// direction, so every body view of one model at one image size shares its
-    /// scale and ground line.
+    /// scale and ground line. In 2.16.0 the soles reach 3 mm below `origin`,
+    /// which `Below` covers.
     public static Extent Body(IReadOnlyList<Box> parts, Vec origin)
     {
         var all = Box.Union(parts);
@@ -134,7 +135,9 @@ public static class Framing
         var size = height / (2 * wanted);
         // The smallest size that cuts nothing off: the image spans
         // `Size * (1 - 1 / Margin)` below the anchor, `Size * (1 + 1 / Margin)`
-        // above it, and `Size * aspect` to each side.
+        // above it, and `Size * aspect` to each side. Each view's own width
+        // counts, not `Reach`, so a part behind the character, such as a tail,
+        // limits only the views that show it from the side.
         var least = Math.Max(
             Math.Max(extent.Above / (1 + 1 / Margin), directions.Max(extent.HalfWidth) / aspect),
             extent.Below / (1 - 1 / Margin));

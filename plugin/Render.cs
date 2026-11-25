@@ -78,6 +78,8 @@ internal static class CharacterRender
             fill.LoadRawTextureData(new Il2CppStructArray<byte>(background));
             fill.Apply();
             texture = New("UnityEngine.Texture2D", 2, 2, Format("RGBA32"), false);
+            // IL2CPP keeps several LoadImage overloads of this length, so pick
+            // one by its types.
             var load = Reflect.Type("UnityEngine.ImageConversion")
                 .GetMethod("LoadImage", new[] { Reflect.Type("UnityEngine.Texture2D"), typeof(Il2CppStructArray<byte>) })!;
             if (!(bool)load.Invoke(null, new object[] { (object)texture, new Il2CppStructArray<byte>(bytes) })!)
@@ -140,6 +142,8 @@ internal static class CharacterRender
         foreach (var item in Reflect.Items(((dynamic)model).GetComponentsInChildren(Il2CppTypeOf("UnityEngine.Renderer"), false)))
         {
             dynamic renderer = Reflect.Concrete(item);
+            // VRoid disables a hidden accessory's renderers, so it is left out of
+            // the image and of its framing.
             if (!renderer.enabled) continue;
             dynamic bounds = renderer.bounds;
             parts.Add(new Box(Plain(bounds.min), Plain(bounds.max)));
@@ -193,8 +197,13 @@ internal static class CharacterRender
             }
             camera.cullingMask = 0;
             var background = Shoot()[..3];
-            // Leaves out scene objects on layers the model does not use.
+            // Leaves out scene objects on layers the model does not use. In
+            // VRoid 2.16.0 its renderers are all on Default, which nothing else
+            // in view uses.
             camera.cullingMask = layers;
+            // The scene's own directional lights, fixed in world space in front
+            // of the character, light every shot, so back views show MToon's
+            // shade colours.
             var images = new byte[shots.Count][];
             for (var index = 0; index < shots.Count; index++)
             {

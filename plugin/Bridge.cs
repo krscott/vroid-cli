@@ -136,6 +136,8 @@ public sealed class RpcDirectory
         catch (Exception error) when (error is JsonException or KeyNotFoundException
             or InvalidOperationException or FormatException or NullReferenceException)
         {
+            // Moved aside, it no longer blocks the session; the CLI reports
+            // that it got no result.
             File.Move(RequestPath, Path.Combine(root, "request.invalid.json"), true);
             return null;
         }

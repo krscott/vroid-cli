@@ -9,6 +9,10 @@ public sealed partial class Plugin
     // The colour fields of the category's worn item, one per colour of each of
     // its parts in app order, and whether that item is built in; null for a
     // category that wears no item or selects other categories' items.
+    // Parts stay unnamed: VRoid's only name for one is its transferable's
+    // display name (`GetTransferableDisplayNameQuery`), which names what the
+    // part was modelled from and misleads, such as "Dress (Short Sleeve)" for a
+    // part of Bottoms 145, or repeats, as for each of Tops 144's three parts.
     private static (Swatch[] Parts, bool BuiltIn)? OutfitSwatches(object category, int index)
     {
         if (SlotOf("Outfit", category, index) is not { IsSet: false } slot || State(slot) is not { } state) return null;
@@ -16,6 +20,8 @@ public sealed partial class Plugin
         var context = Reflect.Get(engine, "Context") ?? throw Differs("the engine context");
         var model = Reflect.Get(context, "ActiveModel") ?? throw Differs("the active model");
         // The texture editor's own query; it changes nothing.
+        // The texture editor's advanced edit (`BeginClothingAdvancedEditCommand`),
+        // which prepares textures for painting, is never run.
         var result = Reflect.Call(Reflect.New("VRoidCore.Editing.Query.AdvancedEdit.GetClothingQuery", slot.Type), "Execute", model);
         var swatches = new List<Swatch>();
         foreach (var part in Reflect.Items(Reflect.Get(result, "sections")))

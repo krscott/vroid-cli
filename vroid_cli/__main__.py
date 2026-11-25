@@ -89,7 +89,8 @@ def publish(session: sessions.Session, request: Published) -> Any:
 
     The link is atomic and never replaces an existing file (R-VIEW-3,
     R-EDIT-16, R-EDIT-19). The hidden file is removed whatever happens; one
-    left by a crash is named `.vroid-KIND-*` with the destination's suffix.
+    left by a CLI that was killed before the bridge answered is named
+    `.vroid-KIND-*` with the destination's suffix.
     """
     method = request.method
     kind, key = PUBLISHED[method]
@@ -165,6 +166,8 @@ def main(argv: list[str] | None = None) -> int:
     except (RuntimeError, OSError) as error:
         print(f"vroid-cli: {error}", file=sys.stderr)
         return 1
+    # Every result, the bridge's too, must match its model, so the JSON Schema
+    # that --agent-skill prints describes what is actually printed.
     adapter = schema.RESULTS[request.method]
     try:
         result = adapter.validate_python(raw)
