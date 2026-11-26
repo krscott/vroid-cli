@@ -321,6 +321,8 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
             )
         if display is Display.STOPPED:
             keep_previous_logs(session)
+            # A status left in place would be the previous app instance's.
+            (session.rpc / "status.json").unlink(missing_ok=True)
             with (session.directory / "runner.log").open("ab") as log:
                 # Python does not pass the controller lock's descriptor on, so
                 # the detached runner never holds the lock.

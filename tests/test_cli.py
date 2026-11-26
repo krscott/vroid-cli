@@ -577,6 +577,14 @@ def test_launch_timeout_tells_a_stalled_app_from_a_slow_one(tmp_path: Path) -> N
     assert "keeps starting" not in result.stderr
 
 
+def test_launch_drops_the_previous_status(tmp_path: Path) -> None:
+    # R-SES-4: a later stop must not refuse over what an earlier bridge reported.
+    rpc = bridge(tmp_path, unsaved_changes=True)
+    env = fake_framewisp(tmp_path, "time.sleep(4)")
+    assert invoke(tmp_path, "launch", timeout=1, env=env).returncode == 1
+    assert not (rpc / "status.json").exists()
+
+
 def test_launch_fails_at_once_when_bepinex_fails_to_start(tmp_path: Path) -> None:
     # R-SES-11: BepInEx then shows a dialog and VRoid never becomes ready.
     preloader = tmp_path / "state/test/bepinex/preloader.log"
