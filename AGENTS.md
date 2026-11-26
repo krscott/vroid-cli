@@ -9,9 +9,9 @@ Read `REQUIREMENTS.md` and `GLOSSARY.md` before changing behaviour.
   under a term's _Avoid_ for that term's concept. When a concept has no term,
   or a term no longer fits, change the glossary in the same PR. Keep
   implementation detail out of it.
-  Existing code and docs still use some avoided words; issues #62 and #63
-  rename them. Use the glossary's terms in new work.
-  TODO: remove these two sentences once #62 and #63 are closed.
+  The requirements, README, and skill still use some avoided words; issue #63
+  rewords them. Use the glossary's terms in new work.
+  TODO: remove these two sentences once #63 is closed.
 - `docs/adr/` records decisions that are hard to reverse, surprising without
   context, and the result of a real trade-off. Read the ADRs for an area before
   changing it, and add one only when all three hold.
