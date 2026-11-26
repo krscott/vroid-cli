@@ -242,7 +242,7 @@ thumbnails() {
 # A thumbnail sheet's size must fit COUNT items, and no thumbnail may be one
 # flat colour.
 check_png() {
-    python3 - "$@" <<'PY' || fatal "$2 is not a valid $1; see above"
+    python3 - "$@" <<'PY' || fatal "$2 fails the $1 check; see above"
 import struct
 import sys
 import zlib

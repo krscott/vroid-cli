@@ -146,7 +146,7 @@ def tail(path: Path, lines: int = 10) -> str:
 
 
 def exited(session: Session, *, since_ms: float = 0) -> str:
-    """Explain why the private display or VRoid stopped (R-SES-11)."""
+    """Explain why the private display or VRoid exited (R-SES-11)."""
     # VRoid ran in this launch only if Framewisp recorded its exit during it;
     # the record can remain from an earlier app instance.
     record = session.display / "app-exit.json"
