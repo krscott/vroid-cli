@@ -28,7 +28,7 @@ BRIDGE_LOADED = "vroid-cli bridge loaded; app instance {app_instance}"
 # One app run's logs, relative to the session directory.
 RUN_LOGS = (
     "player.log",
-    "display/app.log",
+    "desktop/app.log",
     "bepinex/LogOutput.log",
     "bepinex/preloader.log",
     "bepinex/ErrorLog.log",
@@ -52,7 +52,9 @@ class Session:
 
     @property
     def display(self) -> Path:
-        return self.directory / "display"
+        # Framewisp's directory for the private display. It keeps the name
+        # that running sessions and other builds look for.
+        return self.directory / "desktop"
 
     @property
     def rpc(self) -> Path:
