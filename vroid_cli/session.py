@@ -288,8 +288,8 @@ def terms_accepted(session: Session) -> bool:
 
 def incompatible() -> str:
     return (
-        "The session runs a bridge from an incompatible vroid-cli build. Use that "
-        'build to save, or send {"method": "stop", "force": true} and launch again'
+        "The session runs a bridge from an incompatible vroid-cli build. Save and "
+        "stop the session with that build, then launch again"
     )
 
 
