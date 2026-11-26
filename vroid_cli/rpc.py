@@ -65,12 +65,16 @@ def read_status(rpc: Path) -> BridgeStatus | None:
     """Return the bridge's last status, or None if it is missing or unreadable."""
     try:
         raw = json.loads((rpc / "status.json").read_text())
+        protocol = int(raw.get("protocol", 0))
+        # A bridge of another protocol may name the rest differently. It gets
+        # no requests, and what it holds counts as unsaved.
+        current = protocol == PROTOCOL
         return BridgeStatus(
-            app_instance=str(raw["app_instance"]),
-            protocol=int(raw.get("protocol", 0)),
+            app_instance=str(raw["app_instance"]) if current else "",
+            protocol=protocol,
             heartbeat_ms=float(raw["heartbeat"]),
             main=bool(raw["main"]),
-            unsaved_changes=bool(raw["unsaved_changes"]),
+            unsaved_changes=bool(raw["unsaved_changes"]) if current else True,
             raw=raw,
         )
     except (OSError, ValueError, KeyError, TypeError):

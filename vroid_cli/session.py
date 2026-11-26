@@ -18,7 +18,7 @@ from . import rpc
 
 SESSION_NAME = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}")
 # Must match the player size in scripts/vroid-studio.sh.
-DISPLAY = ("2560", "1440")
+DISPLAY_SIZE = ("2560", "1440")
 # Mesa render devices; automatic NVIDIA selection stalled the compositor.
 PREFERRED_GPU_VENDORS = {"0x1002", "0x8086"}
 # Logged by BepInEx be.788 when UpdateInteropAssemblies is off and its hash differs.
@@ -33,8 +33,6 @@ RUN_LOGS = (
     "bepinex/preloader.log",
     "bepinex/ErrorLog.log",
 )
-# Framewisp's ownership journal, which it removes when its runner shuts down.
-OWNER_JOURNAL = ".headless-owner.json"
 # A starting app whose logs are quiet this long has stalled; a cold first start
 # writes no log line for about 12 s while it creates the Wine prefix, and then
 # one every few seconds until VRoid is ready.
@@ -106,20 +104,10 @@ def controller(session: Session) -> Generator[None]:
 
 
 def display_state(session: Session) -> Display:
-    # Builds before protocol 13 kept the private display in desktop/. One still
-    # running there, or left there by a runner that died, shares this session's
-    # Wine prefix and bridge files.
-    earlier = session.directory / "desktop"
-    if any((earlier / name).exists() for name in ("session.json", OWNER_JOURNAL)):
-        raise RuntimeError(
-            f"An earlier vroid-cli build started session {session.name!r} and has "
-            "not stopped it. Stop it with that build, or run: "
-            f"framewisp {earlier} stop"
-        )
     if not (session.display / "session.json").exists():
         # Framewisp's ownership journal without session.json is taken to mean
         # that its runner died.
-        if (session.display / OWNER_JOURNAL).exists():
+        if (session.display / ".headless-owner.json").exists():
             raise RuntimeError(abandoned(session))
         return Display.STOPPED
     # Framewisp records the app's exit; the runner then shuts itself down.
@@ -301,7 +289,7 @@ def terms_accepted(session: Session) -> bool:
 def incompatible() -> str:
     return (
         "The session runs a bridge from an incompatible vroid-cli build. Use that "
-        "build to save, or stop and launch again"
+        'build to save, or send {"method": "stop", "force": true} and launch again'
     )
 
 
@@ -343,9 +331,9 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
                         "run",
                         "--x11",
                         "--width",
-                        DISPLAY[0],
+                        DISPLAY_SIZE[0],
                         "--height",
-                        DISPLAY[1],
+                        DISPLAY_SIZE[1],
                         "--",
                         "vroid-studio",
                     ],

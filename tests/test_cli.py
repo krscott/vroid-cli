@@ -269,11 +269,18 @@ def test_colour_labels_may_repeat_across_categories(tmp_path: Path) -> None:
 
 
 def test_bridge_from_an_older_protocol_is_refused(tmp_path: Path) -> None:
-    rpc = bridge(tmp_path, protocol=PROTOCOL - 1)
+    rpc = bridge(tmp_path)
+    # Another protocol's status need not name the other fields as this one does.
+    status = {"protocol": PROTOCOL - 1, "heartbeat": time.time() * 1000, "main": True}
+    (rpc / "status.json").write_text(json.dumps(status))
     result = invoke(tmp_path, "dump")
     assert result.returncode == 1
     assert "incompatible" in result.stderr
     assert not (rpc / "request.json").exists()
+    # R-SES-4: what it holds may be unsaved.
+    env = running_display(tmp_path)
+    assert '"force": true' in invoke(tmp_path, "stop", env=env).stderr
+    assert invoke(tmp_path, "stop", force=True, env=env).returncode == 0
 
 
 @pytest.mark.parametrize(
@@ -706,20 +713,6 @@ def test_abandoned_desktop_asks_for_recovery(tmp_path: Path) -> None:
         result = invoke(tmp_path, command)
         assert result.returncode == 1
         assert "recover" in result.stderr
-
-
-@pytest.mark.parametrize("left", ["session.json", ".headless-owner.json"])
-def test_session_an_earlier_build_did_not_stop_is_refused(
-    tmp_path: Path, left: str
-) -> None:
-    # Builds before protocol 13 kept the private display in desktop/.
-    earlier = tmp_path / "state/test/desktop"
-    earlier.mkdir(parents=True)
-    (earlier / left).write_text("{}")
-    for command in ["status", "launch", "stop"]:
-        result = invoke(tmp_path, command)
-        assert result.returncode == 1
-        assert "desktop stop" in result.stderr
 
 
 def test_state_ignores_itself_inside_another_repository(tmp_path: Path) -> None:

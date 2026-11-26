@@ -154,14 +154,12 @@ logs to `previous/`.
   ```
 - **Upgrades:** `launch` runs the VRoid and bridge of the vroid-cli build
   that ran it. A running session keeps working with a newer CLI unless the
-  file protocol changed; then save with the older build or stop and launch
-  again.
+  file protocol changed; then save with the older build, or send
+  `{"method": "stop", "force": true}` and launch again.
 - **Sessions from earlier versions** launch with the shared install and keep
   their VRoid preferences. Their own copy of VRoid in
   `wine/drive_c/VRoidStudio`, `installed`, `installer.log`, and `desktop/` are
-  no longer used. Deleting them is optional and only frees about 1.4 GB. A
-  session that an earlier build still runs from `desktop/` must be stopped
-  with that build first; commands refuse it until then.
+  no longer used. Deleting them is optional and only frees about 1.4 GB.
 
 ## Development
 
