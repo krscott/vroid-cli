@@ -52,8 +52,9 @@ class Session:
 
     @property
     def display(self) -> Path:
-        # Framewisp's directory for the private display. It keeps the name
-        # that running sessions and other builds look for.
+        # Framewisp's directory for the private display. Every build finds a
+        # session's display here, so another name would hide a running session
+        # from other builds.
         return self.directory / "desktop"
 
     @property
@@ -291,7 +292,8 @@ def terms_accepted(session: Session) -> bool:
 def incompatible() -> str:
     return (
         "The session runs a bridge from an incompatible vroid-cli build. Save and "
-        "stop the session with that build, then launch again"
+        "stop the session with that build, then launch again. Without that build, "
+        'send {"method": "stop", "force": true}, which discards any unsaved changes'
     )
 
 

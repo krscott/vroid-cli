@@ -155,7 +155,8 @@ logs to `previous/`.
 - **Upgrades:** `launch` runs the VRoid and bridge of the vroid-cli build
   that ran it. A running session keeps working with a newer CLI unless the
   file protocol changed; then save and stop it with the older build, and
-  launch again.
+  launch again. Without that build, `{"method": "stop", "force": true}` stops
+  it and discards any unsaved changes.
 - **Sessions from earlier versions** launch with the shared install and keep
   their VRoid preferences. Their own copy of VRoid in
   `wine/drive_c/VRoidStudio`, `installed`, and `installer.log` are no longer
