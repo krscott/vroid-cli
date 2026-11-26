@@ -71,8 +71,9 @@ public static class Framing
         _ => throw new ArgumentException($"Unknown frame: {name}"),
     };
 
-    /// Unit vector from the model towards the camera. Three-quarter and side
-    /// views show the model's left side, as turnaround sheets usually do.
+    /// Unit vector from the character towards the camera. Three-quarter and
+    /// side views show the character's left side, as turnaround sheets usually
+    /// do.
     public static Vec Direction(Vec forward, View view)
     {
         var length = Math.Sqrt(forward.X * forward.X + forward.Z * forward.Z);
@@ -86,28 +87,28 @@ public static class Framing
             _ => throw new ArgumentOutOfRangeException(nameof(view)),
         };
         // Turning the forward vector by a negative angle about +Y moves it to the
-        // model's left (-X when facing +Z).
+        // character's left (-X when facing +Z).
         var angle = Math.Atan2(forward.X, forward.Z) + degrees * Math.PI / 180;
         return new Vec(Math.Sin(angle), 0, Math.Cos(angle));
     }
 
-    /// The whole model, anchored at `origin`, the model's root, which is on the
-    /// floor in VRoid 2.16.0. Width comes from the horizontal reach in any
-    /// direction, so every body view of one model at one image size shares its
-    /// scale and ground line. In 2.16.0 the soles reach 3 mm below `origin`,
-    /// which `Below` covers.
+    /// The whole character, anchored at `origin`, the root of its model, which
+    /// is on the floor in VRoid 2.16.0. Width comes from the horizontal reach in
+    /// any direction, so every body view of one character at one image size
+    /// shares its scale and ground line. In 2.16.0 the soles reach 3 mm below
+    /// `origin`, which `Below` covers.
     public static Extent Body(IReadOnlyList<Box> parts, Vec origin)
     {
         var all = Box.Union(parts);
         return new Extent(origin, all.Max.Y - origin.Y, Math.Max(0, origin.Y - all.Min.Y), parts);
     }
 
-    /// The model from the neck to its top, anchored at the neck and centred on
-    /// the head. Width comes from the horizontal reach from the head, in any
+    /// The character from the neck to its top, anchored at the neck and centred
+    /// on the head. Width comes from the horizontal reach from the head, in any
     /// direction, of the parts centred above the neck, such as the head, ears,
-    /// hair, and hats, so every head view of one model at one image size shares
-    /// its scale. A part centred lower, such as the body with its arms or long
-    /// hair, does not widen the frame, and the frame cuts through what lies
+    /// hair, and hats, so every head view of one character at one image size
+    /// shares its scale. A part centred lower, such as the body with its arms or
+    /// long hair, does not widen the frame, and the frame cuts through what lies
     /// below the neck.
     public static Extent Head(IReadOnlyList<Box> parts, Vec neck, Vec head)
     {

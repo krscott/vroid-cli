@@ -13,8 +13,8 @@
     <Compile Include="../../plugin/Colors.cs" />
     <Compile Include="../../plugin/CustomItemFile.cs" />
     <Compile Include="../../plugin/Framing.cs" />
-    <Compile Include="../../plugin/ItemIds.cs" />
-    <Compile Include="../../plugin/Sheet.cs" />
+    <Compile Include="../../plugin/Identifiers.cs" />
+    <Compile Include="../../plugin/ThumbnailSheet.cs" />
     <Compile Include="../../plugin/VrmFile.cs" />
   </ItemGroup>
 </Project>
