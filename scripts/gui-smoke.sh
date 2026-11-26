@@ -785,7 +785,7 @@ for item in "${items[@]}"; do
         fatal "$section/$category lists other items after a restart; compare $out/items-${section}-${category}.json"
 done
 # The edited character dumps, with each colour under the category it was set in,
-# and the hair colour is shared by every Hairstyle category.
+# and Hairstyle Back shares the hair colour set under Front.
 vroid '{"method": "dump"}' >"$out/edited.json"
 # The reopened character dumps as it did when saved, including the colour of the
 # cat ears, which open hidden and locked.

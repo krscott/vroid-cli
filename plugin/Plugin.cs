@@ -124,7 +124,7 @@ public sealed partial class Plugin : BasePlugin
             {
                 // Checked between frames: a single blocking call can run past it.
                 if (Elapsed.ElapsedMilliseconds > current!.TimeoutMs)
-                    throw new TimeoutException("The request timed out; outcome may be incomplete. Inspect the character before another edit.");
+                    throw new TimeoutException("The request timed out; outcome may be incomplete. Inspect state before another edit.");
                 if (!steps.MoveNext()) Complete(true, result);
             }
         }
