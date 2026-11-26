@@ -1,5 +1,5 @@
 # BepInEx with its Doorstop proxy, .NET runtime, and Unity base libraries.
-# Sessions link to it read-only. The bridge plugin and BepInEx.cfg are
+# Sessions link to it read-only. The bridge and BepInEx.cfg are
 # separate, so changing them reinstalls neither VRoid nor BepInEx.
 {
   lib,

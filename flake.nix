@@ -1,5 +1,5 @@
 {
-  description = "Edit VRoid Studio characters through its internal API on a private desktop";
+  description = "Edit VRoid Studio characters through its internal API on a private display";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

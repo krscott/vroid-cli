@@ -53,7 +53,7 @@ buildPythonApplication {
     ])
   ];
   meta = {
-    description = "Edit VRoid Studio characters through its internal API on a private desktop";
+    description = "Edit VRoid Studio characters through its internal API on a private display";
     platforms = [ "x86_64-linux" ];
     mainProgram = "vroid-cli";
   };

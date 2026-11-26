@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run the store's VRoid with the bridge from the session's own Wine prefix.
-# vroid-cli launch runs this on the session's private desktop.
+# vroid-cli launch runs this on the session's private display.
 set -euo pipefail
 
 fatal() {
@@ -15,7 +15,7 @@ done
 
 export WINEPREFIX=$VROID_SESSION_DIR/wine
 export WINEDEBUG=fixme-all
-# Without these overrides Wine's Mono and Gecko setup stalls on the private desktop.
+# Without these overrides Wine's Mono and Gecko setup stalls on the private display.
 overrides='mscoree,mshtml='
 wine=$VROID_WINE/bin
 
@@ -70,7 +70,7 @@ fi
 
 # VRoid's watcher for saved custom items stops for good if their folder is
 # missing when VRoid starts, as in a new prefix, and VRoid then never marks
-# worn items that are not built in, which apply relies on (R-EDIT-10).
+# worn custom items, which apply relies on (R-EDIT-10).
 mkdir -p "${profiles[0]}/LocalLow/pixiv/VRoid Studio/custom_items"
 
 # BepInEx's root: its own files are links into the store; config, cache, and

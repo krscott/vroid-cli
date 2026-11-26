@@ -1,4 +1,4 @@
-# The vroid-cli bridge plugin, built against BepInEx's assemblies.
+# The vroid-cli bridge, built against BepInEx's assemblies.
 {
   lib,
   stdenvNoCC,
