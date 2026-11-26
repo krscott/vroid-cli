@@ -24,7 +24,7 @@ from pydantic import (
     model_validator,
 )
 
-Section = Literal["Face", "Hair", "Body", "Outfit"]
+Section = Literal["Face", "Hairstyle", "Body", "Outfit"]
 SECTIONS: tuple[Section, ...] = get_args(Section)
 
 # As VRoid's editor shows it, on the same sRGB scale; there is no alpha.
@@ -375,7 +375,7 @@ class Apply(Model):
 
     method: Literal["apply"]
     Face: Template = Field(default_factory=dict)
-    Hair: Template = Field(default_factory=dict)
+    Hairstyle: Template = Field(default_factory=dict)
     Body: Template = Field(default_factory=dict)
     Outfit: Template = Field(default_factory=dict)
     Accessories: list[Accessory] | None = Field(
@@ -668,8 +668,10 @@ REQUEST: TypeAdapter[Request] = TypeAdapter(Request)
 class SessionStatus(Model):
     session: str
     directory: str
-    desktop: str
-    app_running: bool
+    private_display: str = Field(
+        description="the directory to give `framewisp` to inspect the display"
+    )
+    running: bool = Field(description="whether an app instance runs")
     ready: bool
     pending_request: bool
     bridge: dict[str, Any] | None = Field(description="the bridge's last status")

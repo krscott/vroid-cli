@@ -18,13 +18,13 @@ from . import rpc
 
 SESSION_NAME = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}")
 # Must match the player size in scripts/vroid-studio.sh.
-DISPLAY = ("2560", "1440")
+DISPLAY_SIZE = ("2560", "1440")
 # Mesa render devices; automatic NVIDIA selection stalled the compositor.
 PREFERRED_GPU_VENDORS = {"0x1002", "0x8086"}
 # Logged by BepInEx be.788 when UpdateInteropAssemblies is off and its hash differs.
 OUTDATED_INTEROP = "Interop assemblies are possibly out of date"
 # Logged by the bridge in plugin/Plugin.cs when it loads.
-BRIDGE_LOADED = "vroid-cli bridge loaded; boot {boot}"
+BRIDGE_LOADED = "vroid-cli bridge loaded; app instance {app_instance}"
 # One app run's logs, relative to the session directory.
 RUN_LOGS = (
     "player.log",
@@ -39,7 +39,7 @@ RUN_LOGS = (
 STALL_S = 30
 
 
-class Desktop(Enum):
+class Display(Enum):
     STOPPED = "stopped"
     EXITED = "exited"  # VRoid exited; the runner is shutting down.
     RUNNING = "running"
@@ -51,7 +51,10 @@ class Session:
     directory: Path
 
     @property
-    def desktop(self) -> Path:
+    def display(self) -> Path:
+        # Framewisp's directory for the private display. Every build finds a
+        # session's display here, so another name would hide a running session
+        # from other builds.
         return self.directory / "desktop"
 
     @property
@@ -103,35 +106,35 @@ def controller(session: Session) -> Generator[None]:
         yield
 
 
-def desktop_state(session: Session) -> Desktop:
-    if not (session.desktop / "session.json").exists():
+def display_state(session: Session) -> Display:
+    if not (session.display / "session.json").exists():
         # Framewisp's ownership journal without session.json is taken to mean
         # that its runner died.
-        if (session.desktop / ".headless-owner.json").exists():
+        if (session.display / ".headless-owner.json").exists():
             raise RuntimeError(abandoned(session))
-        return Desktop.STOPPED
+        return Display.STOPPED
     # Framewisp records the app's exit; the runner then shuts itself down.
-    if (session.desktop / "app-exit.json").exists():
-        return Desktop.EXITED
+    if (session.display / "app-exit.json").exists():
+        return Display.EXITED
     result = subprocess.run(
-        ["framewisp", str(session.desktop), "status"],
+        ["framewisp", str(session.display), "status"],
         capture_output=True,
         text=True,
         check=False,
     )
     if result.returncode:
-        if (session.desktop / "app-exit.json").exists():
-            return Desktop.EXITED
+        if (session.display / "app-exit.json").exists():
+            return Display.EXITED
         raise RuntimeError(f"{result.stderr.strip()}\n{abandoned(session)}")
     status: dict[str, Any] = json.loads(result.stdout)
-    return Desktop.RUNNING if status["app"]["running"] else Desktop.EXITED
+    return Display.RUNNING if status["app"]["running"] else Display.EXITED
 
 
 def abandoned(session: Session) -> str:
     return (
         f"The private desktop was not shut down cleanly. Inspect "
         f"{session.directory / 'runner.log'}, then run: "
-        f"framewisp {session.desktop} recover"
+        f"framewisp {session.display} recover"
     )
 
 
@@ -146,11 +149,11 @@ def exited(session: Session, *, since_ms: float = 0) -> str:
     """Explain why the private desktop or VRoid stopped (R-SES-11)."""
     # VRoid ran in this launch only if Framewisp recorded its exit during it;
     # the record can remain from an earlier run.
-    record = session.desktop / "app-exit.json"
+    record = session.display / "app-exit.json"
     if record.exists() and record.stat().st_mtime * 1000 >= since_ms:
         # Framewisp writes VRoid's output to app.log, so the launcher's own
         # errors land there.
-        log = session.desktop / "app.log"
+        log = session.display / "app.log"
         return (
             f"VRoid exited. Last lines of {log}:\n{tail(log)}\n{bepinex_log(session)}"
         )
@@ -246,16 +249,18 @@ def mismatch(log: Path) -> str:
     )
 
 
-def outdated_interop(session: Session, *, boot: str) -> str | None:
-    """Explain a mismatch BepInEx logged in the ready bridge's boot."""
+def outdated_interop(session: Session, *, app_instance: str) -> str | None:
+    """Explain a mismatch BepInEx logged in the ready bridge's app instance."""
     _, log = bepinex_logs(session)
     try:
         text = log.read_text(errors="replace")
     except OSError:
         return None
-    # BepInEx rewrites its log on every start, and the bridge logs its boot ID
-    # when it loads (plugin/Plugin.cs), so a log naming the boot is this run's.
-    if BRIDGE_LOADED.format(boot=boot) not in text or OUTDATED_INTEROP not in text:
+    # BepInEx rewrites its log on every start, and the bridge logs its app
+    # instance's ID when it loads (plugin/Plugin.cs), so a log naming the app
+    # instance is its own.
+    loaded = BRIDGE_LOADED.format(app_instance=app_instance)
+    if loaded not in text or OUTDATED_INTEROP not in text:
         return None
     return mismatch(log)
 
@@ -286,21 +291,22 @@ def terms_accepted(session: Session) -> bool:
 
 def incompatible() -> str:
     return (
-        "The session runs a bridge from an incompatible vroid-cli build. Use that "
-        "build to save, or stop and launch again"
+        "The session runs a bridge from an incompatible vroid-cli build. Save and "
+        "stop the session with that build, then launch again. Without that build, "
+        'send {"method": "stop", "force": true}, which discards any unsaved changes'
     )
 
 
 def summary(session: Session) -> dict[str, Any]:
     exists = session.directory.is_dir()
-    desktop = desktop_state(session) if exists else Desktop.STOPPED
+    display = display_state(session) if exists else Display.STOPPED
     bridge = rpc.read_status(session.rpc)
     return {
         "session": session.name,
         "directory": str(session.directory),
-        "desktop": str(session.desktop),
-        "app_running": desktop is Desktop.RUNNING,
-        "ready": desktop is Desktop.RUNNING and bridge is not None and bridge.ready(),
+        "private_display": str(session.display),
+        "running": display is Display.RUNNING,
+        "ready": display is Display.RUNNING and bridge is not None and bridge.ready(),
         "pending_request": (session.rpc / "request.json").exists(),
         "bridge": bridge.raw if bridge else None,
     }
@@ -311,27 +317,29 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
     create_state(session)
     with controller(session):
         runner: subprocess.Popen[bytes] | None = None
-        desktop = desktop_state(session)
-        if desktop is Desktop.EXITED:
+        display = display_state(session)
+        if display is Display.EXITED:
             raise RuntimeError(
                 f"{exited(session)}\nWait for the desktop to close, then launch "
                 "again; if this persists, run stop"
             )
-        if desktop is Desktop.STOPPED:
+        if display is Display.STOPPED:
             keep_previous_logs(session)
+            # A status left in place would be the previous app instance's.
+            (session.rpc / "status.json").unlink(missing_ok=True)
             with (session.directory / "runner.log").open("ab") as log:
                 # Python does not pass the controller lock's descriptor on, so
                 # the detached runner never holds the lock.
                 runner = subprocess.Popen(
                     [
                         "framewisp",
-                        str(session.desktop),
+                        str(session.display),
                         "run",
                         "--x11",
                         "--width",
-                        DISPLAY[0],
+                        DISPLAY_SIZE[0],
                         "--height",
-                        DISPLAY[1],
+                        DISPLAY_SIZE[1],
                         "--",
                         "vroid-studio",
                     ],
@@ -350,7 +358,9 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
             if status and status.fresh(since_ms=started_ms) and status.main:
                 if not status.compatible:
                     raise RuntimeError(incompatible())
-                if outdated := outdated_interop(session, boot=status.boot):
+                if outdated := outdated_interop(
+                    session, app_instance=status.app_instance
+                ):
                     raise RuntimeError(outdated)
                 # The bridge finds the main view model on VRoid's welcome screen
                 # too, so an app instance left at the first-run dialogs looks ready.
@@ -368,7 +378,7 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
                 raise RuntimeError(exited(session, since_ms=started_ms))
             if runner is None and time.monotonic() >= next_check:
                 next_check = time.monotonic() + 5
-                if desktop_state(session) is not Desktop.RUNNING:
+                if display_state(session) is not Display.RUNNING:
                     raise RuntimeError(exited(session, since_ms=started_ms))
             if time.monotonic() >= deadline:
                 # A mismatch can keep the bridge from loading; waiting won't help.
@@ -384,32 +394,34 @@ def stop(session: Session, *, force: bool) -> dict[str, Any]:
     if not session.directory.is_dir():
         return {"session": session.name, "stopped": False}
     with controller(session):
-        desktop = desktop_state(session)
-        if desktop is Desktop.STOPPED:
+        display = display_state(session)
+        if display is Display.STOPPED:
             return {"session": session.name, "stopped": False}
-        if desktop is Desktop.RUNNING:
+        if display is Display.RUNNING:
             # The bridge writes its status before removing a finished request,
             # so a status read after this check is current.
             pending = (session.rpc / "request.json").exists()
             status = rpc.read_status(session.rpc)
-            if not force and (pending or (status is not None and status.modified)):
+            if not force and (
+                pending or (status is not None and status.unsaved_changes)
+            ):
                 raise RuntimeError(
                     "The app has unsaved changes or a pending request. "
                     'Save or wait first, or send {"method": "stop", "force": true} '
                     "to discard them"
                 )
             result = subprocess.run(
-                ["framewisp", str(session.desktop), "stop"],
+                ["framewisp", str(session.display), "stop"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 text=True,
                 check=False,
             )
-            if result.returncode and desktop_state(session) is Desktop.RUNNING:
+            if result.returncode and display_state(session) is Display.RUNNING:
                 raise RuntimeError(f"{result.stderr.strip()}\n{abandoned(session)}")
         # The runner shuts itself down after the app exits.
         deadline = time.monotonic() + 60
-        while (session.desktop / "session.json").exists():
+        while (session.display / "session.json").exists():
             if time.monotonic() >= deadline:
                 raise RuntimeError(abandoned(session))
             time.sleep(0.2)
@@ -426,4 +438,6 @@ def request(session: Session, *, method: str, args: dict[str, Any]) -> Any:
             )
         if not status.compatible:
             raise RuntimeError(incompatible())
-        return rpc.submit(session.rpc, boot=status.boot, method=method, args=args)
+        return rpc.submit(
+            session.rpc, app_instance=status.app_instance, method=method, args=args
+        )

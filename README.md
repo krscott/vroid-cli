@@ -52,8 +52,8 @@ JSON Schema of every request and result.
 
 ### Templates
 
-`dump` prints every item and accessory, and every Face, Hair, and Body value
-and colour, as an `apply` request, so a character's look can be saved,
+`dump` prints every item and accessory, and every Face, Hairstyle, and Body
+value and colour, as an `apply` request, so a character's look can be saved,
 diffed, edited, and applied to another project:
 
 ```sh
@@ -124,11 +124,11 @@ or has stalled, and `stop` then `launch` restarts it.
 ## Recovery
 
 `vroid-cli NAME '{"method": "status"}'` reports whether the app runs, whether
-it is ready, any pending request, and unsaved changes (`bridge.modified`).
-Logs are in the session directory: `runner.log`, `player.log`,
-`desktop/app.log`, `bepinex/LogOutput.log`, and, if BepInEx failed to start,
-`bepinex/preloader.log`. `launch` moves the previous run's logs to
-`previous/`.
+it is ready, any pending request, and unsaved changes
+(`bridge.unsaved_changes`). Logs are in the session directory: `runner.log`,
+`player.log`, `desktop/app.log`, `bepinex/LogOutput.log`, and, if BepInEx
+failed to start, `bepinex/preloader.log`. `launch` moves the previous run's
+logs to `previous/`.
 
 - **Timed-out request:** do not repeat it. It stays pending and blocks other
   commands until its result appears in `rpc/results/ID.json`. Restarting the
@@ -154,8 +154,9 @@ Logs are in the session directory: `runner.log`, `player.log`,
   ```
 - **Upgrades:** `launch` runs the VRoid and bridge of the vroid-cli build
   that ran it. A running session keeps working with a newer CLI unless the
-  file protocol changed; then save with the older build or stop and launch
-  again.
+  file protocol changed; then save and stop it with the older build, and
+  launch again. Without that build, `{"method": "stop", "force": true}` stops
+  it and discards any unsaved changes.
 - **Sessions from earlier versions** launch with the shared install and keep
   their VRoid preferences. Their own copy of VRoid in
   `wine/drive_c/VRoidStudio`, `installed`, and `installer.log` are no longer

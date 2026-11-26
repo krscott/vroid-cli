@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace VroidBridge;
 
-public sealed record Request(string Id, string Boot, string Method, int TimeoutMs, JsonElement Body)
+public sealed record Request(string Id, string AppInstance, string Method, int TimeoutMs, JsonElement Body)
 {
     public string Text(string name) => Body.GetProperty(name).GetString()
         ?? throw new ArgumentException($"Missing {name}");
@@ -13,23 +13,23 @@ public sealed record Request(string Id, string Boot, string Method, int TimeoutM
 public sealed class RpcDirectory
 {
     /// Change together with PROTOCOL in vroid_cli/rpc.py.
-    public const int Protocol = 12;
+    public const int Protocol = 13;
 
     private readonly string root;
     private readonly Func<object> status;
     private readonly Action<string> log;
     private readonly HashSet<string> taken = new();
     private (string Id, string Text)? unpublished;
-    public string Boot { get; }
+    public string AppInstance { get; }
 
     /// `status` returns the current status for status.json; `log` reports
     /// failures that leave a result unpublished.
-    public RpcDirectory(string root, string boot, Func<object> status, Action<string> log)
+    public RpcDirectory(string root, string appInstance, Func<object> status, Action<string> log)
     {
         this.root = root;
         this.status = status;
         this.log = log;
-        Boot = boot;
+        AppInstance = appInstance;
         Directory.CreateDirectory(Path.Combine(root, "results"));
         Directory.CreateDirectory(Path.Combine(root, "undo"));
     }
@@ -57,7 +57,7 @@ public sealed class RpcDirectory
         if (Flush() != null || !File.Exists(RequestPath)) return null;
         var request = Parse();
         if (request == null || taken.Contains(request.Id)) return null;
-        if (request.Boot != Boot)
+        if (request.AppInstance != AppInstance)
         {
             Finish(request, false, "Request belongs to another app instance; not executed");
             return null;
@@ -130,7 +130,7 @@ public sealed class RpcDirectory
             // The id names the result file; accept only the CLI's format.
             if (!Guid.TryParseExact(id, "N", out _) || id != id.ToLowerInvariant())
                 throw new FormatException("Invalid request id");
-            return new Request(id, body.GetProperty("boot").GetString()!,
+            return new Request(id, body.GetProperty("app_instance").GetString()!,
                 body.GetProperty("method").GetString()!, body.GetProperty("timeout_ms").GetInt32(), body);
         }
         catch (Exception error) when (error is JsonException or KeyNotFoundException

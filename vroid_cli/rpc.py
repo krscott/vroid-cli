@@ -9,7 +9,7 @@ from typing import Any, cast
 
 # Change together with RpcDirectory.Protocol whenever the file protocol or the
 # request methods change incompatibly.
-PROTOCOL = 12
+PROTOCOL = 13
 # The bridge writes a heartbeat about once a second from Unity's main thread.
 HEARTBEAT_STALE_MS = 5000
 # A whole template takes tens of seconds to apply, since each item it changes
@@ -30,11 +30,11 @@ class BridgeError(RuntimeError):
 
 @dataclass(frozen=True, kw_only=True)
 class BridgeStatus:
-    boot: str
+    app_instance: str
     protocol: int
     heartbeat_ms: float
     main: bool
-    modified: bool
+    unsaved_changes: bool
     raw: dict[str, Any]
 
     def fresh(self, *, since_ms: float | None = None) -> bool:
@@ -65,12 +65,17 @@ def read_status(rpc: Path) -> BridgeStatus | None:
     """Return the bridge's last status, or None if it is missing or unreadable."""
     try:
         raw = json.loads((rpc / "status.json").read_text())
+        protocol = int(raw["protocol"])
+        # Every protocol reports `protocol`, `heartbeat`, and `main`. A bridge
+        # of another protocol may name the rest differently; it gets no
+        # requests, and what it holds counts as unsaved.
+        current = protocol == PROTOCOL
         return BridgeStatus(
-            boot=str(raw["boot"]),
-            protocol=int(raw.get("protocol", 0)),
+            app_instance=str(raw["app_instance"]) if current else "",
+            protocol=protocol,
             heartbeat_ms=float(raw["heartbeat"]),
             main=bool(raw["main"]),
-            modified=bool(raw["modified"]),
+            unsaved_changes=bool(raw["unsaved_changes"]) if current else True,
             raw=raw,
         )
     except (OSError, ValueError, KeyError, TypeError):
@@ -81,7 +86,7 @@ def wine_path(path: Path) -> str:
     return "Z:" + str(path)
 
 
-def submit(rpc: Path, *, boot: str, method: str, args: dict[str, Any]) -> Any:
+def submit(rpc: Path, *, app_instance: str, method: str, args: dict[str, Any]) -> Any:
     """Send one request and wait for its result. Never resends (R-RPC-5).
 
     A result or error whose request wrote an undo file names it, and a
@@ -96,7 +101,7 @@ def submit(rpc: Path, *, boot: str, method: str, args: dict[str, Any]) -> Any:
         )
     request = args | {
         "id": uuid.uuid4().hex,
-        "boot": boot,
+        "app_instance": app_instance,
         "method": method,
         "timeout_ms": ENGINE_TIMEOUT_MS,
     }

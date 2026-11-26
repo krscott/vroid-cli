@@ -64,11 +64,11 @@ def invoke(
 
 def write_status(rpc: Path, **fields: Any) -> dict[str, Any]:
     status = {
-        "boot": "test-boot",
+        "app_instance": "test-instance",
         "protocol": PROTOCOL,
         "heartbeat": time.time() * 1000,
         "main": True,
-        "modified": False,
+        "unsaved_changes": False,
     } | fields
     temporary = rpc / "status.tmp"
     temporary.write_text(json.dumps(status))
@@ -122,10 +122,10 @@ def fake_framewisp(tmp_path: Path, script: str) -> dict[str, str]:
     return {"PATH": f"{binary}{os.pathsep}{os.environ['PATH']}"}
 
 
-def running_desktop(tmp_path: Path) -> dict[str, str]:
-    desktop = tmp_path / "state/test/desktop"
-    desktop.mkdir(parents=True, exist_ok=True)
-    (desktop / "session.json").write_text("{}")
+def running_display(tmp_path: Path) -> dict[str, str]:
+    display = tmp_path / "state/test/desktop"
+    display.mkdir(parents=True, exist_ok=True)
+    (display / "session.json").write_text("{}")
     log = tmp_path / "framewisp.log"
     return fake_framewisp(
         tmp_path,
@@ -269,10 +269,28 @@ def test_colour_labels_may_repeat_across_categories(tmp_path: Path) -> None:
 
 
 def test_bridge_from_an_older_protocol_is_refused(tmp_path: Path) -> None:
-    rpc = bridge(tmp_path, protocol=PROTOCOL - 1)
+    rpc = bridge(tmp_path)
+    # Another protocol's status need not name the other fields as this one does.
+    status = {"protocol": PROTOCOL - 1, "heartbeat": time.time() * 1000, "main": True}
+    (rpc / "status.json").write_text(json.dumps(status))
     result = invoke(tmp_path, "dump")
     assert result.returncode == 1
     assert "incompatible" in result.stderr
+    assert not (rpc / "request.json").exists()
+    # R-SES-4
+    env = running_display(tmp_path)
+    assert '"force": true' in invoke(tmp_path, "stop", env=env).stderr
+    assert invoke(tmp_path, "stop", force=True, env=env).returncode == 0
+
+
+@pytest.mark.parametrize("status", ["[]", "null", "{}", "not JSON"])
+def test_unreadable_status_gets_no_request(tmp_path: Path, status: str) -> None:
+    # R-RPC-4
+    rpc = bridge(tmp_path)
+    (rpc / "status.json").write_text(status)
+    result = invoke(tmp_path, "dump")
+    assert result.returncode == 1
+    assert "not running or not responding" in result.stderr
     assert not (rpc / "request.json").exists()
 
 
@@ -295,8 +313,14 @@ def test_bridge_from_an_older_protocol_is_refused(tmp_path: Path) -> None:
         ('{"method": "status"', "Invalid JSON"),
         # Python's or pydantic's recursion limit refuses it, depending on the host.
         ('{"method": "apply", "Face": ' + "[" * 100_000, "invalid request:"),
-        ('{"method": "apply", "Hair": {"Front": {"item": 48}}}', "Hair.Front.item"),
-        ('{"method": "apply", "Hair": {"Front": {"item": "../x"}}}', "Hair.Front.item"),
+        (
+            '{"method": "apply", "Hairstyle": {"Front": {"item": 48}}}',
+            "Hairstyle.Front.item",
+        ),
+        (
+            '{"method": "apply", "Hairstyle": {"Front": {"item": "../x"}}}',
+            "Hairstyle.Front.item",
+        ),
         ('{"method": "apply", "Accessories": [{"Color": "#FFFFFF"}]}', "item"),
         (
             '{"method": "apply", "Accessories": [{"item": "CatEar", "Color": "red"}]}',
@@ -444,7 +468,7 @@ def test_competing_controller_is_rejected(tmp_path: Path, body: dict[str, Any]) 
 
 def test_launch_ignores_a_heartbeat_from_before_launch(tmp_path: Path) -> None:
     # R-SES-2
-    rpc = bridge(tmp_path, boot="old-boot")
+    rpc = bridge(tmp_path, app_instance="old-instance")
     marker = tmp_path / "started"
     env = fake_framewisp(
         tmp_path, f"Path({str(marker)!r}).write_text(' '.join(args))\ntime.sleep(5)"
@@ -455,17 +479,25 @@ def test_launch_ignores_a_heartbeat_from_before_launch(tmp_path: Path) -> None:
         while not marker.exists() and time.monotonic() < deadline:
             time.sleep(0.01)
         time.sleep(0.5)
-        write_status(rpc, boot="new-boot")
+        write_status(rpc, app_instance="new-instance")
 
     thread = threading.Thread(target=new_instance)
     thread.start()
     result = invoke(tmp_path, "launch", timeout=8, env=env)
     thread.join()
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout)["bridge"]["boot"] == "new-boot"
+    assert json.loads(result.stdout)["bridge"]["app_instance"] == "new-instance"
     assert marker.read_text().endswith(
         "run --x11 --width 2560 --height 1440 -- vroid-studio"
     )
+
+
+def test_launch_ignores_the_last_heartbeat_of_a_hung_app(tmp_path: Path) -> None:
+    # R-SES-2: recent enough to look alive, but from before this launch.
+    bridge(tmp_path, heartbeat=time.time() * 1000 - 2000)
+    result = invoke(tmp_path, "launch", timeout=1, env=running_display(tmp_path))
+    assert result.returncode == 1
+    assert "not ready after 1s" in result.stderr
 
 
 def test_launch_reports_an_app_an_older_build_left_at_the_terms(
@@ -473,7 +505,7 @@ def test_launch_reports_an_app_an_older_build_left_at_the_terms(
 ) -> None:
     # R-SES-8
     rpc = bridge(tmp_path, terms=False)
-    env = running_desktop(tmp_path)
+    env = running_display(tmp_path)
     with heartbeats(rpc):
         launched = invoke(tmp_path, "launch", timeout=8, env=env)
     assert launched.returncode == 1
@@ -553,6 +585,14 @@ def test_launch_timeout_tells_a_stalled_app_from_a_slow_one(tmp_path: Path) -> N
     assert "keeps starting" not in result.stderr
 
 
+def test_launch_drops_the_previous_status(tmp_path: Path) -> None:
+    # R-SES-4: a later stop must not refuse over what an earlier bridge reported.
+    rpc = bridge(tmp_path, unsaved_changes=True)
+    env = fake_framewisp(tmp_path, "time.sleep(4)")
+    assert invoke(tmp_path, "launch", timeout=1, env=env).returncode == 1
+    assert not (rpc / "status.json").exists()
+
+
 def test_launch_fails_at_once_when_bepinex_fails_to_start(tmp_path: Path) -> None:
     # R-SES-11: BepInEx then shows a dialog and VRoid never becomes ready.
     preloader = tmp_path / "state/test/bepinex/preloader.log"
@@ -581,7 +621,7 @@ def test_resumed_launch_reports_the_running_apps_bepinex_failure(
     preloader.write_text("UnauthorizedAccessException\n")
     old = time.time() - 600
     os.utime(preloader, (old, old))
-    result = invoke(tmp_path, "launch", timeout=30, env=running_desktop(tmp_path))
+    result = invoke(tmp_path, "launch", timeout=30, env=running_display(tmp_path))
     assert result.returncode == 1
     assert "BepInEx failed to start" in result.stderr
     assert "UnauthorizedAccessException" in result.stderr
@@ -589,7 +629,7 @@ def test_resumed_launch_reports_the_running_apps_bepinex_failure(
 
 
 def test_launch_keeps_only_the_previous_runs_logs(tmp_path: Path) -> None:
-    rpc = bridge(tmp_path, boot="old-boot")
+    rpc = bridge(tmp_path, app_instance="old-instance")
     session = rpc.parent
     root = session / "bepinex"
     root.mkdir()
@@ -601,7 +641,7 @@ def test_launch_keeps_only_the_previous_runs_logs(tmp_path: Path) -> None:
     (root / "preloader.log").write_text("earlier failure\n")
     (root / "LogOutput.log").write_text(
         f"[Warning:InteropManager] {OUTDATED_INTEROP}.\n"
-        f"[Info   :VroidBridge] {BRIDGE_LOADED.format(boot='new-boot')}\n"
+        f"[Info   :VroidBridge] {BRIDGE_LOADED.format(app_instance='new-instance')}\n"
     )
     marker = tmp_path / "started"
     env = fake_framewisp(tmp_path, f"Path({str(marker)!r}).touch()\ntime.sleep(5)")
@@ -610,7 +650,7 @@ def test_launch_keeps_only_the_previous_runs_logs(tmp_path: Path) -> None:
         deadline = time.monotonic() + 5
         while not marker.exists() and time.monotonic() < deadline:
             time.sleep(0.01)
-        write_status(rpc, boot="new-boot")
+        write_status(rpc, app_instance="new-instance")
 
     thread = threading.Thread(target=new_instance)
     thread.start()
@@ -627,24 +667,24 @@ def test_launch_keeps_only_the_previous_runs_logs(tmp_path: Path) -> None:
     assert not (previous / "bepinex/ErrorLog.log").exists()
 
 
-@pytest.mark.parametrize("logged_boot", ["test-boot", "old-boot"])
-def test_launch_refuses_outdated_interop_from_this_boot_only(
-    tmp_path: Path, logged_boot: str
+@pytest.mark.parametrize("logged", ["test-instance", "old-instance"])
+def test_launch_refuses_outdated_interop_from_this_app_instance_only(
+    tmp_path: Path, logged: str
 ) -> None:
-    # The CLI recognizes this boot's BepInEx log by the bridge's load message.
+    # The CLI recognizes this app instance's BepInEx log by the bridge's load message.
     plugin = (SOURCE / "plugin/Plugin.cs").read_text()
-    assert BRIDGE_LOADED.format(boot="{rpc.Boot}") in plugin
+    assert BRIDGE_LOADED.format(app_instance="{rpc.AppInstance}") in plugin
     rpc = bridge(tmp_path)
     (rpc.parent / "bepinex").mkdir()
     (rpc.parent / "bepinex/LogOutput.log").write_text(
         f"[Warning:InteropManager] {OUTDATED_INTEROP}. To disable this message, "
         "create file X with the following contents: Y\n"
-        f"[Info   :VroidBridge] {BRIDGE_LOADED.format(boot=logged_boot)}\n"
+        f"[Info   :VroidBridge] {BRIDGE_LOADED.format(app_instance=logged)}\n"
     )
-    env = running_desktop(tmp_path)
+    env = running_display(tmp_path)
     with heartbeats(rpc):
         result = invoke(tmp_path, "launch", timeout=8, env=env)
-    if logged_boot == "test-boot":
+    if logged == "test-instance":
         assert result.returncode == 1
         assert "do not match its VRoid" in result.stderr
     else:
@@ -652,12 +692,12 @@ def test_launch_refuses_outdated_interop_from_this_boot_only(
 
 
 def test_launch_reports_a_desktop_that_failed_before_vroid(tmp_path: Path) -> None:
-    desktop = tmp_path / "state/test/desktop"
-    desktop.mkdir(parents=True)
-    (desktop / "app.log").write_text("previous run\n")
-    (desktop / "app-exit.json").write_text("{}")
+    display = tmp_path / "state/test/desktop"
+    display.mkdir(parents=True)
+    (display / "app.log").write_text("previous run\n")
+    (display / "app-exit.json").write_text("{}")
     old = time.time() - 60
-    os.utime(desktop / "app-exit.json", (old, old))
+    os.utime(display / "app-exit.json", (old, old))
     env = fake_framewisp(tmp_path, "print('sway exited', file=sys.stderr)\nsys.exit(1)")
     result = invoke(tmp_path, "launch", timeout=8, env=env)
     assert result.returncode == 1
@@ -668,11 +708,11 @@ def test_launch_reports_a_desktop_that_failed_before_vroid(tmp_path: Path) -> No
 def test_exited_app_blocks_launch_and_stop_waits_for_the_desktop(
     tmp_path: Path,
 ) -> None:
-    bridge(tmp_path, modified=True)
-    desktop = tmp_path / "state/test/desktop"
-    desktop.mkdir(parents=True)
-    (desktop / "session.json").write_text("{}")
-    (desktop / "app-exit.json").write_text("{}")
+    bridge(tmp_path, unsaved_changes=True)
+    display = tmp_path / "state/test/desktop"
+    display.mkdir(parents=True)
+    (display / "session.json").write_text("{}")
+    (display / "app-exit.json").write_text("{}")
     env = fake_framewisp(tmp_path, "raise SystemExit('framewisp must not run')")
     launched = invoke(tmp_path, "launch", env=env)
     assert launched.returncode == 1
@@ -680,22 +720,22 @@ def test_exited_app_blocks_launch_and_stop_waits_for_the_desktop(
 
     def close() -> None:
         time.sleep(0.5)
-        (desktop / "session.json").unlink()
+        (display / "session.json").unlink()
 
     closing = threading.Thread(target=close)
     closing.start()
     stopped = invoke(tmp_path, "stop", env=env)
-    assert not (desktop / "session.json").exists()
+    assert not (display / "session.json").exists()
     closing.join()
     assert stopped.returncode == 0, stopped.stderr
     assert json.loads(stopped.stdout)["stopped"] is True
 
 
 def test_abandoned_desktop_asks_for_recovery(tmp_path: Path) -> None:
-    desktop = tmp_path / "state/test/desktop"
-    desktop.mkdir(parents=True)
-    (desktop / ".headless-owner.json").write_text("{}")
-    (desktop / "app-exit.json").write_text("{}")
+    display = tmp_path / "state/test/desktop"
+    display.mkdir(parents=True)
+    (display / ".headless-owner.json").write_text("{}")
+    (display / "app-exit.json").write_text("{}")
     for command in ["status", "launch", "stop"]:
         result = invoke(tmp_path, command)
         assert result.returncode == 1
@@ -740,13 +780,13 @@ def test_state_dir_hides_only_session_state(tmp_path: Path) -> None:
     assert untracked.stdout == "?? important.py\n"
 
 
-@pytest.mark.parametrize("cause", ["modified", "pending"])
+@pytest.mark.parametrize("cause", ["unsaved", "pending"])
 def test_stop_refuses_to_discard_work_unless_forced(tmp_path: Path, cause: str) -> None:
     # R-SES-4
-    rpc = bridge(tmp_path, modified=cause == "modified")
+    rpc = bridge(tmp_path, unsaved_changes=cause == "unsaved")
     if cause == "pending":
         (rpc / "request.json").write_text("{}")
-    env = running_desktop(tmp_path)
+    env = running_display(tmp_path)
     refused = invoke(tmp_path, "stop", env=env)
     assert refused.returncode == 1
     assert '"force": true' in refused.stderr
@@ -778,9 +818,13 @@ def test_request_roundtrip(tmp_path: Path, outcome: str) -> None:
         result = invoke(tmp_path, "apply", Body=template)
     assert len(received) == 1
     request = received[0]
-    assert request["boot"] == "test-boot"
+    assert request["app_instance"] == "test-instance"
     assert request["method"] == "apply"
-    assert (request["Face"], request["Hair"], request["Body"]) == ({}, {}, template)
+    assert (request["Face"], request["Hairstyle"], request["Body"]) == (
+        {},
+        {},
+        template,
+    )
     assert (rpc / "results" / f"{request['id']}.json").exists()
     undo = rpc.resolve() / "undo" / f"{request['id']}.json"
     if outcome == "applied":
@@ -802,7 +846,7 @@ def test_request_roundtrip(tmp_path: Path, outcome: str) -> None:
         assert f"Head Size. To undo any change, apply @{undo}" in result.stderr
 
 
-# A template dumped before colours existed has no Hair section or colours.
+# A template dumped before colours existed has no Hairstyle section or colours.
 NUMERIC_DUMP = {
     "method": "apply",
     "Face": {"Face Sets": {"Eye Size X": 0.1, "Nose Size": [0.25, -0.5]}},
@@ -814,7 +858,7 @@ COLOUR_DUMP = {
         "Face Sets": {"Eye Size X": 0.1, "Nose Size": [0.25, -0.5]},
         "Irises": {"R Eye": "#9E6233", "L Eye": "#2E8B57"},
     },
-    "Hair": {"Front": {"Main Color": "#FF8C00", "Highlight Color": "#DB8A3B"}},
+    "Hairstyle": {"Front": {"Main Color": "#FF8C00", "Highlight Color": "#DB8A3B"}},
     "Body": {"Whole Body": {"Head Size": 0.125}},
 }
 ITEM_DUMP = {
@@ -823,7 +867,7 @@ ITEM_DUMP = {
         "Lips": {"item": None},
         "Eyebrows": {"item": "Preset_F", "Color": "#5C3A21"},
     },
-    "Hair": {"Front": {"item": "048"}, "Overall Hair": {"item": "custom"}},
+    "Hairstyle": {"Front": {"item": "048"}, "Overall Hair": {"item": "custom"}},
     "Body": {"Whole Body": {"item": "Preset_F", "Head Size": 0.125}},
     "Outfit": {
         "Tops": {
@@ -879,16 +923,20 @@ def test_dump_output_is_valid_apply_input(tmp_path: Path, dump: dict[str, Any]) 
     ) as received:
         dumped = invoke(tmp_path, "dump")
         assert dumped.returncode == 0, dumped.stderr
-        sections: dict[str, Any] = {"Hair": {}, "Outfit": {}}
+        sections: dict[str, Any] = {"Hairstyle": {}, "Outfit": {}}
         # Items, including null ones, and accessories pass through unchanged.
         assert json.loads(dumped.stdout) == sections | dump
         # Templates dumped before colours or items existed still apply unchanged.
         (tmp_path / "template.json").write_text(json.dumps(dump))
         reapplied = run_cli(tmp_path, "test", "@template.json")
     assert reapplied.returncode == 0, reapplied.stderr
-    assert received[1] | {"id": "", "boot": "", "timeout_ms": 0} == sections | dump | {
+    assert received[1] | {
         "id": "",
-        "boot": "",
+        "app_instance": "",
+        "timeout_ms": 0,
+    } == sections | dump | {
+        "id": "",
+        "app_instance": "",
         "timeout_ms": 0,
     }
 
@@ -898,15 +946,17 @@ def test_apply_sends_discard_custom_only_when_set(tmp_path: Path) -> None:
     rpc = bridge(tmp_path)
     with answer(
         rpc,
-        lambda packet: applied(rpc, packet, changed=2, discarded=["Hair/Overall Hair"]),
+        lambda packet: applied(
+            rpc, packet, changed=2, discarded=["Hairstyle/Overall Hair"]
+        ),
     ) as received:
         hair = {"Overall Hair": {"item": "215"}}
-        plain = invoke(tmp_path, "apply", Hair=hair)
-        forced = invoke(tmp_path, "apply", Hair=hair, discard_custom=True)
+        plain = invoke(tmp_path, "apply", Hairstyle=hair)
+        forced = invoke(tmp_path, "apply", Hairstyle=hair, discard_custom=True)
     assert plain.returncode == forced.returncode == 0, plain.stderr + forced.stderr
     assert "discard_custom" not in received[0]
     assert received[1]["discard_custom"] is True
-    assert json.loads(forced.stdout)["discarded"] == ["Hair/Overall Hair"]
+    assert json.loads(forced.stdout)["discarded"] == ["Hairstyle/Overall Hair"]
 
 
 def test_items_and_accessories_are_listed(tmp_path: Path) -> None:
@@ -1149,7 +1199,7 @@ def test_status_of_a_new_session_is_one_json_value(tmp_path: Path) -> None:
     result = invoke(tmp_path, "status")
     assert result.returncode == 0, result.stderr
     status = json.loads(result.stdout)
-    assert status["app_running"] is False and status["ready"] is False
+    assert status["running"] is False and status["ready"] is False
 
 
 @pytest.mark.parametrize(

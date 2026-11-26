@@ -27,7 +27,7 @@ vroid-cli alice '{"method": "open", "path": "./alice.vroid"}'
 vroid-cli alice '{"method": "categories", "section": "Body"}'
 vroid-cli alice '{"method": "parameters", "section": "Body", "category": "Whole Body"}'
 vroid-cli alice '{"method": "apply", "Body": {"Whole Body": {"Head Size": 0.125}}}'
-vroid-cli alice '{"method": "apply", "Hair": {"Front": {"Main Color": "#FF8C00"}}}'
+vroid-cli alice '{"method": "apply", "Hairstyle": {"Front": {"Main Color": "#FF8C00"}}}'
 vroid-cli alice '{"method": "items", "section": "Outfit", "category": "Tops"}'
 vroid-cli alice '{"method": "thumbnails", "section": "Outfit", "category": "Tops", "path": "./tops.png"}'
 vroid-cli alice '{"method": "apply", "Outfit": {"Tops": {"item": "159"}}}'
@@ -114,9 +114,9 @@ and tails are accessories.
   previous values. Undo with `vroid-cli NAME @PATH`. When `apply` fails after
   changing something, its error names the same file. Undo files stay in the
   session; copy one to keep it after the session is deleted.
-- Colours are the hex VRoid's editor shows, without alpha. Hair's "Main Color"
-  and "Highlight Color" (under Front, Back, and the other hair parts) are one
-  pair for all hair; Base Hair has its own "Main Color".
+- Colours are the hex VRoid's editor shows, without alpha. Hairstyle's "Main
+  Color" and "Highlight Color" (under Front, Back, and the other hair parts)
+  are one pair for all hair; Base Hair has its own "Main Color".
 - Some colours are shared: skin is one colour in Face Eyelids, Nose, and Skin
   and Body Whole Body. Set each in one place per request; the error names the
   conflict. Set Irises "R Eye" and "L Eye" separately; "Both Eyes" is refused.
@@ -138,13 +138,13 @@ and tails are accessories.
   built in. `"item": null` takes off the item where `items` reports
   `removable`.
 - VRoid takes off conflicting items itself, such as the dress when a top is
-  selected; a request naming both is refused. Each Hair Back item also brings
-  its own Base Hair item, or none: Back `146` selects Base Hair `001`, `326`
-  selects `Default`. Set Base Hair after Back, or in the same request, to keep
-  another. `changed` counts only what the request names, but `undo` restores
-  these too. Sets (Face Sets, Eyes Sets, Hairstyle Sets, Whole Sets) select
-  the items of other categories, so name either a set or those items. `dump`
-  omits sets.
+  selected; a request naming both is refused. Each Hairstyle Back item also
+  brings its own Base Hair item, or none: Back `146` selects Base Hair `001`,
+  `326` selects `Default`. Set Base Hair after Back, or in the same request, to
+  keep another. `changed` counts only what the request names, but `undo`
+  restores these too. Sets (Face Sets, Eyes Sets, Hairstyle Sets, Whole Sets)
+  select the items of other categories, so name either a set or those items.
+  `dump` omits sets.
 - `"custom"` is an item `items` does not list, such as a texture-edited
   outfit or a sample model's part. `apply` refuses to change any item in a
   section that wears one, since VRoid may replace it and `undo` cannot
@@ -245,9 +245,9 @@ and tails are accessories.
   one value. An `apply` request may name each label in only one category per
   section.
 - `dump` returns an `apply` request with every item, accessory, and Face,
-  Hair, and Body value and colour, each value listed once under the first
-  category that has it (skin under Face Eyelids, hair under Hair Front). Save
-  it as a template, edit or diff it with JSON tools, and apply it in any
+  Hairstyle, and Body value and colour, each value listed once under the first
+  category that has it (skin under Face Eyelids, hair under Hairstyle Front).
+  Save it as a template, edit or diff it with JSON tools, and apply it in any
   session.
 - Paths in requests, including saved ones, resolve against the current
   directory, not the request file's.
@@ -326,14 +326,13 @@ escalation.
 
 ## Recovery
 
-`status` reports `app_running`, `ready`, `pending_request`, and the bridge's
-last heartbeat, including `modified` for unsaved changes and `rebuilt`, the
-number of model rebuilds since the app started; only differences between two
-readings mean anything. Session state lives in
-`.vroid/NAME/` at the Git worktree root (the current directory outside Git), or
-under `VROID_STATE_DIR`. On failure, read `runner.log`, `player.log`,
-`bepinex/LogOutput.log`, and `bepinex/preloader.log` there; `previous/` holds
-the previous run's logs.
+`status` reports `running`, `ready`, `pending_request`, and the bridge's last
+heartbeat, including `unsaved_changes` and `rebuilt`, the number of model
+rebuilds since the app started; only differences between two readings mean
+anything. Session state lives in `.vroid/NAME/` at the Git worktree root (the
+current directory outside Git), or under `VROID_STATE_DIR`. On failure, read
+`runner.log`, `player.log`, `bepinex/LogOutput.log`, and
+`bepinex/preloader.log` there; `previous/` holds the previous run's logs.
 
 - A pending request blocks new commands. Its result appears in
   `rpc/results/ID.json`. Restarting the session marks it as having an unknown

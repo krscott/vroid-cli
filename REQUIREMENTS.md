@@ -50,8 +50,9 @@ backfill unrelated requirements.
   Rationale: Session state holds proprietary app files, Wine prefixes, and
   logs that must never be committed by accident.
 
-- **R-SES-4** [test] `stop` refuses while the app last reported unsaved changes
-  or a request is pending, unless forced.
+- **R-SES-4** [test] `stop` refuses, unless forced, while a request is pending
+  or the app last reported unsaved changes. A bridge from an incompatible
+  build, whose status this build cannot read, counts as reporting them.
 
   Rationale: Stopping discards unsaved edits, which may be the only copy of an
   agent's work.
@@ -168,10 +169,10 @@ backfill unrelated requirements.
 
   Manual test: Run `just gui-smoke SESSION SOURCE.vroid` with an editable
   project. It saves at least one value of each kind `apply` can set, including
-  an item in a Hair and an Outfit category, an Outfit colour, and an accessory
-  with a colour, a bone other than its default, a position, rotation and scale,
-  a shape slider, a custom name, and hidden and locked set, and passes only if
-  each reads back unchanged.
+  an item in a Hairstyle and an Outfit category, an Outfit colour, and an
+  accessory with a colour, a bone other than its default, a position, rotation
+  and scale, a shape slider, a custom name, and hidden and locked set, and
+  passes only if each reads back unchanged.
 
 - **R-EDIT-2** [test] `apply` rejects a value that is not finite, or a colour
   that is not `#RRGGBB`, before contacting the app.
@@ -381,9 +382,9 @@ backfill unrelated requirements.
   may be an earlier deliverable.
 
   Manual test: `just gui-smoke` exports a recoloured, reshaped, and moved
-  accessory, checks that `dump` and `modified` are unchanged, imports the file
-  into another project, and compares the new accessory's entry with the
-  exported one. It checks that an existing destination is refused and left
+  accessory, checks that `dump` and `unsaved_changes` are unchanged, imports
+  the file into another project, and compares the new accessory's entry with
+  the exported one. It checks that an existing destination is refused and left
   unchanged.
 
 - **R-EDIT-17** [test] `apply` takes an accessory's rotation as a unit
@@ -409,12 +410,12 @@ backfill unrelated requirements.
   a hand-off look like an edit.
 
   Manual test: `just gui-smoke` exports an edited character as VRM 1.0 and as
-  VRM 0.0. It checks that `dump`, `modified`, a render, and the Framewisp input
-  log are unchanged, and that each file is a binary glTF with the VRM extension
-  of its version, the title, the author, and the humanoid bones. After a change
-  to the VRoid pin, also import both files headless with the
-  [VRM add-on](https://github.com/saturday06/VRM-Addon-for-Blender)'s release
-  zip unpacked as `ADDONS/addons/io_scene_vrm`. Each file must print
+  VRM 0.0. It checks that `dump`, `unsaved_changes`, a render, and the
+  Framewisp input log are unchanged, and that each file is a binary glTF with
+  the VRM extension of its version, the title, the author, and the humanoid
+  bones. After a change to the VRoid pin, also import both files headless with
+  the [VRM add-on](https://github.com/saturday06/VRM-Addon-for-Blender)'s
+  release zip unpacked as `ADDONS/addons/io_scene_vrm`. Each file must print
   `{'FINISHED'}`, one armature, its meshes and materials, and the title and
   author. Run the command without this list's two-space indent, which Python
   would reject:
@@ -459,11 +460,11 @@ backfill unrelated requirements.
   image and of each view are background, that each view shows the character,
   and that the views in one image share the character's lowest row.
 
-- **R-VIEW-2** [manual: `just gui-smoke` checks that `dump`, `modified`, and
-  the Framewisp input log are unchanged by rendering and by drawing
+- **R-VIEW-2** [manual: `just gui-smoke` checks that `dump`, `unsaved_changes`,
+  and the Framewisp input log are unchanged by rendering and by drawing
   thumbnails] Rendering and drawing thumbnails change nothing in the app: the
-  project, its unsaved state, and the editor's view stay as they were, and
-  they send no pointer or keyboard input.
+  project, its unsaved state, and the editor's view stay as they were, and they
+  send no pointer or keyboard input.
 
   Rationale: Agents render between edits to check them. A render that changed
   the character, marked it unsaved, or moved the user's view would make an
@@ -475,10 +476,10 @@ backfill unrelated requirements.
   Rationale: The destination may be an earlier image an agent is comparing
   against, and a reader that finds the file must be able to use it.
 
-- **R-VIEW-4** [manual: `just gui-smoke` draws the thumbnails of a Hair and an
-  Outfit category and checks the image size and that `items` lists in the
-  result exactly the category's `items`; compare a few cells with VRoid's item
-  picker in a Framewisp screenshot] `thumbnails` writes one PNG that shows
+- **R-VIEW-4** [manual: `just gui-smoke` draws the thumbnails of a Hairstyle
+  and an Outfit category and checks the image size and that `items` lists in
+  the result exactly the category's `items`; compare a few cells with VRoid's
+  item picker in a Framewisp screenshot] `thumbnails` writes one PNG that shows
   VRoid's own thumbnail of every built-in item in a category, each labelled
   with its identifier.
 

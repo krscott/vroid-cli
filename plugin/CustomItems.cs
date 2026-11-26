@@ -80,8 +80,8 @@ public sealed partial class Plugin
         var registry = CustomItemRegistry();
         var errors = new List<string>();
         var before = rebuilt;
-        var unsaved = modified;
-        modified = true;
+        var unsaved = unsavedChanges;
+        unsavedChanges = true;
         var task = Reflect.Call(registry.Self, "ImportCustomItemByTransferableType", registry.Bus, path, registry.Context, OnError(errors))!;
         while (Reflect.Get(task, "IsCompleted") is not true) yield return true;
         if (Reflect.Get(task, "IsFaulted") is true)
@@ -89,7 +89,7 @@ public sealed partial class Plugin
         // VRoid reports an error before changing anything.
         if (errors.Count > 0)
         {
-            modified = unsaved;
+            unsavedChanges = unsaved;
             throw new ArgumentException($"VRoid cannot import {file}: it reports {string.Join(", ", errors)}. Nothing changed");
         }
         Changed.Add($"Accessories/{file}");
