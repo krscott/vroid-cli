@@ -123,7 +123,7 @@ def fake_framewisp(tmp_path: Path, script: str) -> dict[str, str]:
 
 
 def running_display(tmp_path: Path) -> dict[str, str]:
-    display = tmp_path / "state/test/display"
+    display = tmp_path / "state/test/desktop"
     display.mkdir(parents=True, exist_ok=True)
     (display / "session.json").write_text("{}")
     log = tmp_path / "framewisp.log"
@@ -492,6 +492,16 @@ def test_launch_ignores_a_heartbeat_from_before_launch(tmp_path: Path) -> None:
     )
 
 
+def test_launch_ignores_the_last_heartbeat_of_a_hung_app_instance(
+    tmp_path: Path,
+) -> None:
+    # R-SES-2: recent enough to look alive, but from before this launch.
+    bridge(tmp_path, heartbeat=time.time() * 1000 - 2000)
+    result = invoke(tmp_path, "launch", timeout=1, env=running_display(tmp_path))
+    assert result.returncode == 1
+    assert "not ready after 1s" in result.stderr
+
+
 def test_launch_reports_an_app_instance_an_older_build_left_at_the_terms(
     tmp_path: Path,
 ) -> None:
@@ -627,11 +637,11 @@ def test_launch_keeps_only_the_previous_app_instances_logs(tmp_path: Path) -> No
     session = rpc.parent
     root = session / "bepinex"
     root.mkdir()
-    (session / "display").mkdir()
+    (session / "desktop").mkdir()
     (session / "previous/bepinex").mkdir(parents=True)
     (session / "previous/bepinex/ErrorLog.log").write_text("older app instance\n")
     (session / "player.log").write_text("previous app instance\n")
-    (session / "display/app.log").write_text("previous app instance\n")
+    (session / "desktop/app.log").write_text("previous app instance\n")
     (root / "preloader.log").write_text("earlier failure\n")
     (root / "LogOutput.log").write_text(
         f"[Warning:InteropManager] {OUTDATED_INTEROP}.\n"
@@ -655,7 +665,7 @@ def test_launch_keeps_only_the_previous_app_instances_logs(tmp_path: Path) -> No
     assert not (root / "LogOutput.log").exists()
     previous = session / "previous"
     assert (previous / "player.log").read_text() == "previous app instance\n"
-    assert (previous / "display/app.log").read_text() == "previous app instance\n"
+    assert (previous / "desktop/app.log").read_text() == "previous app instance\n"
     assert (previous / "bepinex/preloader.log").read_text() == "earlier failure\n"
     assert OUTDATED_INTEROP in (previous / "bepinex/LogOutput.log").read_text()
     assert not (previous / "bepinex/ErrorLog.log").exists()
@@ -688,7 +698,7 @@ def test_launch_refuses_outdated_interop_from_this_app_instance_only(
 def test_launch_reports_a_private_display_that_failed_before_vroid(
     tmp_path: Path,
 ) -> None:
-    display = tmp_path / "state/test/display"
+    display = tmp_path / "state/test/desktop"
     display.mkdir(parents=True)
     (display / "app.log").write_text("previous app instance\n")
     (display / "app-exit.json").write_text("{}")
@@ -705,7 +715,7 @@ def test_exited_vroid_blocks_launch_and_stop_waits_for_the_private_display(
     tmp_path: Path,
 ) -> None:
     bridge(tmp_path, unsaved_changes=True)
-    display = tmp_path / "state/test/display"
+    display = tmp_path / "state/test/desktop"
     display.mkdir(parents=True)
     (display / "session.json").write_text("{}")
     (display / "app-exit.json").write_text("{}")
@@ -728,7 +738,7 @@ def test_exited_vroid_blocks_launch_and_stop_waits_for_the_private_display(
 
 
 def test_abandoned_private_display_asks_for_recovery(tmp_path: Path) -> None:
-    display = tmp_path / "state/test/display"
+    display = tmp_path / "state/test/desktop"
     display.mkdir(parents=True)
     (display / ".headless-owner.json").write_text("{}")
     (display / "app-exit.json").write_text("{}")

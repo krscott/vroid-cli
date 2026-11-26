@@ -50,9 +50,9 @@ backfill unrelated requirements.
   Rationale: Session state holds proprietary app files, Wine prefixes, and
   logs that must never be committed by accident.
 
-- **R-SES-4** [test] `stop` refuses while the app last reported unsaved changes,
-  runs a bridge from an incompatible build, whose report this build cannot
-  read, or a request is pending, unless forced.
+- **R-SES-4** [test] `stop` refuses, unless forced, while a request is pending
+  or the app last reported unsaved changes. A bridge from an incompatible
+  build, whose status this build cannot read, counts as reporting them.
 
   Rationale: Stopping discards unsaved edits, which may be the only copy of an
   agent's work.

@@ -126,7 +126,7 @@ or has stalled, and `stop` then `launch` restarts it.
 `vroid-cli NAME '{"method": "status"}'` reports whether the app runs, whether
 it is ready, any pending request, and unsaved changes
 (`bridge.unsaved_changes`). Logs are in the session directory: `runner.log`,
-`player.log`, `display/app.log`, `bepinex/LogOutput.log`, and, if BepInEx
+`player.log`, `desktop/app.log`, `bepinex/LogOutput.log`, and, if BepInEx
 failed to start, `bepinex/preloader.log`. `launch` moves the previous run's
 logs to `previous/`.
 
@@ -137,7 +137,7 @@ logs to `previous/`.
   pending request. Save to a new path, or send
   `{"method": "stop", "force": true}` to discard them.
 - **Another project:** save, `stop`, and `launch` before opening it.
-- **Unclean desktop shutdown:** run `framewisp ABSOLUTE/SESSION/display recover`
+- **Unclean desktop shutdown:** run `framewisp ABSOLUTE/SESSION/desktop recover`
   as the error message says, then launch again.
 - **Stalled launch:** before `stop`, save a backtrace of every thread of the
   session's Wine processes with the Wine build that runs them, and attach it
@@ -158,8 +158,8 @@ logs to `previous/`.
   launch again.
 - **Sessions from earlier versions** launch with the shared install and keep
   their VRoid preferences. Their own copy of VRoid in
-  `wine/drive_c/VRoidStudio`, `installed`, `installer.log`, and `desktop/` are
-  no longer used. Deleting them is optional and only frees about 1.4 GB.
+  `wine/drive_c/VRoidStudio`, `installed`, and `installer.log` are no longer
+  used. Deleting them is optional and only frees about 1.4 GB.
 
 ## Development
 

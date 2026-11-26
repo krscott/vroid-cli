@@ -338,4 +338,4 @@ current directory outside Git), or under `VROID_STATE_DIR`. On failure, read
   `rpc/results/ID.json`. Restarting the session marks it as having an unknown
   outcome; check the project before editing again.
 - If the private desktop was not shut down cleanly, run
-  `framewisp /abs/path/.vroid/NAME/display recover` as the error says.
+  `framewisp /abs/path/.vroid/NAME/desktop recover` as the error says.
