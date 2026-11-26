@@ -66,6 +66,10 @@ public sealed partial class Plugin
         for (var index = 0; index < ids.Length; index++)
         {
             var item = $"{slot.Path}/{ids[index]}";
+            // Preview is a TransferableGroupThumbnailTextureSource, whose Create
+            // loads a prebaked texture from VRoid's asset storage, usually within
+            // a frame. VRoid's capture-based ThumbnailProvider serves custom
+            // items only.
             var task = Reflect.Call(Reflect.Get(slot.Items[index].Option, "Preview") ?? throw Differs($"the thumbnail of {item}"), "Create")!;
             while (Reflect.Get(task, "IsCompleted") is not true) yield return true;
             if (Reflect.Get(task, "IsFaulted") is true)

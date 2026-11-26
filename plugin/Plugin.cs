@@ -101,6 +101,7 @@ public sealed partial class Plugin : BasePlugin
             var now = (int)Reflect.Type("UnityEngine.Time").GetProperty("frameCount")!.GetValue(null)!;
             if (now == frame) return;
             frame = now;
+            // Unity pauses an unfocused player otherwise, and the bridge with it.
             Reflect.Type("UnityEngine.Application").GetProperty("runInBackground")!.SetValue(null, true);
             if (!SinceHeartbeat.IsRunning || SinceHeartbeat.ElapsedMilliseconds >= 1000)
             {
@@ -146,6 +147,8 @@ public sealed partial class Plugin : BasePlugin
     }
 
     // Constructor hooks miss the main view model; the live editor view holds it.
+    // The similarly named start-screen markup type is not a Unity Object, so
+    // FindObjectsOfTypeAll cannot take it.
     private static object? FindMainViewModel()
     {
         var find = Reflect.Type("UnityEngine.Resources").GetMethods()
@@ -211,7 +214,9 @@ public sealed partial class Plugin : BasePlugin
     }
 
     // Rewrites the undo file after a custom accessory was dropped from `undo`,
-    // so a crash leaves a file that still applies (R-EDIT-11).
+    // so a later failure leaves a file that still applies (R-EDIT-11). A failure
+    // between the removal and this rewrite leaves the accessory in the file,
+    // which apply then refuses.
     private static void SaveUndo()
     {
         // The latest write holds the whole template, so only its outcome counts.
@@ -250,7 +255,10 @@ public sealed partial class Plugin : BasePlugin
 
     private static string Name(object category) => (string?)Reflect.Get(category, "Name") ?? "";
     private static string Label(object parameter) => (string?)Reflect.Get(parameter, "Label") ?? "";
+    // A two-sided slider holds its value in CombinedValue, any other in Value.
     private static string Member(object parameter) => Reflect.Get(parameter, "CombinedValue") == null ? "Value" : "CombinedValue";
+    // A float, as VRoid stores it: JSON then holds its shortest round-trip form,
+    // so a dumped value applies back exactly (R-EDIT-7).
     private static float Read(object parameter) => Convert.ToSingle(Reflect.Get(parameter, Member(parameter))
         ?? throw new InvalidOperationException($"Parameter {Label(parameter)} has no value"));
 
@@ -562,6 +570,8 @@ public sealed partial class Plugin : BasePlugin
         // leaves it too (R-EDIT-11).
         rpc.WriteUndo(request, restore);
         undo = restore;
+        // Items change before values, since a new item can reset its category's values:
+        // in VRoid 2.16.0 those of Irises and Eyebrows, and an Outfit item's colours.
         foreach (var step in ChangeItems(work)) yield return step;
         foreach (var step in ChangeAccessories(work, restore)) yield return step;
         var changed = work.Changed;
@@ -620,6 +630,8 @@ public sealed partial class Plugin : BasePlugin
             var seen = new HashSet<string>();
             // Categories share parameters by label; list each under the first category
             // that has it, and fail if a later copy disagrees.
+            // Observed in VRoid 2.16.0, where Face Sets, Eyes Sets, and Eyeliner all hold
+            // "Eye Size X".
             var listed = new Dictionary<string, (string Category, object? Value)>();
             foreach (var category in Visit(section, null, new List<string>()))
             {
@@ -629,11 +641,13 @@ public sealed partial class Plugin : BasePlugin
                     continue;
                 }
                 // apply selects categories by name, so even an empty duplicate breaks the template.
+                // No section has one in VRoid 2.16.0.
                 if (!seen.Add(category.Name))
                     throw new InvalidOperationException($"Two {section} categories are named {category.Name}; a template cannot hold both");
                 var values = new Dictionary<string, object?>();
                 // Sets only select other categories' items, which are listed instead.
                 if (SlotOf(section, category.Node, category.Index) is { IsSet: false } slot) values["item"] = State(slot);
+                // No value is labelled `item` in VRoid 2.16.0.
                 if (category.Parameters.Select(Label).Concat(category.Swatches.Select(swatch => swatch.Label)).Contains("item"))
                     throw new InvalidOperationException($"{section}/{category.Name} has a value labelled item; a template cannot hold it and the item");
                 foreach (var (label, value) in Values(category.Parameters))
@@ -714,6 +728,7 @@ public sealed partial class Plugin : BasePlugin
         var before = rebuilt;
         start();
         while (root == null || rebuilt == before || updating) yield return true;
+        // VRoid does not count a new character as unsaved, though it has no file.
         modified = false;
     }
 
@@ -728,6 +743,8 @@ public sealed partial class Plugin : BasePlugin
                 if (!File.Exists(path)) throw new ArgumentException("Project must be an existing file");
                 foreach (var step in Load(() => Reflect.Call(Main, "ImportFileAndMoveToEditRoot", path, false, false))) yield return step;
                 foreach (var step in RebuildAccessoryColors()) yield return step;
+                // The flags that pass toggles end as they were, so the character has
+                // no unsaved changes; VRoid's own undo history still holds the toggles.
                 modified = false;
                 result = new { opened = path };
                 break;
@@ -736,6 +753,8 @@ public sealed partial class Plugin : BasePlugin
             {
                 var name = request.Text("base");
                 // The start screen's base dialog (BaseSelectDialogViewModel) offers these.
+                // The bases are assets in the install, so they need no network, are the
+                // same in every session, and wear only built-in items (R-EDIT-14).
                 var variant = name switch
                 {
                     "Preset_F" => "F00",

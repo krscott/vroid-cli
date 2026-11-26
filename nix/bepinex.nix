@@ -12,6 +12,8 @@ let
     url = "https://builds.bepinex.dev/projects/bepinex_be/788/BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.788%2B5b766a3.zip";
     sha256 = "f4cc496bd098a0df4164b81e3737297707f13a47c2478dba2f60eefab784817a";
   };
+  # VRoid 2.16.0 is built with Unity 6000.0.62f1. Another VRoid version needs
+  # its Unity's libraries here and in plugin/BepInEx.cfg.
   unity = fetchurl {
     url = "https://unity.bepinex.dev/libraries/6000.0.62.zip";
     sha256 = "a3c6490d9692d8cf22930b10c80081d1b3c5e93ce98c8306562e77accf2bd268";

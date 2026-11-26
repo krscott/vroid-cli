@@ -21,6 +21,8 @@ public static class ItemIds
     /// A built-in item's resource name ends in `.../ID/TYPE.transferablegroup`,
     /// such as `pixiv/VRoid/Clothing/Tops/N00/159/...`. The ID is unique within
     /// its category in VRoid 2.16.0; null means the name has no valid ID.
+    /// The name is a fixed asset path, so an item's identifier is the same in
+    /// every session and after every restart (R-EDIT-9).
     public static string? Preset(string? resourceName)
     {
         if (resourceName == null || !resourceName.StartsWith(BuiltIn)) return null;
@@ -50,6 +52,9 @@ public static class ItemIds
     /// accessory, but VRoid keeps every accessory of a kind in one group, and a
     /// group an imported accessory started is a `user/VRoid/CustomItem/...`
     /// resource, so every accessory in such a group is custom.
+    /// An accessory that VRoid's own Import button added to a group of built-in
+    /// accessories carries no mark, so it reads as the built-in item its key
+    /// names, and a template drops its texture.
     public static string Accessory(string? localizationKey, string groupResourceName, IReadOnlySet<string> builtIn) =>
         AccessoryKey(localizationKey) is { } key && builtIn.Contains(key) && !Imported(groupResourceName) ? key : Custom;
 
@@ -100,6 +105,9 @@ public static class Bones
 }
 
 /// Checks of an accessory's placement relative to its bone.
+/// VRoid stores exactly the float32 values it is given and does not normalize
+/// a rotation, so a placement reads back exactly, also after a save and a
+/// reopen.
 public static class Placement
 {
     /// How far a rotation's length may be from 1. VRoid's own gizmo leaves
@@ -158,6 +166,9 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
     /// group after its last accessory is removed, and adds a built-in one to a
     /// group an import started, where it reads as custom, so none is added to
     /// the `imported` kinds.
+    /// Removing a kind's accessories and adding them again reaches every
+    /// arrangement of bones VRoid's own controls can make for built-in
+    /// accessories (R-EDIT-7, R-EDIT-11).
     public static AccessoryPlan Of(IReadOnlyList<WornAccessory> worn, IReadOnlyList<WantedAccessory> wanted,
         Func<int, int, bool>? same = null, IReadOnlySet<string>? imported = null)
     {

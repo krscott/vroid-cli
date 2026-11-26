@@ -34,7 +34,8 @@ RUN_LOGS = (
     "bepinex/ErrorLog.log",
 )
 # A starting app whose logs are quiet this long has stalled; a cold first start
-# writes no log line for about 12 s while it creates the Wine prefix.
+# writes no log line for about 12 s while it creates the Wine prefix, and then
+# one every few seconds until VRoid is ready.
 STALL_S = 30
 
 
@@ -104,6 +105,8 @@ def controller(session: Session) -> Generator[None]:
 
 def desktop_state(session: Session) -> Desktop:
     if not (session.desktop / "session.json").exists():
+        # Framewisp's ownership journal without session.json is taken to mean
+        # that its runner died.
         if (session.desktop / ".headless-owner.json").exists():
             raise RuntimeError(abandoned(session))
         return Desktop.STOPPED
@@ -145,6 +148,8 @@ def exited(session: Session, *, since_ms: float = 0) -> str:
     # the record can remain from an earlier run.
     record = session.desktop / "app-exit.json"
     if record.exists() and record.stat().st_mtime * 1000 >= since_ms:
+        # Framewisp writes VRoid's output to app.log, so the launcher's own
+        # errors land there.
         log = session.desktop / "app.log"
         return (
             f"VRoid exited. Last lines of {log}:\n{tail(log)}\n{bepinex_log(session)}"
@@ -315,6 +320,8 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
         if desktop is Desktop.STOPPED:
             keep_previous_logs(session)
             with (session.directory / "runner.log").open("ab") as log:
+                # Python does not pass the controller lock's descriptor on, so
+                # the detached runner never holds the lock.
                 runner = subprocess.Popen(
                     [
                         "framewisp",
@@ -345,6 +352,8 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
                     raise RuntimeError(incompatible())
                 if outdated := outdated_interop(session, boot=status.boot):
                     raise RuntimeError(outdated)
+                # The bridge finds the main view model on VRoid's welcome screen
+                # too, so an app instance left at the first-run dialogs looks ready.
                 # The launcher accepts the terms before VRoid starts, so
                 # only an app an older build started can be waiting.
                 if not terms_accepted(session):

@@ -30,6 +30,8 @@ let
     wineserver -w
   '';
 
+  # The store's copy can be read-only: VRoid and Unity write only to the
+  # prefix's AppData and to -logFile.
   app = stdenvNoCC.mkDerivation {
     pname = "vroid-studio-app";
     inherit version;
@@ -82,6 +84,8 @@ let
 
   # BepInEx's unhollowed directory: interop/ and the extracted unity-libs/,
   # which BepInEx hashes with GameAssembly.dll to check that interop/ is current.
+  # The bridge is not an input, so changing it regenerates nothing. Builds are
+  # not bit-reproducible, but each works the same.
   interop = stdenvNoCC.mkDerivation {
     pname = "vroid-studio-interop";
     inherit version;

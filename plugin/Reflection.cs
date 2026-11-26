@@ -26,6 +26,11 @@ internal static class Reflect
     internal static Type Type(string name) => FindType(name)
         ?? throw new InvalidOperationException($"Missing app type: {name}");
 
+    // The same native object as its most derived proxy type. A proxy of a
+    // declared base type or interface lacks the object's own members, which
+    // reflection by name needs. The proxies of System.* classes are named
+    // Il2CppSystem.*, and a generic proxy, such as ImmutableArray<T>, is closed
+    // over the type arguments of the proxy at hand.
     internal static object Concrete(object value)
     {
         if (value is not Il2CppObjectBase native) return value;

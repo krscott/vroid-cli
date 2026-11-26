@@ -9,6 +9,7 @@ public sealed record ColorField(string Path, IReadOnlySet<string> Keys, string H
 public static class Colors
 {
     /// `text` as uppercase `#RRGGBB`, or null if it is not one.
+    /// VRoid's own `TryParseColorHex` throws on bad input, so it is not used.
     public static string? Normalize(string? text)
     {
         if (text is not { Length: 7 } || text[0] != '#' || !text.Skip(1).All(Uri.IsHexDigit)) return null;

@@ -2,7 +2,7 @@
 
 Each requirement captures valuable behaviour or an invariant users rely on,
 including latent durability, privacy, compatibility, and recoverability
-guarantees. `DESIGN.md` describes how the requirements are met.
+guarantees. `GLOSSARY.md` defines the terms.
 
 ## Format
 
@@ -332,7 +332,18 @@ backfill unrelated requirements.
   that `dump` names no `"custom"` item and that it matches a `dump` of the
   same base taken after a restart, and renders it. After a change to the
   VRoid pin, also check by hand that `new` succeeds with each base in a
-  session launched without network access.
+  session launched without network access: for each base, take a session that
+  is not running, launch it as below, then run `new` as usual; the app
+  instance keeps the namespaces `launch` started it in. In this
+  unprivileged launch, the outer user namespace may mount a tmpfs, which gives
+  Xwayland a socket directory it owns, and the inner one restores the user
+  that owns the session:
+
+  ```sh
+  unshare -r --net --mount sh -c 'mount -t tmpfs tmpfs /tmp/.X11-unix &&
+    exec unshare --user --map-user="$1" --map-group="$2" vroid-cli "$3" "{\"method\": \"launch\"}"' \
+    - "$(id -u)" "$(id -g)" SESSION
+  ```
 
 - **R-EDIT-15** [manual] `import` adds the accessory in a `.vroidcustomitem`
   file to the character without a file dialog and changes nothing else. The
@@ -401,9 +412,27 @@ backfill unrelated requirements.
   VRM 0.0. It checks that `dump`, `modified`, a render, and the Framewisp input
   log are unchanged, and that each file is a binary glTF with the VRM extension
   of its version, the title, the author, and the humanoid bones. After a change
-  to the VRoid pin, also import both files with Blender's VRM add-on as
-  DESIGN.md's Testing section says, and check the armature, meshes, materials,
-  title, and author.
+  to the VRoid pin, also import both files headless with the
+  [VRM add-on](https://github.com/saturday06/VRM-Addon-for-Blender)'s release
+  zip unpacked as `ADDONS/addons/io_scene_vrm`. Each file must print
+  `{'FINISHED'}`, one armature, its meshes and materials, and the title and
+  author. Run the command without this list's two-space indent, which Python
+  would reject:
+
+  ```sh
+  BLENDER_USER_SCRIPTS=ADDONS nix run nixpkgs#blender -- -b --factory-startup --python-expr '
+  import addon_utils, bpy, sys
+  for path in sys.argv[sys.argv.index("--") + 1:]:
+      bpy.ops.wm.read_factory_settings(use_empty=True)
+      addon_utils.enable("io_scene_vrm", default_set=True)
+      result = bpy.ops.import_scene.vrm(filepath=path)
+      kinds = [o.type for o in bpy.data.objects]
+      ext = next(o for o in bpy.data.objects if o.type == "ARMATURE").data.vrm_addon_extension
+      meta = ext.vrm1.meta if ext.is_vrm1() else ext.vrm0.meta
+      names = (meta.vrm_name, [a.value for a in meta.authors]) if ext.is_vrm1() else (meta.title, meta.author)
+      print(path, result, kinds.count("ARMATURE"), kinds.count("MESH"), len(bpy.data.materials), names)
+  ' -- A.vrm B.vrm
+  ```
 
 - **R-EDIT-19** [test] `export_vrm` refuses an existing destination and leaves
   it unchanged. The destination never holds a partial file.

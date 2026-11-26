@@ -45,11 +45,15 @@ public sealed partial class Plugin
             Reflect.Call(booth, wanted.Version == "1.0" ? "OnVRM1SettingChanged" : "OnVRMSettingChanged",
                 VrmMetadata(wanted), path, completion);
             var task = Reflect.Get(completion, "Task") ?? throw Differs("the export's task");
+            // VRoid completes the task with whether it wrote the file, in about
+            // 1.5 s for a base character.
             while (Reflect.Get(task, "IsCompleted") is not true) yield return true;
             if (Reflect.Get(task, "IsFaulted") is true || Reflect.Get(task, "Result") is not true)
             {
                 // VRoid opens its failure dialog around the same frame; give it time to.
                 for (var frame = 0; frame < 5; frame++) yield return true;
+                // Only player.log holds the reason: a Harmony hook on VRoid's
+                // error callback, which could report it here, crashed VRoid.
                 throw new InvalidOperationException(
                     "VRoid could not export the VRM; the session's player.log names the reason. Nothing changed in the project");
             }
@@ -73,7 +77,7 @@ public sealed partial class Plugin
                 yield return true;
             }
             // Back in the editor, VRoid rebuilds the model from the unchanged
-            // project, which takes about 100 frames; the next request waits for it.
+            // project, which takes about 100 frames.
             var settled = rebuilt;
             for (int frame = 0, stable = 0; stable < SettledFrames; frame++)
             {
@@ -90,6 +94,8 @@ public sealed partial class Plugin
             if (!exported)
             {
                 // A dialog or the export screen left open would block the private display.
+                // Nothing here waits for the model's rebuild after the pop:
+                // requests wait for rebuilds themselves.
                 Try(() =>
                 {
                     if (Reflect.Get(dialogs, "Dialog") is { } dialog && TypeName(dialog) == ExportFailedDialog) Reflect.Call(dialog, "Dismiss");
@@ -109,7 +115,8 @@ public sealed partial class Plugin
     // VRoid's own export defaults: no polygon, hair bone, or material reduction,
     // and textures at their own size. The export screen keeps the options
     // between exports in one app run, and vroid-cli never changes them, so a
-    // difference means something else did.
+    // difference means something else did. Setting an option rebuilds the
+    // preview, so this checks the options rather than setting them.
     private static void CheckExportOptions(object booth)
     {
         var settings = Reflect.Get(booth, "ExportSettings") ?? throw Differs("the export options");

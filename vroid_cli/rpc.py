@@ -7,12 +7,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-# Change together with Bridge.Protocol whenever the file protocol or the
+# Change together with RpcDirectory.Protocol whenever the file protocol or the
 # request methods change incompatibly.
 PROTOCOL = 12
 # The bridge writes a heartbeat about once a second from Unity's main thread.
 HEARTBEAT_STALE_MS = 5000
-# The bridge stops waiting on an operation after this long...
+# A whole template takes tens of seconds to apply, since each item it changes
+# waits for its section to settle. The bridge stops waiting on an operation
+# after this long...
 ENGINE_TIMEOUT_MS = 90_000
 # ...which leaves this margin before the CLI stops waiting for its result.
 RESPONSE_MARGIN_S = 30.0

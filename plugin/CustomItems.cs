@@ -39,6 +39,8 @@ public sealed partial class Plugin
     // the group of its kind, so a kind with a group of built-in accessories,
     // worn or kept after the last was removed, is refused: there nothing would
     // mark the new one as imported.
+    // It would be an `AdditionalAccessoryTemplate` copy there, like a second
+    // built-in accessory of the kind.
     private static IEnumerable<bool> Import(Request request)
     {
         var path = request.Text("path");
@@ -137,6 +139,7 @@ public sealed partial class Plugin
         var chosen = worn[order[index]];
         var registry = CustomItemRegistry();
         var errors = new List<string>();
+        // This call writes the file before it returns; the import's returns a task.
         Reflect.Call(registry.Self, "ExportAccessoryTemplate", chosen.Id, chosen.Group, registry.Bus, path, registry.Context, registry.Engine,
             OnError(errors));
         if (errors.Count > 0)

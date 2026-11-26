@@ -4,7 +4,8 @@ Edit [VRoid Studio](https://vroid.com/en/studio) characters from the command
 line while you keep using your computer. `vroid-cli` runs standalone VRoid
 under Wine on a private [Framewisp](https://github.com/krscott/framewisp)
 display and changes characters through VRoid's internal methods. It uses no
-mouse or keyboard input, OCR, MCP server, or account login.
+mouse or keyboard input, OCR, MCP server, or account login. The private display
+keeps VRoid off your desktop; it is not a filesystem sandbox.
 
 > **Terms:** vroid-cli accepts VRoid Studio's first-run
 > [terms of use](https://policies.pixiv.net/en.html#vroidstudio) and
@@ -177,8 +178,8 @@ bridge, and Framewisp are the shell's builds; re-enter the shell (or
 
 `just gui-smoke` needs graphics access. It runs the workflow above with a
 restart and checks the saved values and Framewisp's input log. See
-[DESIGN.md](DESIGN.md) for internals and [REQUIREMENTS.md](REQUIREMENTS.md) for
-the guarantees.
+[REQUIREMENTS.md](REQUIREMENTS.md) for the guarantees, [GLOSSARY.md](GLOSSARY.md)
+for the terms, and [docs/adr](docs/adr) for the decisions behind the design.
 
 See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for third-party code and
 downloads.

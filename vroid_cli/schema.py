@@ -465,7 +465,8 @@ class Export(Model):
 
 
 # Text with at least one character that is not white space, which VRoid's
-# own export dialog requires of a VRM's title and author.
+# own export dialog requires of a VRM's title and author. VRM 1.0 itself
+# refuses an empty name or author list.
 MetaText = Annotated[str, StringConstraints(pattern=r"\S")]
 VrmVersion = Literal["1.0", "0.0"]
 
