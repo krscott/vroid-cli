@@ -1,4 +1,4 @@
-"""Edit VRoid Studio characters through its internal API on a private desktop.
+"""Edit VRoid Studio characters through its internal API on a private display.
 
 REQUEST is JSON text, @PATH to read it from a file, or - to read stdin. A
 successful command prints one JSON value on stdout and exits 0. A failed

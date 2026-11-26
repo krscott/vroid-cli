@@ -1,4 +1,4 @@
-"""Session-local file protocol shared with the in-app bridge (plugin/Bridge.cs)."""
+"""Session-local file protocol shared with the bridge (plugin/Bridge.cs)."""
 
 import json
 import time
@@ -13,7 +13,7 @@ PROTOCOL = 13
 # The bridge writes a heartbeat about once a second from Unity's main thread.
 HEARTBEAT_STALE_MS = 5000
 # A whole template takes tens of seconds to apply, since each item it changes
-# waits for its section to settle. The bridge stops waiting on an operation
+# waits for its section to settle. The bridge stops waiting on a request
 # after this long...
 ENGINE_TIMEOUT_MS = 90_000
 # ...which leaves this margin before the CLI stops waiting for its result.
@@ -122,7 +122,7 @@ def submit(rpc: Path, *, app_instance: str, method: str, args: dict[str, Any]) -
             "outcome"
         )
         if method in ("apply", "import") and not undo.exists():
-            # The app may still write the undo file and change things later.
+            # The bridge may still write the undo file and change things later.
             reason += f"; if {undo} appears, apply it to undo any change"
         return RuntimeError(restore(reason))
 
@@ -138,7 +138,7 @@ def submit(rpc: Path, *, app_instance: str, method: str, args: dict[str, Any]) -
         raise unfinished("Interrupted before the result") from None
     if not response.exists():
         raise RuntimeError(
-            restore(f"The app discarded the request without a result; see {rpc}")
+            restore(f"The bridge discarded the request without a result; see {rpc}")
         )
     payload: dict[str, Any] = json.loads(response.read_text())
     if not payload["ok"]:
