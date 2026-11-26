@@ -155,7 +155,7 @@ def exited(session: Session, *, since_ms: float = 0) -> str:
             f"VRoid exited. Last lines of {log}:\n{tail(log)}\n{bepinex_log(session)}"
         )
     log = session.directory / "runner.log"
-    return f"The private display stopped. Last lines of {log}:\n{tail(log)}"
+    return f"The private display exited. Last lines of {log}:\n{tail(log)}"
 
 
 def keep_previous_logs(session: Session) -> None:

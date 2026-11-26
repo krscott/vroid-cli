@@ -55,6 +55,7 @@ Value = Annotated[float | list[float] | Color | list[Color], WrapValidator(one_e
 Base = Literal["Preset_F", "Preset_M"]
 # Marks a custom item.
 CUSTOM = "custom"
+# The pattern of an identifier. CUSTOM fits it too, and is no identifier.
 Identifier = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_]+$")]
 
 
