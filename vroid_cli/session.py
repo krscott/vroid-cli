@@ -364,7 +364,7 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
                 # only an app instance an older build started can be waiting.
                 if not terms_accepted(session):
                     raise RuntimeError(
-                        "This session was started by an older vroid-cli and is "
+                        "This session's app instance was started by an older vroid-cli and is "
                         "waiting at VRoid's first-run dialogs; run stop, then launch"
                     )
                 return summary(session)

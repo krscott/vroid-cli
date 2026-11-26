@@ -344,9 +344,9 @@ edits=(
     'Face|Face Sets|Eye Size Y'
 )
 # Colours, each with a target and an alternative if it already has the target.
-# Hairstyle needs the shared hair colour and Base Hair's own. Distinct targets show
-# the fields are independent. The last read back, Hairstyle/Front, is the panel
-# after.png shows; its Main Color field reads the hex set here (R-EDIT-8).
+# Hairstyle needs the shared hair colour and Base Hair's own. Distinct targets
+# show the colours are independent. The last read back, Hairstyle/Front, is the
+# panel after.png shows; its Main Color reads the hex set here (R-EDIT-8).
 colours=(
     'Face|Irises|R Eye|#2E8B57|#228B22'
     'Face|Irises|L Eye|#3CB371|#32CD32'
@@ -785,7 +785,7 @@ for item in "${items[@]}"; do
         fatal "$section/$category lists other items after a restart; compare $out/items-${section}-${category}.json"
 done
 # The edited character dumps, with each colour under the category it was set in,
-# and the hair colour is shared by every hair category.
+# and the hair colour is shared by every Hairstyle category.
 vroid '{"method": "dump"}' >"$out/edited.json"
 # The reopened character dumps as it did when saved, including the colour of the
 # cat ears, which open hidden and locked.

@@ -46,7 +46,7 @@ public sealed class RpcDirectory
         if (request == null) return;
         if (File.Exists(ResultPath(request.Id))) File.Delete(RequestPath);
         else Finish(request, false, "The app instance ended before this request finished; outcome unknown. "
-            + "Inspect the character before another edit.");
+            + "Inspect any file it wrote before another edit.");
     }
 
     /// Returns the pending request if it is addressed to this app instance and

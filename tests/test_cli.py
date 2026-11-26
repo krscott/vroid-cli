@@ -1,4 +1,4 @@
-"""Exercise the CLI and its file protocol without a running VRoid process."""
+"""Exercise the CLI and its file protocol without a running app instance."""
 
 import fcntl
 import json
@@ -492,7 +492,7 @@ def test_launch_ignores_a_heartbeat_from_before_launch(tmp_path: Path) -> None:
     )
 
 
-def test_launch_reports_an_app_an_older_build_left_at_the_terms(
+def test_launch_reports_an_app_instance_an_older_build_left_at_the_terms(
     tmp_path: Path,
 ) -> None:
     # R-SES-8
@@ -506,7 +506,7 @@ def test_launch_reports_an_app_an_older_build_left_at_the_terms(
     assert "stop" not in (tmp_path / "framewisp.log").read_text().split()
 
 
-def test_launch_reports_why_the_app_exited(tmp_path: Path) -> None:
+def test_launch_reports_why_vroid_exited(tmp_path: Path) -> None:
     # R-SES-11
     env = fake_framewisp(
         tmp_path,
@@ -555,7 +555,9 @@ def test_launch_timeout_explains_the_logs(
         assert "keeps starting" not in result.stderr
 
 
-def test_launch_timeout_tells_a_stalled_app_from_a_slow_one(tmp_path: Path) -> None:
+def test_launch_timeout_tells_a_stalled_app_instance_from_a_slow_one(
+    tmp_path: Path,
+) -> None:
     # R-SES-11: an app instance whose logs stopped changing will not become ready.
     session = tmp_path / "state/test"
     env = fake_framewisp(
@@ -603,7 +605,7 @@ def test_launch_fails_at_once_when_bepinex_fails_to_start(tmp_path: Path) -> Non
     assert "UnauthorizedAccessException" in result.stderr
 
 
-def test_resumed_launch_reports_the_running_apps_bepinex_failure(
+def test_resumed_launch_reports_the_running_app_instances_bepinex_failure(
     tmp_path: Path,
 ) -> None:
     # R-SES-11: a launch after a timeout still explains the same app instance's failure.
@@ -620,7 +622,7 @@ def test_resumed_launch_reports_the_running_apps_bepinex_failure(
     assert preloader.exists()
 
 
-def test_launch_keeps_only_the_previous_runs_logs(tmp_path: Path) -> None:
+def test_launch_keeps_only_the_previous_app_instances_logs(tmp_path: Path) -> None:
     rpc = bridge(tmp_path, app_instance="old-instance")
     session = rpc.parent
     root = session / "bepinex"

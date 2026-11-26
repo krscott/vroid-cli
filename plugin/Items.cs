@@ -165,7 +165,7 @@ public sealed partial class Plugin
         var info = Reflect.Get(instance, "transferableInfo");
         var id = Reflect.Get(info, "Id") as string ?? throw Differs($"the transferable of accessory {name}");
         var group = Reflect.Get(info, "GroupId") as string ?? throw Differs($"the group of accessory {name}");
-        var kind = Reflect.Get(info, "GroupType") as string ?? throw Differs($"the accessory kind of accessory {name}");
+        var kind = Reflect.Get(info, "GroupType") as string ?? throw Differs($"the accessory kind of {name}");
         var resource = Reflect.Get(info, "GroupResourceName") as string ?? throw Differs($"the group resource of accessory {name}");
         var display = Reflect.Call(Reflect.New("VRoidCore.Editing.Query.GetTransferableDisplayNameQuery", id), "Execute", model);
         var item = Identifiers.Accessory(Reflect.Get(display, "LocalizationKey") as string, resource, BuiltInAccessories);
@@ -260,8 +260,8 @@ public sealed partial class Plugin
 
     private static Dictionary<string, object?>[] AccessoryList(Worn[] worn) => AccessoryList(worn.Select(AccessoryEntry).ToArray());
 
-    // The bones apply accepts. The table holds VRoid 2.16.0's; any worn
-    // accessory's Unity avatar checks it.
+    // The bones apply accepts. The table holds VRoid 2.16.0's, which is
+    // checked against the `HumanBoneMap` VRoid keeps for any worn accessory.
     private static IReadOnlyList<string> AccessoryBones(Worn[] worn)
     {
         if (worn.Length > 0)
