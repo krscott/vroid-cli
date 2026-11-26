@@ -53,9 +53,10 @@ def one_error(value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
 Value = Annotated[float | list[float] | Color | list[Color], WrapValidator(one_error)]
 # VRoid's built-in bases, as Body Whole Body items name them.
 Base = Literal["Preset_F", "Preset_M"]
-# Marks an item that is not one of VRoid's built-in items.
+# Marks a custom item.
 CUSTOM = "custom"
-ItemId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_]+$")]
+# The pattern of an identifier. CUSTOM fits it too, and is no identifier.
+Identifier = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_]+$")]
 
 
 def no_default(schema: dict[str, Any]) -> None:
@@ -81,17 +82,17 @@ class Model(BaseModel):
 
 
 class CategoryTemplate(BaseModel):
-    """A category's item, numeric values, and colours, keyed by label."""
+    """A category's item, slider values, and colours, keyed by label."""
 
     model_config = ConfigDict(
         strict=True, extra="allow", allow_inf_nan=False, frozen=True
     )
     # Types the extra labels; pyright cannot see pydantic allows narrowing it.
     __pydantic_extra__: dict[str, Value] = Field(init=False)  # pyright: ignore[reportIncompatibleVariableOverride]  # fmt: skip
-    item: ItemId | None = Field(
+    item: Identifier | None = Field(
         None,
         description="the item to wear: a built-in item's identifier as `items` "
-        'lists it, or "custom" for the item that is not built in that the '
+        'lists it, or "custom" for the custom item that the '
         "category already wears; null takes off the item of a category that "
         "`items` reports as removable. Omit it to keep the current item.",
         json_schema_extra=no_default,
@@ -111,8 +112,8 @@ Template = Annotated[
         description="category name -> label -> value: a number, or a colour "
         'as "#RRGGBB", and the optional "item". A label that occurs more than '
         "once in a category, such as an outfit's per-part colours, takes an "
-        "array of its values in app order. Categories share numeric "
-        "parameters by label, so each numeric label may appear in only one "
+        "array of its values in VRoid's order. Categories share sliders "
+        "by label, so each slider's label may appear in only one "
         "category. Some colours are shared too, "
         "such as skin; set each in one place."
     ),
@@ -168,7 +169,15 @@ def one_rotation_error(value: Any, handler: ValidatorFunctionWrapHandler) -> Any
 
 Rotation = Annotated[Quaternion | Degrees, WrapValidator(one_rotation_error)]
 # An accessory entry's keys, besides its item, that are not VRoid labels.
-ENTRY_KEYS = ("bone", "position", "rotation", "scale", "name", "hidden", "locked")
+ACCESSORY_ENTRY_KEYS = (
+    "bone",
+    "position",
+    "rotation",
+    "scale",
+    "name",
+    "hidden",
+    "locked",
+)
 
 
 class Accessory(BaseModel):
@@ -180,9 +189,9 @@ class Accessory(BaseModel):
     )
     # Types the extra labels; pyright cannot see pydantic allows narrowing it.
     __pydantic_extra__: dict[str, Value] = Field(init=False)  # pyright: ignore[reportIncompatibleVariableOverride]  # fmt: skip
-    item: ItemId = Field(
+    item: Identifier = Field(
         description="a built-in accessory's identifier as `accessories` lists it, "
-        'or "custom" for a worn accessory that is not built in'
+        'or "custom" for a worn custom accessory'
     )
     bone: Annotated[str, StringConstraints(min_length=1)] | None = Field(
         None,
@@ -214,7 +223,7 @@ class Accessory(BaseModel):
         None,
         description="a name the user gave it, which VRoid's accessory list shows "
         "instead of the item's name; null is VRoid's default name for the item, "
-        "in the app's language. Omit it to keep a worn accessory's name, or to add "
+        "in VRoid's language. Omit it to keep a worn accessory's name, or to add "
         "one with the default name.",
         json_schema_extra=no_default,
     )
@@ -251,21 +260,21 @@ class Accessory(BaseModel):
         # An omitted key keeps the current value, while a null bone is None and
         # a null name is the default name.
         data = handler(self)
-        for key in ENTRY_KEYS:
+        for key in ACCESSORY_ENTRY_KEYS:
             if key not in self.model_fields_set:
                 data.pop(key, None)
         return data
 
 
-def resolved(value: Path, suffix: str, kind: str) -> Path:
+def resolved(value: Path, suffix: str, what: str) -> Path:
     path = (Path.cwd() / value).resolve()
     if path.suffix.lower() != suffix:
-        raise ValueError(f"{kind} paths must end in {suffix}")
+        raise ValueError(f"{what} paths must end in {suffix}")
     return path
 
 
-def project_path(value: Path) -> Path:
-    return resolved(value, ".vroid", "project")
+def character_path(value: Path) -> Path:
+    return resolved(value, ".vroid", "character")
 
 
 def item_path(value: Path) -> Path:
@@ -288,7 +297,7 @@ def new_file(path: Path) -> Path:
 
 
 class Launch(Model):
-    """Start the app, or wait until it is ready."""
+    """Start an app instance, or wait until it is ready."""
 
     method: Literal["launch"]
     timeout: PositiveFloat = Field(120.0, description="seconds to wait for readiness")
@@ -301,7 +310,7 @@ class Status(Model):
 
 
 class Stop(Model):
-    """Stop the app and its private desktop."""
+    """Stop the app instance and its private display."""
 
     method: Literal["stop"]
     force: bool = Field(
@@ -310,7 +319,7 @@ class Stop(Model):
 
 
 class Open(Model):
-    """Open an existing .vroid project."""
+    """Open the character in an existing .vroid file."""
 
     method: Literal["open"]
     path: Path
@@ -318,7 +327,7 @@ class Open(Model):
     @field_validator("path")
     @classmethod
     def existing(cls, value: Path) -> Path:
-        return existing_file(project_path(value))
+        return existing_file(character_path(value))
 
 
 class New(Model):
@@ -339,7 +348,7 @@ class Categories(Model):
 
 
 class Parameters(Model):
-    """List a category's numeric parameters and colours."""
+    """List a category's sliders and colours."""
 
     method: Literal["parameters"]
     section: Section
@@ -355,19 +364,20 @@ class Items(Model):
 
 
 class Accessories(Model):
-    """List the worn accessories and the built-in ones that can be added."""
+    """List the worn accessories and the built-in accessory items that can be
+    added."""
 
     method: Literal["accessories"]
 
 
 class Dump(Model):
-    """Return every item, accessory, numeric value, and colour as an apply request."""
+    """Return every item, accessory, slider value, and colour as an apply request."""
 
     method: Literal["dump"]
 
 
 class Apply(Model):
-    """Select items and accessories, and set numeric values and colours.
+    """Select items and accessories, and set slider values and colours.
 
     Every name, item, bound, and colour is checked before anything changes.
     Items and accessories change first, then values and colours.
@@ -384,19 +394,19 @@ class Apply(Model):
         "removes accessories to match, so list the worn ones to keep them. "
         "Accessories of one item are interchangeable: apply keeps the worn ones "
         "and may replace them with new ones of the same values. An added "
-        "accessory takes VRoid's defaults for what its entry leaves out. Omit it "
-        "to keep the current ones.",
+        "accessory takes VRoid's defaults for what its accessory entry leaves "
+        "out. Omit it to keep the current ones.",
     )
     discard_custom: bool = Field(
         False,
-        description="allow replacing or removing items and accessories that are "
-        "not built in; the result's `discarded` names them, and `undo` cannot "
-        "restore them. Save a copy of the project first.",
+        description="allow replacing or removing custom items and custom "
+        "accessories; the result's `discarded` names them, and `undo` cannot "
+        "restore them. Save a copy of the character first.",
     )
 
     @model_serializer(mode="wrap")
     def omit_defaults(self, handler: SerializerFunctionWrapHandler) -> Any:
-        # Dumped and apply's undo templates leave accessories alone unless they
+        # Dumped templates and undo files leave accessories alone unless they
         # list them, and never discard anything.
         data = handler(self)
         if self.Accessories is None:
@@ -407,7 +417,7 @@ class Apply(Model):
 
     @model_validator(mode="after")
     def each_parameter_once(self) -> "Apply":
-        # The same numeric label in two categories of a section is one
+        # A slider's label in two categories of a section names one shared
         # parameter; the later value would silently win. Colour labels such as
         # "Color" repeat across unrelated colours; the bridge checks those.
         for section in SECTIONS:
@@ -433,9 +443,10 @@ class Import(Model):
 
     It reads as "custom" in `accessories` and `dump`; place, recolour, and
     reshape it with apply. Refused for a file that holds no accessory, and for
-    an accessory of a kind the project wears or wore a built-in one of, such as
-    ears from a file in a project that wore cat ears. Afterwards, apply refuses
-    built-in accessories of its kind in this project, even after its undo.
+    an accessory of an accessory kind that the character wears or wore a
+    built-in accessory of, such as ears from a file in a character that wore
+    cat ears. Afterwards, apply refuses built-in accessories of its accessory
+    kind in this character, even after its undo.
     """
 
     method: Literal["import"]
@@ -450,7 +461,7 @@ class Import(Model):
 class Export(Model):
     """Write a worn accessory to a new .vroidcustomitem file in an existing
     directory, with its colours, shape sliders, and placement, which `import`
-    wears in another project."""
+    wears in another character."""
 
     method: Literal["export"]
     index: NonNegativeInt = Field(
@@ -473,7 +484,7 @@ VrmVersion = Literal["1.0", "0.0"]
 
 class ExportVrm(Model):
     """Write the open character to a new .vrm file in an existing directory
-    through VRoid's own VRM export, without changing the project. The export
+    through VRoid's own VRM export, without changing the character. The export
     uses VRoid's defaults: no polygon, material, or bone reduction, textures at
     their own size, and VRoid's most restrictive licence, which allows use by
     the author only and no redistribution or modification."""
@@ -481,8 +492,8 @@ class ExportVrm(Model):
     method: Literal["export_vrm"]
     path: Path
     title: MetaText = Field(
-        description="the model's name in the file's metadata (VRM 1.0 `name`, "
-        "VRM 0.0 `title`), such as the character's name"
+        description="the name the file's metadata gives the character (VRM 1.0 "
+        "`name`, VRM 0.0 `title`)"
     )
     author: MetaText = Field(
         description="the author in the file's metadata (VRM 1.0 `authors`, VRM "
@@ -501,7 +512,7 @@ class ExportVrm(Model):
 
 
 class Save(Model):
-    """Save the project to a new .vroid path in an existing directory."""
+    """Save the character to a new .vroid file in an existing directory."""
 
     method: Literal["save"]
     path: Path
@@ -509,7 +520,7 @@ class Save(Model):
     @field_validator("path")
     @classmethod
     def new(cls, value: Path) -> Path:
-        return new_file(project_path(value))
+        return new_file(character_path(value))
 
 
 ImageSize = Annotated[int, Field(ge=16, le=4096, description="pixels")]
@@ -669,7 +680,7 @@ class SessionStatus(Model):
     session: str
     directory: str
     private_display: str = Field(
-        description="the directory to give `framewisp` to inspect the display"
+        description="the directory to give `framewisp` to inspect the private display"
     )
     running: bool = Field(description="whether an app instance runs")
     ready: bool
@@ -704,34 +715,33 @@ class ColorParameter(Model):
 
 class ItemList(Model):
     selected: str | None = Field(
-        description='the worn built-in item, "custom" for an item that is not '
-        "built in, or null"
+        description='the worn built-in item, "custom" for a custom item, or null'
     )
     removable: bool = Field(description="whether the item can be taken off")
     set: bool = Field(
         description="selecting one of these items selects items in other "
         "categories, so `dump` lists those instead"
     )
-    items: list[str] = Field(description="built-in item identifiers in app order")
+    items: list[str] = Field(description="built-in item identifiers in VRoid's order")
 
 
 class AvailableAccessory(Model):
     item: str
     name: str = Field(
         description="VRoid's name for the item, to recognise it; leave it out of an "
-        "entry you add, whose `name` would rename the accessory"
+        "accessory entry you add, whose `name` would rename the accessory"
     )
 
 
 class AccessoryList(Model):
     worn: list[Accessory] = Field(description="in the order `dump` lists them")
     sliders: list[list[Parameter]] = Field(
-        description="one list per `worn` entry, in the same order: its shape "
-        "sliders in app order with their bounds, which differ by slider. An "
+        description="one list per `worn` accessory, in the same order: its shape "
+        "sliders in VRoid's order with their bounds, which differ by slider. An "
         "accessory's sliders are known only once it is worn."
     )
     available: list[AvailableAccessory] = Field(
-        description="built-in accessories, including ones VRoid's editor does not "
+        description="built-in accessory items, including ones VRoid's editor does not "
         "offer, such as animal ears and tails"
     )
     bones: list[str] = Field(description="the bones an accessory can hang from")
@@ -753,15 +763,14 @@ class Applied(Model):
         "don't count."
     )
     discarded: list[str] = Field(
-        description="non-built-in items and accessories this request replaced or "
-        "removed, which `undo` cannot restore"
+        description="custom items and custom accessories that this request "
+        "replaced or removed, which `undo` cannot restore"
     )
     undo: str = Field(
         description="path of an apply request, written before the first change, "
         "that restores the previous items, accessories, and values, except what "
         "`discarded` names; apply it with `@PATH`. Undoing an item change in a "
-        "section that still wears an item that is not built in needs "
-        "discard_custom."
+        "section that still wears a custom item needs discard_custom."
     )
 
     @field_validator("undo")
@@ -783,7 +792,8 @@ def undo_file(value: str) -> str:
 
 class Imported(Model):
     imported: Accessory = Field(
-        description='the new accessory\'s entry, as `accessories` lists it: "custom"'
+        description="the new accessory's accessory entry, as `accessories` lists "
+        'it: "custom"'
     )
     undo: str = Field(
         description="path of an apply request, written before the import, that "

@@ -3,7 +3,7 @@ using Il2CppInterop.Runtime.InteropTypes.Arrays;
 
 namespace VroidBridge;
 
-// Built-in items in the Face, Hair, Body, and Outfit selectors, and accessories.
+// Built-in items in the Face, Hairstyle, Body, and Outfit selectors, and accessories.
 public sealed partial class Plugin
 {
     private const string TemplateItem = "VRoid.Studio.AccessoryEditor.TemplateItem.ViewModel.TransferableGroupTemplateItemViewModel";
@@ -15,7 +15,7 @@ public sealed partial class Plugin
     // A category that wears built-in items. `Presets` is its PresetCategoryViewModel;
     // `Conflicts` holds the kinds of item VRoid takes off when this one is worn.
     private sealed record Slot(string Section, string Name, int Index, object Presets, string Type, bool Removable,
-        bool IsSet, HashSet<string> Conflicts, (string Id, object Option)[] Items)
+        bool IsSet, HashSet<string> Conflicts, (string Identifier, object Option)[] Items)
     {
         public string Path => $"{Section}/{Name}";
     }
@@ -24,24 +24,24 @@ public sealed partial class Plugin
     private static Slot? SlotOf(string section, object category, int index)
     {
         var node = Reflect.Concrete(category);
-        var kind = node.GetType().FullName!;
-        if (kind.EndsWith(".ParametricPresetCategoryViewModel"))
+        var typeName = node.GetType().FullName!;
+        if (typeName.EndsWith(".ParametricPresetCategoryViewModel"))
             node = Reflect.Concrete(Reflect.Get(node, "PresetCategoryViewModel") ?? throw Differs($"the items of {section}/{Name(category)}"));
-        else if (!kind.EndsWith(".PresetCategoryViewModel")) return null;
+        else if (!typeName.EndsWith(".PresetCategoryViewModel")) return null;
         var path = $"{section}/{Name(category)}";
         var items = Reflect.Items(Reflect.Get(node, "_presets")).Select(option =>
         {
             var resource = Reflect.Get(Reflect.Get(option, "_model"), "resourceName") as string;
-            return (ItemIds.Preset(resource) ?? throw Differs($"the identifier of {resource} in {path}"), option);
+            return (Identifiers.CategoryItem(resource) ?? throw Differs($"the identifier of {resource} in {path}"), option);
         }).ToArray();
         if (items.Select(item => item.Item1).Distinct().Count() != items.Length) throw Differs($"unique item identifiers in {path}");
         var type = Reflect.Get(node, "TransferableGroupType") as string ?? throw Differs($"the item type of {path}");
         if (Reflect.Get(node, "IsRemovable") is not bool removable) throw Differs($"whether {path} is removable");
-        var conflicts = Reflect.Items(Reflect.Get(node, "ConflictingTransferableTypes")).Select(value => ItemIds.Kind(value.ToString()!)).ToHashSet();
-        return new Slot(section, Name(category), index, node, type, removable, ItemIds.IsSet(type), conflicts, items);
+        var conflicts = Reflect.Items(Reflect.Get(node, "ConflictingTransferableTypes")).Select(value => Identifiers.Kind(value.ToString()!)).ToHashSet();
+        return new Slot(section, Name(category), index, node, type, removable, Identifiers.IsSet(type), conflicts, items);
     }
 
-    // Switches to a section's editor and returns the categories that wear items.
+    // Switches VRoid's editor to a section and returns the categories that wear items.
     private static IEnumerable<Slot[]?> Slots(string section)
     {
         object[]? categories = null;
@@ -70,36 +70,35 @@ public sealed partial class Plugin
         yield return found[0];
     }
 
-    // The worn built-in item's identifier, "custom" for an item that is not
-    // built in, or null.
+    // The worn built-in item's identifier, "custom" for a custom item, or null.
     private static string? State(Slot slot)
     {
-        foreach (var (id, option) in slot.Items)
-            if (Reflect.Get(option, "IsSelected") is true) return id;
-        // True whenever the category wears an item, built in or not; always false for sets.
-        // Some worn items that are not built in, such as a sample model's socks, show
-        // no selected option at all.
+        foreach (var (identifier, option) in slot.Items)
+            if (Reflect.Get(option, "IsSelected") is true) return identifier;
+        // True whenever the category wears an item, built-in or custom; always false for sets.
+        // Some worn custom items, such as a sample model's socks, show no selected
+        // option at all.
         // A texture-edited outfit is a custom item too: its group is a
         // `user/VRoid/CustomItem/...` resource, and the built-in item's resource
         // stays in `OriginalResourceName`.
         if (Reflect.Get(Reflect.Get(slot.Presets, "TemporaryCustomItem"), "WearingCustomItemSavableTransferableGroup") is not bool wearing)
             throw Differs($"whether {slot.Path} wears an item");
-        return wearing ? ItemIds.Custom : null;
+        return wearing ? Identifiers.Custom : null;
     }
 
     // Selects a built-in item, or takes the item off for null, through the
     // selector's own option, then waits for the rebuild and the selector's
     // update of every category in the section.
-    private static IEnumerable<bool> Wear(Slot slot, string? id, Slot[] section)
+    private static IEnumerable<bool> Wear(Slot slot, string? item, Slot[] section)
     {
         // A set lists the kinds of item it selects as conflicts; those are not taken
         // off, and a set reads as selected again whenever its items match.
-        var conflicting = id == null || slot.IsSet ? Array.Empty<Slot>()
+        var conflicting = item == null || slot.IsSet ? Array.Empty<Slot>()
             : section.Where(other => !other.IsSet && Conflict(slot, other)).ToArray();
         var before = rebuilt;
         unsavedChanges = true;
-        if (id == null) Reflect.Call(slot.Presets, "ClearTransferableGroup");
-        else Reflect.Call(slot.Items.Single(item => item.Id == id).Option, "set_IsSelected", true);
+        if (item == null) Reflect.Call(slot.Presets, "ClearTransferableGroup");
+        else Reflect.Call(slot.Items.Single(listed => listed.Identifier == item).Option, "set_IsSelected", true);
         while (rebuilt == before || updating) yield return true;
         // The selector updates after a debounce, and other categories can change a few
         // frames after this one; wait until the whole section stops changing.
@@ -107,11 +106,11 @@ public sealed partial class Plugin
         for (int frame = 0, stable = 0; stable < SettledFrames; frame++)
         {
             var states = section.Select(State).ToArray();
-            var done = !updating && State(slot) == id && conflicting.All(other => State(other) == null);
+            var done = !updating && State(slot) == item && conflicting.All(other => State(other) == null);
             stable = done && last != null && states.SequenceEqual(last) ? stable + 1 : 0;
             last = states;
             if (frame > 300)
-                throw new InvalidOperationException($"{slot.Path} reads {State(slot) ?? "null"} after selecting {id ?? "null"}"
+                throw new InvalidOperationException($"{slot.Path} reads {State(slot) ?? "null"} after selecting {item ?? "null"}"
                     + string.Concat(conflicting.Where(other => State(other) != null).Select(other => $", and {other.Path} still reads {State(other)}")));
             yield return true;
         }
@@ -121,11 +120,12 @@ public sealed partial class Plugin
 
     // VRoid lists each conflict on both sides in 2.16.0; checking both is defensive.
     private static bool Conflict(Slot a, Slot b) =>
-        a.Conflicts.Contains(ItemIds.Kind(b.Type)) || b.Conflicts.Contains(ItemIds.Kind(a.Type));
+        a.Conflicts.Contains(Identifiers.Kind(b.Type)) || b.Conflicts.Contains(Identifiers.Kind(a.Type));
 
-    // A worn accessory instance: its item, VRoid's name for it, its transferable,
-    // its group and that group's type (its kind), its available colours, its
-    // shape sliders, its placement, its flags, and its display name.
+    // A worn accessory: its item, VRoid's name for it, its transferable, its
+    // group and that group's type (its accessory kind), VRoid's instance of it,
+    // its available colours, its shape sliders, its placement, its flags, and
+    // its display name.
     private sealed record Worn(string Item, string Name, string Id, string Group, string Kind, object Instance, Swatch[] Swatches,
         object[] Parameters, Pose Pose, Flags Flags, object? DisplayName);
 
@@ -141,7 +141,7 @@ public sealed partial class Plugin
     private sealed record Pose(string? Bone, float[]? Position, float[]? Rotation, float[]? Scale);
 
     // An accessory entry's keys that are not VRoid labels.
-    private static readonly string[] EntryKeys = { "item", "bone", "position", "rotation", "scale", "name", "hidden", "locked" };
+    private static readonly string[] AccessoryEntryKeys = { "item", "bone", "position", "rotation", "scale", "name", "hidden", "locked" };
 
     private static object AccessoryEditor => Reflect.Get(Root, "AccessoryEditor") ?? throw Differs("the accessory editor");
 
@@ -151,11 +151,12 @@ public sealed partial class Plugin
         while (Reflect.Get(AccessoryEditor, "IsFeatureActive") is not true || updating) yield return true;
     }
 
+    // VRoid's view model of each worn accessory, which it calls an instance.
     private static object[] Instances() => Reflect.Items(Reflect.Get(AccessoryEditor, "Instances")).ToArray();
 
-    // VRoid keeps one group per kind of accessory, such as glasses, so a worn
-    // accessory's group names only the first of its kind; its display name's
-    // localization key names its own template. A group an imported accessory
+    // VRoid keeps one group per accessory kind, such as glasses, so a worn
+    // accessory's group names only the first of its accessory kind; its display
+    // name's localization key names its own item. A group an imported accessory
     // started makes every accessory in it custom.
     private static Worn[] WornAccessories() => Instances().Select(instance =>
     {
@@ -164,10 +165,10 @@ public sealed partial class Plugin
         var info = Reflect.Get(instance, "transferableInfo");
         var id = Reflect.Get(info, "Id") as string ?? throw Differs($"the transferable of accessory {name}");
         var group = Reflect.Get(info, "GroupId") as string ?? throw Differs($"the group of accessory {name}");
-        var kind = Reflect.Get(info, "GroupType") as string ?? throw Differs($"the kind of accessory {name}");
+        var kind = Reflect.Get(info, "GroupType") as string ?? throw Differs($"the accessory kind of {name}");
         var resource = Reflect.Get(info, "GroupResourceName") as string ?? throw Differs($"the group resource of accessory {name}");
         var display = Reflect.Call(Reflect.New("VRoidCore.Editing.Query.GetTransferableDisplayNameQuery", id), "Execute", model);
-        var item = ItemIds.Accessory(Reflect.Get(display, "LocalizationKey") as string, resource, AttachmentIds);
+        var item = Identifiers.Accessory(Reflect.Get(display, "LocalizationKey") as string, resource, BuiltInAccessories);
         var swatches = new List<Swatch>();
         // Each accessory has its own colours, never shared, so they have no keys.
         foreach (var selection in Reflect.Items(Reflect.Get(Reflect.Get(instance, "CategoryColorSelection"), "_colorSelections")))
@@ -175,7 +176,7 @@ public sealed partial class Plugin
             if (Reflect.Get(selection, "IsAvailable") is not bool available) throw Differs($"colour availability for accessory {name}");
             if (!available) continue;
             foreach (var sub in Reflect.Items(Reflect.Get(selection, "_subColorSelections")))
-                swatches.Add(Field(Reflect.Get(sub, "TranslatedDisplayName") as string ?? "", sub, "Color", new HashSet<string>()));
+                swatches.Add(SwatchIn(Reflect.Get(sub, "TranslatedDisplayName") as string ?? "", sub, "Color", new HashSet<string>()));
         }
         // VRoid's own query, which the editor's gizmo starts from; it changes nothing.
         var origin = Reflect.Call(Reflect.New("VRoidCore.Editing.Query.GetPartOriginQuery", id), "Execute", model);
@@ -193,7 +194,7 @@ public sealed partial class Plugin
             pose = new Pose(bone, Parts("Position", "x", "y", "z"), Parts("Rotation", "x", "y", "z", "w"), Parts("Scale", "x", "y", "z"));
         }
         // A name the user gives keeps the localization key, which names the
-        // accessory's template, and adds a user-defined string.
+        // accessory's item, and adds a user-defined string.
         var flags = new Flags(Reflect.Get(display, "UserDefinedString") as string, Flag(instance, "hidden"), Flag(instance, "locked"));
         return new Worn(item, name, id, group, kind, instance, swatches.ToArray(),
             Reflect.Items(Reflect.Get(instance, "Parameters")).ToArray(), pose, flags, display);
@@ -202,16 +203,16 @@ public sealed partial class Plugin
     private static object EditContext(object instance) =>
         Reflect.Get(Reflect.Get(instance, "_engine"), "Context") ?? throw Differs("the edit context");
 
-    // The kinds of accessory the project has a group of built-in accessories
-    // for, and those it has a group an import started for. VRoid keeps a kind's
-    // group after its last accessory is removed, even across a save, and adds
-    // every accessory of the kind to it.
+    // The accessory kinds the character has a group of built-in accessories
+    // for, and those it has a group an import started for. VRoid keeps an
+    // accessory kind's group after its last accessory is removed, even across a
+    // save, and adds every accessory of that kind to it.
     // VRoid's own `RemoveTransferableGroupAndChildrenCommand` reports success on
     // an empty group but leaves it in place.
     private static (HashSet<string> BuiltIn, HashSet<string> Imported) AccessoryGroups()
     {
         var model = Reflect.Get(EditContext(AccessoryEditor), "editingModel") ?? throw Differs("the editing model");
-        var kinds = AttachmentKinds.Values.ToHashSet();
+        var kinds = AccessoryKinds.Values.ToHashSet();
         var groups = (BuiltIn: new HashSet<string>(), Imported: new HashSet<string>());
         foreach (var pair in Reflect.Items(Reflect.Get(model, "_transferableGroups")))
         {
@@ -219,13 +220,13 @@ public sealed partial class Plugin
             var kind = Reflect.Get(group, "TypeId") as string ?? throw Differs("the type of a transferable group");
             if (!kinds.Contains(kind)) continue;
             var resource = Reflect.Get(Reflect.Get(group, "Header"), "ResourceName") as string ?? throw Differs($"the resource of the {kind} group");
-            (ItemIds.Imported(resource) ? groups.Imported : groups.BuiltIn).Add(kind);
+            (Identifiers.Imported(resource) ? groups.Imported : groups.BuiltIn).Add(kind);
         }
         return groups;
     }
 
-    // An accessory as a template entry: its item, colours, and shape sliders by
-    // label, its placement, and its flags.
+    // The accessory entry of a worn accessory: its item, colours, and shape
+    // sliders by label, its placement, and its flags.
     private static Dictionary<string, object?> AccessoryEntry(Worn worn)
     {
         var entry = new Dictionary<string, object?> { ["item"] = worn.Item, ["bone"] = worn.Pose.Bone };
@@ -243,13 +244,13 @@ public sealed partial class Plugin
         var values = worn.Swatches.Select(swatch => (swatch.Label, Value: (object?)ReadHex(swatch, $"Accessories/{worn.Name}/{swatch.Label}")))
             .Concat(Values(worn.Parameters).Select(pair => (Label: pair.Key, pair.Value)));
         foreach (var (label, value) in values)
-            if (EntryKeys.Contains(label) || !entry.TryAdd(label, value))
+            if (AccessoryEntryKeys.Contains(label) || !entry.TryAdd(label, value))
                 throw new InvalidOperationException($"Accessory {worn.Name} has a value labelled {label}, which another value or a reserved key "
                     + "also uses; a template cannot hold both");
         return entry;
     }
 
-    // The indexes of accessory entries in dump order, so lists compare across instances.
+    // The indexes of accessory entries in dump order, so lists compare across app instances.
     private static int[] AccessoryOrder(IReadOnlyList<Dictionary<string, object?>> entries) =>
         AccessoryPlan.DumpOrder(entries.Select(entry => (string)entry["item"]!).ToList(), entries.Select(entry => JsonSerializer.Serialize(entry)).ToList())
             .ToArray();
@@ -259,69 +260,72 @@ public sealed partial class Plugin
 
     private static Dictionary<string, object?>[] AccessoryList(Worn[] worn) => AccessoryList(worn.Select(AccessoryEntry).ToArray());
 
-    // The bones apply accepts. The table holds VRoid 2.16.0's; any worn
-    // accessory's avatar checks it.
+    // The bones apply accepts. The table holds VRoid 2.16.0's, which is
+    // checked against the `HumanBoneMap` VRoid keeps for any worn accessory.
     private static IReadOnlyList<string> AccessoryBones(Worn[] worn)
     {
         if (worn.Length > 0)
         {
-            var map = Reflect.Get(Reflect.Call(worn[0].Instance, "GetAvatar"), "HumanBoneMap") ?? throw Differs("the avatar's bones");
+            var map = Reflect.Get(Reflect.Call(worn[0].Instance, "GetAvatar"), "HumanBoneMap") ?? throw Differs("the character's bones");
             var live = Reflect.Items(Reflect.Get(map, "Values")).Select(bone => Reflect.Get(bone, "Value") as string).ToHashSet();
-            if (!live.SetEquals(Bones.All)) throw Differs("the avatar's bones");
+            if (!live.SetEquals(Bones.All)) throw Differs("the character's bones");
         }
         return Bones.All;
     }
 
-    // The asset catalog's built-in accessory templates, which do not change
-    // while the app runs.
+    // The asset catalog's built-in accessory items, which do not change during
+    // an app instance.
     private static object[]? attachments;
     private static object[] Attachments() => attachments ??= Reflect.Items(Reflect.Get(
             Reflect.Get(Reflect.Get(Reflect.Get(Main, "_mainModel"), "assetStorage"), "AssetCatalog") ?? throw Differs("the asset catalog"),
             "TransferableGroupEntries"))
         .Select(entry => Reflect.As(entry, CatalogEntry))
-        .Where(entry => ItemIds.Attachment(Reflect.Get(entry, "resourceName") as string) != null)
+        .Where(entry => Identifiers.Attachment(Reflect.Get(entry, "resourceName") as string) != null)
         .ToArray();
-    private static HashSet<string>? attachmentIds;
-    private static HashSet<string> AttachmentIds => attachmentIds ??=
-        Attachments().Select(entry => ItemIds.Attachment(Reflect.Get(entry, "resourceName") as string)!).ToHashSet();
-    // Each built-in accessory's kind, the group type VRoid keeps its accessories
-    // in, such as TransferableGroupType.N00.Level1.AnimalEar for cat and rabbit ears.
-    private static Dictionary<string, string>? attachmentKinds;
-    private static Dictionary<string, string> AttachmentKinds => attachmentKinds ??= Attachments().ToDictionary(
-        entry => ItemIds.Attachment(Reflect.Get(entry, "resourceName") as string)!,
-        entry => Reflect.Get(entry, "transferableGroupType") as string ?? throw Differs("the kind of a built-in accessory"));
+    // The identifier of each built-in accessory item.
+    private static HashSet<string>? builtInAccessories;
+    private static HashSet<string> BuiltInAccessories => builtInAccessories ??=
+        Attachments().Select(entry => Identifiers.Attachment(Reflect.Get(entry, "resourceName") as string)!).ToHashSet();
+    // Each built-in accessory item's accessory kind, the group type VRoid keeps
+    // its accessories in, such as TransferableGroupType.N00.Level1.AnimalEar for
+    // cat and rabbit ears.
+    private static Dictionary<string, string>? accessoryKinds;
+    private static Dictionary<string, string> AccessoryKinds => accessoryKinds ??= Attachments().ToDictionary(
+        entry => Identifiers.Attachment(Reflect.Get(entry, "resourceName") as string)!,
+        entry => Reflect.Get(entry, "transferableGroupType") as string ?? throw Differs("the accessory kind of a built-in accessory"));
     // Every built-in accessory needs its default bone in the table.
     private static void CheckDefaultBones()
     {
-        if (AttachmentIds.FirstOrDefault(item => Bones.Default(item) == null) is { } missing)
+        if (BuiltInAccessories.FirstOrDefault(item => Bones.Default(item) == null) is { } missing)
             throw Differs($"the default bone of {missing}");
     }
 
-    // Every built-in accessory with its name and template. The editor offers
-    // only the glasses, so the catalog's other attachments, such as animal ears,
-    // tails, and hats, are added to its template list first: selecting a
-    // template that is not in the list crashes VRoid.
-    private static (string Item, string Name, object Template)[] AvailableAccessories()
+    // Every built-in accessory item with its name and VRoid's option for it.
+    // VRoid's editor offers only the glasses, so the catalog's other
+    // attachments, such as animal ears, tails, and hats, are added to its
+    // `Templates` list first: selecting an option that is not in the list
+    // crashes VRoid.
+    private static (string Item, string Name, object Option)[] AvailableAccessories()
     {
         var editor = AccessoryEditor;
-        var templates = Reflect.Items(Reflect.Get(editor, "Templates")).ToList();
-        string? Resource(object template) => Reflect.Get(Reflect.Get(template, "transferableGroupTemplate"), "resourceName") as string;
-        var listed = templates.Select(Resource).ToHashSet();
+        var options = Reflect.Items(Reflect.Get(editor, "Templates")).ToList();
+        string? Resource(object option) => Reflect.Get(Reflect.Get(option, "transferableGroupTemplate"), "resourceName") as string;
+        var listed = options.Select(Resource).ToHashSet();
         var missing = Attachments().Where(entry => !listed.Contains(Reflect.Get(entry, "resourceName") as string)).ToList();
         if (missing.Count > 0)
         {
             var resources = Reflect.Get(editor, "Resources") ?? throw Differs("the accessory editor's resources");
             foreach (var entry in missing)
-                templates.Add(Reflect.New(TemplateItem, resources, Reflect.New("VRoid.Studio.Engine.TransferableGroupTemplate",
+                options.Add(Reflect.New(TemplateItem, resources, Reflect.New("VRoid.Studio.Engine.TransferableGroupTemplate",
                     Reflect.Get(entry, "transferableGroupType")!, Reflect.Get(entry, "resourceName")!, Reflect.Get(entry, "id")!)));
-            var array = Activator.CreateInstance(typeof(Il2CppReferenceArray<>).MakeGenericType(Reflect.Type(TemplateItem)), (long)templates.Count)!;
+            var array = Activator.CreateInstance(typeof(Il2CppReferenceArray<>).MakeGenericType(Reflect.Type(TemplateItem)), (long)options.Count)!;
             var item = array.GetType().GetProperty("Item")!;
-            for (var i = 0; i < templates.Count; i++) item.SetValue(array, Reflect.As(templates[i], TemplateItem), new object[] { i });
+            for (var i = 0; i < options.Count; i++) item.SetValue(array, Reflect.As(options[i], TemplateItem), new object[] { i });
             Reflect.Call(editor, "set_Templates", array);
         }
-        return templates.Select(template => (Id: ItemIds.Attachment(Resource(template)), Template: template))
-            .Where(entry => entry.Id != null)
-            .Select(entry => (entry.Id!, Reflect.Get(entry.Template, "TranslatedDisplayName") as string ?? entry.Id!, entry.Template))
+        return options.Select(option => (Item: Identifiers.Attachment(Resource(option)), Option: option))
+            .Where(offered => offered.Item != null)
+            .Select(offered => (offered.Item!, Reflect.Get(offered.Option, "TranslatedDisplayName") as string ?? offered.Item!, offered.Option))
             .ToArray();
     }
 
@@ -335,8 +339,9 @@ public sealed partial class Plugin
         }
     }
 
-    // Selecting a template in the editor adds one instance of it, appended to the list.
-    private static IEnumerable<bool> AddAccessory(object template)
+    // Selecting an option of the editor's `Templates` adds one accessory of its
+    // item, appended to the list.
+    private static IEnumerable<bool> AddAccessory(object option)
     {
         var count = Instances().Length;
         var before = rebuilt;
@@ -345,7 +350,7 @@ public sealed partial class Plugin
         // so it is set to null first, which lets one item be added again.
         // `AddSelectedTemplate` after this would add a second accessory.
         Reflect.Call(AccessoryEditor, "set_SelectedTemplate", new object[] { null! });
-        Reflect.Call(AccessoryEditor, "set_SelectedTemplate", template);
+        Reflect.Call(AccessoryEditor, "set_SelectedTemplate", option);
         foreach (var step in WaitForAccessories(before, count + 1)) yield return step;
     }
 
@@ -385,7 +390,7 @@ public sealed partial class Plugin
         public readonly Dictionary<string, string?> Before = new();
         public readonly List<(Slot Slot, string? Item)> Picks = new();
         // Null when the request leaves accessories alone; `WornEntries` holds their
-        // entries from before the change.
+        // accessory entries from before the change.
         public Worn[]? Worn;
         public Dictionary<string, object?>[] WornEntries = Array.Empty<Dictionary<string, object?>>();
         public AccessoryPlan? Plan;
@@ -406,7 +411,7 @@ public sealed partial class Plugin
 
     // Resolves every requested item and accessory and adds a message to
     // `errors` for each one apply cannot wear (R-EDIT-3) or that would discard
-    // an item that is not built in without `discard_custom` (R-EDIT-10).
+    // a custom item without `discard_custom` (R-EDIT-10).
     private static IEnumerable<bool> CheckItems(Request request, Dictionary<string, CategoryEdit[]> edits, bool discard,
         Outfitting work, List<string> errors)
     {
@@ -434,10 +439,10 @@ public sealed partial class Plugin
                 // Asking for what the category already wears changes nothing.
                 if (edit.Item == current) work.Picks.Add((named[0], edit.Item));
                 else if (edit.Item == null && !named[0].Removable) errors.Add($"{path}: its item cannot be taken off; select another");
-                else if (edit.Item == ItemIds.Custom && current != ItemIds.Custom)
-                    errors.Add($"{path}: \"custom\" keeps an item that is not built in, but the category wears {current ?? "nothing"}");
-                else if (edit.Item is { } id && id != ItemIds.Custom && named[0].Items.All(item => item.Id != id))
-                    errors.Add($"{path}: unknown item {id}; list them with items");
+                else if (edit.Item == Identifiers.Custom && current != Identifiers.Custom)
+                    errors.Add($"{path}: \"custom\" keeps a custom item, but the category wears {current ?? "nothing"}");
+                else if (edit.Item is { } identifier && identifier != Identifiers.Custom && named[0].Items.All(item => item.Identifier != identifier))
+                    errors.Add($"{path}: unknown item {identifier}; list them with items");
                 else work.Picks.Add((named[0], edit.Item));
             }
             // A set selects its items itself, so it may not be named with any of them, even
@@ -455,11 +460,11 @@ public sealed partial class Plugin
                 }
             // VRoid also replaces items it does not list as conflicts, such as a sample
             // model's base hair when its overall hair changes, so any item change in a
-            // section may replace the section's items that are not built in.
-            var custom = slots.Where(slot => work.Before[slot.Path] == ItemIds.Custom).Select(slot => slot.Path).ToArray();
+            // section may replace the section's custom items.
+            var custom = slots.Where(slot => work.Before[slot.Path] == Identifiers.Custom).Select(slot => slot.Path).ToArray();
             if (!discard && custom.Length > 0 && work.ItemsChange(section))
-                errors.Add($"{string.Join(", ", custom)} {(custom.Length == 1 ? "wears an item" : "wear items")} that "
-                    + $"{(custom.Length == 1 ? "is" : "are")} not built in, which changing {section} items may replace; "
+                errors.Add($"{string.Join(", ", custom)} {(custom.Length == 1 ? "wears a custom item" : "wear custom items")}, "
+                    + $"which changing {section} items may replace; "
                     + "undo cannot restore them. Set discard_custom to allow it; undoing such a change needs it too");
         }
         if (!request.Body.TryGetProperty("Accessories", out var accessories) || accessories.ValueKind != JsonValueKind.Array)
@@ -473,17 +478,17 @@ public sealed partial class Plugin
         work.Wanted = accessories.EnumerateArray().Select(SpecOf).ToList();
         var plan = work.Plan = AccessoryPlan.Of(worn.Select(accessory => new WornAccessory(accessory.Item, accessory.Pose.Bone, accessory.Kind)).ToList(),
             work.Wanted.Select(wanted => new WantedAccessory(wanted.Item, wanted.HasBone, wanted.Bone,
-                AttachmentKinds.GetValueOrDefault(wanted.Item, wanted.Item))).ToList(),
+                AccessoryKinds.GetValueOrDefault(wanted.Item, wanted.Item))).ToList(),
             (i, j) => Satisfies(work.Wanted[i], work.WornEntries[j]),
             AccessoryGroups().Imported);
         for (var i = 0; i < work.Wanted.Count; i++)
-            if (work.Wanted[i].Item != ItemIds.Custom && !available.Contains(work.Wanted[i].Item))
+            if (work.Wanted[i].Item != Identifiers.Custom && !available.Contains(work.Wanted[i].Item))
                 errors.Add($"Accessories[{i}]: unknown accessory {work.Wanted[i].Item}; list them with accessories");
-        foreach (var addition in plan.Added.Where(addition => work.Wanted[addition.Wanted].Item == ItemIds.Custom))
-            errors.Add($"Accessories[{addition.Wanted}]: \"custom\" keeps an accessory that is not built in, but the project wears no other one");
+        foreach (var addition in plan.Added.Where(addition => work.Wanted[addition.Wanted].Item == Identifiers.Custom))
+            errors.Add($"Accessories[{addition.Wanted}]: \"custom\" keeps a custom accessory, but the character wears no other one");
         if (!discard)
-            foreach (var j in plan.Removed.Where(j => worn[j].Item == ItemIds.Custom))
-                errors.Add($"Accessories: {worn[j].Name} is not built in, and this request removes it; undo cannot restore it. Set discard_custom to allow it");
+            foreach (var j in plan.Removed.Where(j => worn[j].Item == Identifiers.Custom))
+                errors.Add($"Accessories: {worn[j].Name} is a custom accessory, and this request removes it; undo cannot restore it. Set discard_custom to allow it");
         var max = Convert.ToInt32(Reflect.StaticProperty("VRoid.Studio.AccessoryEditor.ViewModel", "MaxInstanceCount").GetValue(null));
         if (worn.Length - plan.Removed.Count + plan.Added.Count > max)
             errors.Add($"Accessories: VRoid allows at most {max} accessories");
@@ -495,7 +500,7 @@ public sealed partial class Plugin
             // The worn accessory whose labels it has: the one it keeps or replaces.
             var matched = plan.Matched[i] is { } j ? worn[j] : null;
             // An unmatched "custom" is refused above; its values have nothing to check against.
-            if (matched == null && spec.Item == ItemIds.Custom) continue;
+            if (matched == null && spec.Item == Identifiers.Custom) continue;
             // A kept accessory may stay on a bone the table lacks, such as a custom one's.
             if (spec.HasBone && spec.Bone != null && !bones.Contains(spec.Bone) && matched?.Pose.Bone != spec.Bone)
                 errors.Add($"{path}/bone: unknown bone {spec.Bone}; list them with accessories");
@@ -535,10 +540,10 @@ public sealed partial class Plugin
         var hasName = entry.TryGetProperty("name", out var name);
         return new AccessorySpec(entry.GetProperty("item").GetString()!, hasBone, hasBone ? bone.GetString() : null,
             Vector("position"), Vector("rotation"), Vector("scale"), hasName, hasName ? name.GetString() : null, Bool("hidden"), Bool("locked"),
-            WantedValues(entry, EntryKeys));
+            WantedValues(entry, AccessoryEntryKeys));
     }
 
-    // Whether a worn accessory's entry already holds everything `spec` names.
+    // Whether the accessory entry of a worn accessory already holds everything `spec` names.
     private static bool Satisfies(AccessorySpec spec, Dictionary<string, object?> entry) =>
         entry["item"] as string == spec.Item && (!spec.HasBone || entry["bone"] as string == spec.Bone)
         && new[] { ("position", spec.Position), ("rotation", spec.Rotation), ("scale", spec.Scale) }
@@ -549,12 +554,12 @@ public sealed partial class Plugin
             ? !wanted.Repeated && Colors.Normalize(colors[0]) is { } hex && Equals(value, hex)
             : Same(value, wanted.Repeated ? wanted.Values.Select(number => (float)number).ToArray() : (float)wanted.Values[0])));
 
-    // A dumped entry as a spec that names every value.
+    // A dumped accessory entry as a spec that names every value.
     private static AccessorySpec SpecOf(Dictionary<string, object?> entry) =>
         new((string)entry["item"]!, true, entry["bone"] as string, entry.GetValueOrDefault("position") as float[],
             entry.GetValueOrDefault("rotation") as float[], entry.GetValueOrDefault("scale") as float[],
             true, entry["name"] as string, (bool)entry["hidden"]!, (bool)entry["locked"]!,
-            entry.Where(pair => !EntryKeys.Contains(pair.Key)).Select(pair => pair.Value switch
+            entry.Where(pair => !AccessoryEntryKeys.Contains(pair.Key)).Select(pair => pair.Value switch
             {
                 string hex => new Wanted(pair.Key, Array.Empty<double>(), false, new[] { hex }),
                 float[] values => new Wanted(pair.Key, values.Select(value => (double)value).ToArray(), true, null),
@@ -581,15 +586,15 @@ public sealed partial class Plugin
 
     private const string AccessoryColor = "Color";
 
-    // Reports each worn item that is not built in and is now gone, including
-    // ones VRoid took off itself. `undo` never names such items.
+    // Reports each worn custom item that is now gone, including ones VRoid
+    // took off itself. `undo` never names such items.
     private static void Discard(Outfitting work, string section)
     {
-        foreach (var slot in work.Slots[section].Where(slot => work.Before[slot.Path] == ItemIds.Custom && State(slot) != ItemIds.Custom))
+        foreach (var slot in work.Slots[section].Where(slot => work.Before[slot.Path] == Identifiers.Custom && State(slot) != Identifiers.Custom))
             if (!Discarded.Contains(slot.Path)) Discarded.Add(slot.Path);
     }
 
-    // Wears the requested items in app order, so a set comes before the items
+    // Wears the requested items in VRoid's order, so a set comes before the items
     // it selects, then checks each one reads back.
     private static IEnumerable<bool> ChangeItems(Outfitting work)
     {
@@ -639,10 +644,10 @@ public sealed partial class Plugin
         // Removing from the end keeps the earlier indices valid.
         foreach (var j in plan.Removed.OrderByDescending(j => j))
         {
-            var path = $"Accessories/{(worn[j].Item == ItemIds.Custom ? worn[j].Name : worn[j].Item)}";
+            var path = $"Accessories/{(worn[j].Item == Identifiers.Custom ? worn[j].Name : worn[j].Item)}";
             Changed.Add(path);
-            // A rebuild adds it again.
-            if (!plan.Rebuilt.Contains(j)) work.Changed++;
+            // One that is added again does not count as a change.
+            if (!plan.Readded.Contains(j)) work.Changed++;
             var removed = false;
             try
             {
@@ -652,11 +657,11 @@ public sealed partial class Plugin
             finally
             {
                 // Undo cannot restore a custom accessory once it is gone. If the removal
-                // fails or times out, it is gone when no instance has its transferable;
-                // instances can share one, so a completed removal needs no check.
+                // fails or times out, it is gone when no accessory has its transferable;
+                // accessories can share one, so a completed removal needs no check.
                 try
                 {
-                    if (worn[j].Item == ItemIds.Custom && (removed
+                    if (worn[j].Item == Identifiers.Custom && (removed
                         || Instances().All(instance => Reflect.Get(Reflect.Get(instance, "transferableInfo"), "Id") as string != worn[j].Id)))
                     {
                         Discarded.Add(path);
@@ -689,8 +694,8 @@ public sealed partial class Plugin
             if (plan.Matched[addition.Wanted] == null) work.Changed++;
             if (addition.CopyOf is { } source)
                 foreach (var step in DuplicateAccessory(made[source])) yield return step;
-            // The editor may rebuild its template list, so find the template in the current one.
-            else foreach (var step in AddAccessory(AvailableAccessories().First(available => available.Item == item).Template)) yield return step;
+            // VRoid's editor may make its `Templates` list anew, so find the option in the current one.
+            else foreach (var step in AddAccessory(AvailableAccessories().First(available => available.Item == item).Option)) yield return step;
             var added = WornAccessories();
             if (added[^1].Item != item) throw Differs($"where VRoid lists the added accessory {item}");
             made[addition.Wanted] = added.Length - 1;
@@ -705,7 +710,7 @@ public sealed partial class Plugin
         }
         foreach (var (index, i, was) in targets)
         {
-            // A rebuild's accessory takes over the values of the one it replaced.
+            // An accessory added again takes over the values of the one it replaced.
             var spec = was is { } j ? Over(SpecOf(work.WornEntries[j]), work.Wanted[i]) : work.Wanted[i];
             var before = was is { } k ? work.WornEntries[k] : AccessoryEntry(WornAccessories()[index]);
             foreach (var step in Fit(index, spec, $"Accessories[{i}]")) yield return step;
@@ -714,7 +719,7 @@ public sealed partial class Plugin
     }
 
     // Moves the accessory listed at `index` to `bone`, which VRoid's command does
-    // only while no other accessory of its kind is worn.
+    // only while no other accessory of its accessory kind is worn.
     // The command resets the placement to the identity, so the placement is set
     // after the bone.
     private static IEnumerable<bool> MoveBone(int index, string? bone, string path)
@@ -722,7 +727,7 @@ public sealed partial class Plugin
         var worn = WornAccessories();
         if (worn[index].Pose.Bone == bone) yield break;
         if (worn.Count(other => other.Kind == worn[index].Kind) > 1)
-            throw new InvalidOperationException($"{path}: another accessory of its kind is worn, so VRoid cannot move it to {bone ?? "None"}");
+            throw new InvalidOperationException($"{path}: another accessory of its accessory kind is worn, so VRoid cannot move it to {bone ?? "None"}");
         var before = rebuilt;
         unsavedChanges = true;
         Run(worn[index].Instance, "SetPartOriginParentCommand", worn[index].Group, bone == null ? null : Reflect.New("VRoidCore.Common.Types.ResolvedBoneId", bone));
@@ -760,7 +765,7 @@ public sealed partial class Plugin
         foreach (var wanted in spec.Values)
         {
             // Values are resolved again after each change, since a rebuild may replace
-            // the accessory's sliders and colour fields.
+            // the accessory's sliders and colours.
             var set = new HashSet<string>();
             while (true)
             {
@@ -768,16 +773,16 @@ public sealed partial class Plugin
                 var target = Match("Accessories", AsCategory(Find()), new CategoryEdit("", new[] { wanted }, false, null), errors, false, path);
                 if (errors.Count > 0) throw new InvalidOperationException(string.Join("; ", errors) + ".");
                 var number = target.Matched.FirstOrDefault(match => Read(match.Parameter) != match.Value);
-                var paint = target.Painted.FirstOrDefault(match => match.Field.Hex != match.Hex);
-                var where = number.Path ?? paint?.Field.Path;
+                var paint = target.Painted.FirstOrDefault(match => match.Shown.Hex != match.Hex);
+                var where = number.Path ?? paint?.Shown.Path;
                 if (where == null) break;
                 if (!set.Add(where))
                     throw new InvalidOperationException(number.Path != null ? $"{where} reads {Read(number.Parameter)} after setting {number.Value}"
-                        : $"{where} reads {paint!.Field.Hex} after setting {paint.Hex}");
+                        : $"{where} reads {paint!.Shown.Hex} after setting {paint.Hex}");
                 var before = rebuilt;
                 unsavedChanges = true;
                 if (number.Path != null) Reflect.Call(number.Parameter, "set_" + Member(number.Parameter), number.Value);
-                else Write(paint!.Swatch, Colors.Write(paint.Field.Hex, paint.Hex)!);
+                else Write(paint!.Swatch, Colors.Write(paint.Shown.Hex, paint.Hex)!);
                 Changed.Add(where);
                 while (rebuilt == before || updating) yield return true;
             }
@@ -790,7 +795,7 @@ public sealed partial class Plugin
             foreach (var step in SetFlag(index, "locked", locked, path)) yield return step;
     }
 
-    // VRoid 2.16.0 builds an accessory's colour fields once, when the project
+    // VRoid 2.16.0 builds an accessory's colours once, when the character
     // opens or the accessory is imported, and builds none for one that is hidden
     // or locked then, which its own editor shows too. Showing or unlocking such
     // an accessory later builds none either, though the character keeps its
@@ -799,7 +804,7 @@ public sealed partial class Plugin
     // build them again, then restore both; the accessories end as they were.
     // Only these reads run for every accessory, so an accessory `dump` cannot
     // read does not stop them.
-    private static IEnumerable<bool> RebuildAccessoryColors()
+    private static IEnumerable<bool> BuildAccessoryColors()
     {
         var mode = Reflect.Get(Root, "EditMode") ?? throw Differs("the editor's section");
         // Flags to set back, latest last, so a failure still restores them.
@@ -847,7 +852,7 @@ public sealed partial class Plugin
         }
     }
 
-    // Whether an accessory instance is hidden or locked, read from it alone.
+    // Whether an accessory is hidden or locked, read from its instance alone.
     private static bool Flag(object instance, string key) =>
         Reflect.Get(instance, key == "hidden" ? "IsVisible" : "IsEditable") is bool value ? !value : throw Differs($"whether an accessory is {key}");
 
@@ -859,8 +864,8 @@ public sealed partial class Plugin
     }
 
     // Sets `hidden` or `locked` of the accessory listed at `index`, one rebuild each.
-    // It reads only that instance, so `open` and `import` can use it on any
-    // accessory.
+    // It reads only that accessory's instance, so `open` and `import` can use it
+    // on any accessory.
     private static IEnumerable<bool> SetFlag(int index, string key, bool value, string path)
     {
         if (Flag(Instances()[index], key) == value) yield break;
@@ -872,7 +877,7 @@ public sealed partial class Plugin
     }
 
     // Renames the accessory listed at `index` as VRoid's Rename dialog does, keeping
-    // the localization key that names its template; null restores the default name.
+    // the localization key that names its item; null restores the default name.
     // The command takes no rebuild.
     private static void SetName(int index, string? name, string path)
     {
@@ -914,11 +919,11 @@ public sealed partial class Plugin
     private static void Run(object instance, string command, params object?[] args) =>
         Reflect.Call(EditContext(instance), "ExecuteSyncCommand", Reflect.New("VRoidCore.Editing.History.Command." + command, args!));
 
-    // The number of values that differ between two entries of one accessory; each
-    // element of a repeated label counts.
+    // The number of values that differ between two accessory entries of one
+    // accessory; each element of a repeated label counts.
     private static int Differences(Dictionary<string, object?> before, Dictionary<string, object?> after) =>
         before.Keys.Union(after.Keys).Where(key => key != "item").Sum(key =>
-            !EntryKeys.Contains(key) && before.GetValueOrDefault(key) is float[] a && after.GetValueOrDefault(key) is float[] b && a.Length == b.Length
+            !AccessoryEntryKeys.Contains(key) && before.GetValueOrDefault(key) is float[] a && after.GetValueOrDefault(key) is float[] b && a.Length == b.Length
                 ? a.Zip(b).Count(pair => pair.First != pair.Second)
                 : Same(before.GetValueOrDefault(key), after.GetValueOrDefault(key)) ? 0 : 1);
 }

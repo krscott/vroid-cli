@@ -1,4 +1,5 @@
-"""Exercise the in-desktop launcher with a stand-in Wine and store."""
+"""Exercise the launcher that runs on the private display, with a stand-in
+Wine and store."""
 
 import json
 import os
@@ -108,22 +109,22 @@ def test_new_session_runs_the_shared_install(writable: Path) -> None:
     # R-SES-9
     session = writable / "session"
     paths = store(writable, "1")
-    boot, server, app = launch(session, paths)
+    wineboot, server, vroid = launch(session, paths)
     # Wine's Mono and Gecko setup must be off from the first call.
-    assert Path(boot["program"]).name == "wineboot"
-    assert "mscoree,mshtml=" in boot["env"]["WINEDLLOVERRIDES"]
+    assert Path(wineboot["program"]).name == "wineboot"
+    assert "mscoree,mshtml=" in wineboot["env"]["WINEDLLOVERRIDES"]
     assert Path(server["program"]).name == "wineserver"
-    assert app["program"] == f"{paths['VROID_WINE']}/bin/wine"
-    assert app["args"][0] == f"{paths['VROID_APP']}/VRoidStudio.exe"
-    assert "winhttp=n,b" in app["env"]["WINEDLLOVERRIDES"]
-    assert "mscoree,mshtml=" in app["env"]["WINEDLLOVERRIDES"]
+    assert vroid["program"] == f"{paths['VROID_WINE']}/bin/wine"
+    assert vroid["args"][0] == f"{paths['VROID_APP']}/VRoidStudio.exe"
+    assert "winhttp=n,b" in vroid["env"]["WINEDLLOVERRIDES"]
+    assert "mscoree,mshtml=" in vroid["env"]["WINEDLLOVERRIDES"]
     root = session / "bepinex"
-    target = option(app, "--doorstop-target-assembly")
+    target = option(vroid, "--doorstop-target-assembly")
     assert target == root / "core/BepInEx.Unity.IL2CPP.dll"
     assert target.read_text() == "1"
-    assert option(app, "--unhollowed-path") == Path(paths["VROID_INTEROP"])
-    assert unix(app["env"]["BEPINEX_PRELOADER_LOG"]) == root / "preloader.log"
-    assert option(app, "-logFile") == session / "player.log"
+    assert option(vroid, "--unhollowed-path") == Path(paths["VROID_INTEROP"])
+    assert unix(vroid["env"]["BEPINEX_PRELOADER_LOG"]) == root / "preloader.log"
+    assert option(vroid, "-logFile") == session / "player.log"
     assert (root / "plugins/VroidBridge.dll").read_text() == "1"
     assert not (session / "wine/drive_c/VRoidStudio").exists()
 
@@ -135,7 +136,7 @@ def test_upgrade_switches_store_paths(writable: Path) -> None:
     config = session / "bepinex/config/BepInEx.cfg"
     config.write_text("rewritten by BepInEx")
     calls = launch(session, store(writable, "2"))
-    # The prefix exists now, so only the app runs.
+    # The prefix exists now, so only VRoid runs.
     assert [Path(call["program"]).name for call in calls] == ["wine"]
     root = session / "bepinex"
     for path in ["core/BepInEx.Unity.IL2CPP.dll", "plugins/VroidBridge.dll"]:
@@ -157,24 +158,24 @@ def test_installed_session_uses_the_shared_install(writable: Path) -> None:
     (session / "installed").touch()
     before = sorted((p, p.read_bytes()) for p in old.rglob("*") if p.is_file())
     paths = store(writable, "1")
-    (app,) = launch(session, paths)
-    assert app["args"][0] == f"{paths['VROID_APP']}/VRoidStudio.exe"
-    assert option(app, "--unhollowed-path") == Path(paths["VROID_INTEROP"])
+    (vroid,) = launch(session, paths)
+    assert vroid["args"][0] == f"{paths['VROID_APP']}/VRoidStudio.exe"
+    assert option(vroid, "--unhollowed-path") == Path(paths["VROID_INTEROP"])
     after = sorted((p, p.read_bytes()) for p in old.rglob("*") if p.is_file())
     assert after == before
 
 
-def test_app_environment_names_its_store_paths(writable: Path) -> None:
+def test_vroid_environment_names_its_store_paths(writable: Path) -> None:
     # R-SES-10: Nix keeps store paths named in a running process's
-    # environment, so every store path the app reads must be named there.
+    # environment, so every store path VRoid reads must be named there.
     session = writable / "session"
     paths = store(writable, "1")
-    *_, app = launch(session, paths)
-    named = [Path(app["env"][name]) for name in STORE]
+    *_, vroid = launch(session, paths)
+    named = [Path(vroid["env"][name]) for name in STORE]
     assert named == [Path(paths[name]) for name in STORE]
-    read = [Path(app["program"])]
-    read += [Path(a) for a in app["args"] if a.startswith("/")]
-    read += [unix(a) for a in app["args"] if a.startswith("Z:")]
+    read = [Path(vroid["program"])]
+    read += [Path(a) for a in vroid["args"] if a.startswith("/")]
+    read += [unix(a) for a in vroid["args"] if a.startswith("Z:")]
     read += [p.resolve() for p in (session / "bepinex").iterdir() if p.is_symlink()]
     used: set[Path] = set()
     for path in read:

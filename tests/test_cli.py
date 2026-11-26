@@ -1,4 +1,4 @@
-"""Exercise the CLI and its file protocol without a running VRoid process."""
+"""Exercise the CLI and its file protocol without a running app instance."""
 
 import fcntl
 import json
@@ -189,7 +189,7 @@ def applied(
 APPLY = '{"method": "apply", "Body": {"Whole Body": {"Head Size": %s}}}'
 
 
-def test_nonfinite_values_are_rejected_without_state(tmp_path: Path) -> None:
+def test_nonfinite_values_are_refused_without_state(tmp_path: Path) -> None:
     # R-EDIT-2
     for value in ["NaN", "Infinity", "-Infinity", "1e999", "[0.5, NaN]"]:
         result = run_cli(tmp_path, "test", APPLY % value)
@@ -209,7 +209,7 @@ def test_nonfinite_values_are_rejected_without_state(tmp_path: Path) -> None:
         '"Ear Size (Bigger)": NaN',
     ],
 )
-def test_non_finite_accessory_values_are_rejected_without_state(
+def test_non_finite_accessory_values_are_refused_without_state(
     tmp_path: Path, entry: str
 ) -> None:
     # R-EDIT-2
@@ -224,7 +224,7 @@ def test_non_finite_accessory_values_are_rejected_without_state(
 @pytest.mark.parametrize(
     "color", ['"#12345"', '"123456"', '"#12345678"', '"#GGGGGG"', '"#FAEBDE\\n"']
 )
-def test_malformed_colours_are_rejected_without_state(
+def test_malformed_colours_are_refused_without_state(
     tmp_path: Path, color: str
 ) -> None:
     # R-EDIT-2
@@ -239,7 +239,7 @@ def test_malformed_colours_are_rejected_without_state(
 @pytest.mark.parametrize(
     "colors", ['["#FFFFFF", "#12345"]', '["#FFFFFF", 0.5]', '[0.5, "#FFFFFF"]']
 )
-def test_malformed_colour_arrays_are_rejected_without_state(
+def test_malformed_colour_arrays_are_refused_without_state(
     tmp_path: Path, colors: str
 ) -> None:
     # R-EDIT-2: an array holds only numbers or only colours.
@@ -376,7 +376,7 @@ def test_unreadable_status_gets_no_request(tmp_path: Path, status: str) -> None:
         ("status", "REQUEST must be a JSON object, @PATH, or -"),
     ],
 )
-def test_invalid_requests_are_rejected_without_state(
+def test_invalid_requests_are_refused_without_state(
     tmp_path: Path, request_text: str, reason: str
 ) -> None:
     # R-CLI-3
@@ -417,11 +417,11 @@ def test_agent_skill_includes_the_request_and_result_schema(tmp_path: Path) -> N
 def test_existing_save_destination_is_preserved(tmp_path: Path) -> None:
     # R-EDIT-4
     rpc = bridge(tmp_path)
-    project = tmp_path / "saved.vroid"
-    project.write_bytes(b"deliverable")
+    saved = tmp_path / "saved.vroid"
+    saved.write_bytes(b"deliverable")
     result = invoke(tmp_path, "save", path="saved.vroid")
     assert result.returncode == 2
-    assert project.read_bytes() == b"deliverable"
+    assert saved.read_bytes() == b"deliverable"
     assert not (rpc / "request.json").exists()
 
 
@@ -453,7 +453,7 @@ def test_pending_request_is_never_replaced(tmp_path: Path) -> None:
         {"method": "stop"},
     ],
 )
-def test_competing_controller_is_rejected(tmp_path: Path, body: dict[str, Any]) -> None:
+def test_competing_controller_is_refused(tmp_path: Path, body: dict[str, Any]) -> None:
     # R-SES-1
     rpc = bridge(tmp_path)
     env = fake_framewisp(tmp_path, "raise SystemExit('framewisp must not run')")
@@ -474,14 +474,14 @@ def test_launch_ignores_a_heartbeat_from_before_launch(tmp_path: Path) -> None:
         tmp_path, f"Path({str(marker)!r}).write_text(' '.join(args))\ntime.sleep(5)"
     )
 
-    def new_instance() -> None:
+    def new_app_instance() -> None:
         deadline = time.monotonic() + 5
         while not marker.exists() and time.monotonic() < deadline:
             time.sleep(0.01)
         time.sleep(0.5)
         write_status(rpc, app_instance="new-instance")
 
-    thread = threading.Thread(target=new_instance)
+    thread = threading.Thread(target=new_app_instance)
     thread.start()
     result = invoke(tmp_path, "launch", timeout=8, env=env)
     thread.join()
@@ -492,7 +492,9 @@ def test_launch_ignores_a_heartbeat_from_before_launch(tmp_path: Path) -> None:
     )
 
 
-def test_launch_ignores_the_last_heartbeat_of_a_hung_app(tmp_path: Path) -> None:
+def test_launch_ignores_the_last_heartbeat_of_a_hung_app_instance(
+    tmp_path: Path,
+) -> None:
     # R-SES-2: recent enough to look alive, but from before this launch.
     bridge(tmp_path, heartbeat=time.time() * 1000 - 2000)
     result = invoke(tmp_path, "launch", timeout=1, env=running_display(tmp_path))
@@ -500,7 +502,7 @@ def test_launch_ignores_the_last_heartbeat_of_a_hung_app(tmp_path: Path) -> None
     assert "not ready after 1s" in result.stderr
 
 
-def test_launch_reports_an_app_an_older_build_left_at_the_terms(
+def test_launch_reports_an_app_instance_an_older_build_left_at_the_terms(
     tmp_path: Path,
 ) -> None:
     # R-SES-8
@@ -514,7 +516,7 @@ def test_launch_reports_an_app_an_older_build_left_at_the_terms(
     assert "stop" not in (tmp_path / "framewisp.log").read_text().split()
 
 
-def test_launch_reports_why_the_app_exited(tmp_path: Path) -> None:
+def test_launch_reports_why_vroid_exited(tmp_path: Path) -> None:
     # R-SES-11
     env = fake_framewisp(
         tmp_path,
@@ -563,8 +565,10 @@ def test_launch_timeout_explains_the_logs(
         assert "keeps starting" not in result.stderr
 
 
-def test_launch_timeout_tells_a_stalled_app_from_a_slow_one(tmp_path: Path) -> None:
-    # R-SES-11: an app whose logs stopped changing will not become ready.
+def test_launch_timeout_tells_a_stalled_app_instance_from_a_slow_one(
+    tmp_path: Path,
+) -> None:
+    # R-SES-11: an app instance whose logs stopped changing will not become ready.
     session = tmp_path / "state/test"
     env = fake_framewisp(
         tmp_path,
@@ -611,10 +615,10 @@ def test_launch_fails_at_once_when_bepinex_fails_to_start(tmp_path: Path) -> Non
     assert "UnauthorizedAccessException" in result.stderr
 
 
-def test_resumed_launch_reports_the_running_apps_bepinex_failure(
+def test_resumed_launch_reports_the_running_app_instances_bepinex_failure(
     tmp_path: Path,
 ) -> None:
-    # R-SES-11: a launch after a timeout still explains the same app's failure.
+    # R-SES-11: a launch after a timeout still explains the same app instance's failure.
     rpc = bridge(tmp_path, heartbeat=0)
     preloader = rpc.parent / "bepinex/preloader.log"
     preloader.parent.mkdir()
@@ -628,16 +632,16 @@ def test_resumed_launch_reports_the_running_apps_bepinex_failure(
     assert preloader.exists()
 
 
-def test_launch_keeps_only_the_previous_runs_logs(tmp_path: Path) -> None:
+def test_launch_keeps_only_the_previous_app_instances_logs(tmp_path: Path) -> None:
     rpc = bridge(tmp_path, app_instance="old-instance")
     session = rpc.parent
     root = session / "bepinex"
     root.mkdir()
     (session / "desktop").mkdir()
     (session / "previous/bepinex").mkdir(parents=True)
-    (session / "previous/bepinex/ErrorLog.log").write_text("older run\n")
-    (session / "player.log").write_text("previous run\n")
-    (session / "desktop/app.log").write_text("previous run\n")
+    (session / "previous/bepinex/ErrorLog.log").write_text("older app instance\n")
+    (session / "player.log").write_text("previous app instance\n")
+    (session / "desktop/app.log").write_text("previous app instance\n")
     (root / "preloader.log").write_text("earlier failure\n")
     (root / "LogOutput.log").write_text(
         f"[Warning:InteropManager] {OUTDATED_INTEROP}.\n"
@@ -646,13 +650,13 @@ def test_launch_keeps_only_the_previous_runs_logs(tmp_path: Path) -> None:
     marker = tmp_path / "started"
     env = fake_framewisp(tmp_path, f"Path({str(marker)!r}).touch()\ntime.sleep(5)")
 
-    def new_instance() -> None:
+    def new_app_instance() -> None:
         deadline = time.monotonic() + 5
         while not marker.exists() and time.monotonic() < deadline:
             time.sleep(0.01)
         write_status(rpc, app_instance="new-instance")
 
-    thread = threading.Thread(target=new_instance)
+    thread = threading.Thread(target=new_app_instance)
     thread.start()
     result = invoke(tmp_path, "launch", timeout=8, env=env)
     thread.join()
@@ -660,8 +664,8 @@ def test_launch_keeps_only_the_previous_runs_logs(tmp_path: Path) -> None:
     assert not (root / "preloader.log").exists()
     assert not (root / "LogOutput.log").exists()
     previous = session / "previous"
-    assert (previous / "player.log").read_text() == "previous run\n"
-    assert (previous / "desktop/app.log").read_text() == "previous run\n"
+    assert (previous / "player.log").read_text() == "previous app instance\n"
+    assert (previous / "desktop/app.log").read_text() == "previous app instance\n"
     assert (previous / "bepinex/preloader.log").read_text() == "earlier failure\n"
     assert OUTDATED_INTEROP in (previous / "bepinex/LogOutput.log").read_text()
     assert not (previous / "bepinex/ErrorLog.log").exists()
@@ -672,8 +676,8 @@ def test_launch_refuses_outdated_interop_from_this_app_instance_only(
     tmp_path: Path, logged: str
 ) -> None:
     # The CLI recognizes this app instance's BepInEx log by the bridge's load message.
-    plugin = (SOURCE / "plugin/Plugin.cs").read_text()
-    assert BRIDGE_LOADED.format(app_instance="{rpc.AppInstance}") in plugin
+    source = (SOURCE / "plugin/Plugin.cs").read_text()
+    assert BRIDGE_LOADED.format(app_instance="{rpc.AppInstance}") in source
     rpc = bridge(tmp_path)
     (rpc.parent / "bepinex").mkdir()
     (rpc.parent / "bepinex/LogOutput.log").write_text(
@@ -691,10 +695,12 @@ def test_launch_refuses_outdated_interop_from_this_app_instance_only(
         assert result.returncode == 0, result.stderr
 
 
-def test_launch_reports_a_desktop_that_failed_before_vroid(tmp_path: Path) -> None:
+def test_launch_reports_a_private_display_that_failed_before_vroid(
+    tmp_path: Path,
+) -> None:
     display = tmp_path / "state/test/desktop"
     display.mkdir(parents=True)
-    (display / "app.log").write_text("previous run\n")
+    (display / "app.log").write_text("previous app instance\n")
     (display / "app-exit.json").write_text("{}")
     old = time.time() - 60
     os.utime(display / "app-exit.json", (old, old))
@@ -702,10 +708,10 @@ def test_launch_reports_a_desktop_that_failed_before_vroid(tmp_path: Path) -> No
     result = invoke(tmp_path, "launch", timeout=8, env=env)
     assert result.returncode == 1
     assert "sway exited" in result.stderr
-    assert "previous run" not in result.stderr
+    assert "previous app instance" not in result.stderr
 
 
-def test_exited_app_blocks_launch_and_stop_waits_for_the_desktop(
+def test_exited_vroid_blocks_launch_and_stop_waits_for_the_private_display(
     tmp_path: Path,
 ) -> None:
     bridge(tmp_path, unsaved_changes=True)
@@ -716,7 +722,7 @@ def test_exited_app_blocks_launch_and_stop_waits_for_the_desktop(
     env = fake_framewisp(tmp_path, "raise SystemExit('framewisp must not run')")
     launched = invoke(tmp_path, "launch", env=env)
     assert launched.returncode == 1
-    assert "Wait for the desktop to close" in launched.stderr
+    assert "Wait for the private display to close" in launched.stderr
 
     def close() -> None:
         time.sleep(0.5)
@@ -731,7 +737,7 @@ def test_exited_app_blocks_launch_and_stop_waits_for_the_desktop(
     assert json.loads(stopped.stdout)["stopped"] is True
 
 
-def test_abandoned_desktop_asks_for_recovery(tmp_path: Path) -> None:
+def test_abandoned_private_display_asks_for_recovery(tmp_path: Path) -> None:
     display = tmp_path / "state/test/desktop"
     display.mkdir(parents=True)
     (display / ".headless-owner.json").write_text("{}")
@@ -847,7 +853,7 @@ def test_request_roundtrip(tmp_path: Path, outcome: str) -> None:
 
 
 # A template dumped before colours existed has no Hairstyle section or colours.
-NUMERIC_DUMP = {
+SLIDER_DUMP = {
     "method": "apply",
     "Face": {"Face Sets": {"Eye Size X": 0.1, "Nose Size": [0.25, -0.5]}},
     "Body": {"Whole Body": {"Head Size": 0.125}},
@@ -905,7 +911,7 @@ ITEM_DUMP = {
 }
 
 
-@pytest.mark.parametrize("dump", [NUMERIC_DUMP, COLOUR_DUMP, ITEM_DUMP])
+@pytest.mark.parametrize("dump", [SLIDER_DUMP, COLOUR_DUMP, ITEM_DUMP])
 def test_dump_output_is_valid_apply_input(tmp_path: Path, dump: dict[str, Any]) -> None:
     # R-EDIT-7
     rpc = bridge(tmp_path)
@@ -999,7 +1005,7 @@ def test_parameters_list_numbers_and_colours(tmp_path: Path) -> None:
     listed = [
         {"label": "Head Size", "value": 0.125, "min": -1.0, "max": 1.0},
         {"label": "Color", "value": "#FAEBDE"},
-        # Each part of an outfit item has its own colours, listed in app order.
+        # Each part of an outfit item has its own colours, listed in VRoid's order.
         {"label": "Base Color", "value": "#B22222"},
         {"label": "Base Color", "value": "#FFFFFF"},
     ]
@@ -1082,7 +1088,7 @@ def test_accessory_sliders_must_match_the_worn_accessories(tmp_path: Path) -> No
 
 
 def test_an_apply_without_a_result_names_its_undo_file(tmp_path: Path) -> None:
-    # R-EDIT-11: the app wrote the undo file, then dropped the request.
+    # R-EDIT-11: the bridge wrote the undo file, then dropped the request.
     rpc = bridge(tmp_path)
     received: list[dict[str, Any]] = []
 
@@ -1112,7 +1118,7 @@ def test_an_apply_without_a_result_names_its_undo_file(tmp_path: Path) -> None:
     [APPLY % "0.5", '{"method": "import", "path": "ears.vroidcustomitem"}'],
 )
 def test_an_interrupted_edit_names_its_undo_file(tmp_path: Path, request_: str) -> None:
-    # R-EDIT-11: the app keeps going, and may write the undo file later.
+    # R-EDIT-11: the bridge keeps going, and may write the undo file later.
     rpc = bridge(tmp_path)
     (tmp_path / "ears.vroidcustomitem").write_bytes(b"item")
     environment = {k: v for k, v in os.environ.items() if k != "VROID_STATE_DIR"}
@@ -1173,7 +1179,7 @@ def test_command_returns_after_the_bridge_removes_its_request(tmp_path: Path) ->
 
 def test_paths_are_sent_as_wine_paths(tmp_path: Path) -> None:
     rpc = bridge(tmp_path)
-    (tmp_path / "source.vroid").write_bytes(b"project")
+    (tmp_path / "source.vroid").write_bytes(b"character")
     with answer(
         rpc, lambda r: {"ok": True, "result": {"opened": r["path"]}, "error": None}
     ) as received:
@@ -1225,7 +1231,7 @@ def test_status_of_a_new_session_is_one_json_value(tmp_path: Path) -> None:
         ({"reference": "."}, "is not an existing file"),
     ],
 )
-def test_invalid_render_requests_are_rejected_without_state(
+def test_invalid_render_requests_are_refused_without_state(
     tmp_path: Path, fields: dict[str, Any], reason: str
 ) -> None:
     # R-CLI-3, R-VIEW-3, R-VIEW-5
@@ -1251,7 +1257,7 @@ def test_invalid_render_requests_are_rejected_without_state(
         ({"items": ["159"]}, "items: Extra inputs"),
     ],
 )
-def test_invalid_thumbnails_requests_are_rejected_without_state(
+def test_invalid_thumbnails_requests_are_refused_without_state(
     tmp_path: Path, fields: dict[str, Any], reason: str
 ) -> None:
     # R-CLI-3, R-VIEW-3
@@ -1294,7 +1300,7 @@ def test_render_sends_a_list_of_views_and_a_wine_reference_path(
     (tmp_path / "ref.jpg").write_bytes(b"\xff\xd8\xff\xe0 JFIF")
     rpc = bridge(tmp_path)
     with answer(rpc, writes_file(b"written")) as received:
-        result = invoke(tmp_path, "render", path="sheet.png", **fields)
+        result = invoke(tmp_path, "render", path="views.png", **fields)
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["scale"] == 512.5
     sent = {key: received[0][key] for key in expected}
@@ -1458,7 +1464,7 @@ def test_files_report_a_missing_bridge_file(tmp_path: Path, method: str) -> None
         ({"method": "export", "path": "x.vroidcustomitem"}, "index: Field required"),
     ],
 )
-def test_invalid_custom_item_requests_are_rejected_without_state(
+def test_invalid_custom_item_requests_are_refused_without_state(
     tmp_path: Path, request_: dict[str, Any], reason: str
 ) -> None:
     # R-CLI-3, R-EDIT-16
@@ -1487,11 +1493,11 @@ def test_invalid_custom_item_requests_are_rejected_without_state(
         ({"licence": "CC0"}, "licence: Extra inputs"),
     ],
 )
-def test_invalid_vrm_requests_are_rejected_without_state(
+def test_invalid_vrm_requests_are_refused_without_state(
     tmp_path: Path, fields: dict[str, Any], reason: str
 ) -> None:
     # R-CLI-3, R-EDIT-19
-    (tmp_path / "existing.vrm").write_bytes(b"earlier model")
+    (tmp_path / "existing.vrm").write_bytes(b"earlier export")
     request = {
         "method": "export_vrm",
         "path": "alice.vrm",
@@ -1501,7 +1507,7 @@ def test_invalid_vrm_requests_are_rejected_without_state(
     result = run_cli(tmp_path, "test", json.dumps(request))
     assert result.returncode == 2
     assert reason in result.stderr
-    assert (tmp_path / "existing.vrm").read_bytes() == b"earlier model"
+    assert (tmp_path / "existing.vrm").read_bytes() == b"earlier export"
     assert not (tmp_path / "alice.vrm").exists()
     assert not (tmp_path / "state").exists()
 

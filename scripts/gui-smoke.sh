@@ -22,7 +22,7 @@ usage() {
         'before and after, undoes a removal of the cat ears and a refused cat' \
         'tail, recolours the new top, undoing that and a later change of top,' \
         'exports VRM 1.0 and 0.0 files, saves a copy, renders each view alone' \
-        'and in sheets under a reference,' \
+        'and all four in one render under a reference,' \
         'draws the thumbnails of those two categories, restarts, checks the' \
         'saved values,' \
         'renders the cat ears hidden, then shown with their default name, and' \
@@ -53,7 +53,7 @@ fi
 (($# == 2)) || fatal_usage 'Expected SESSION and SOURCE.vroid'
 session=$1
 source=$(realpath -- "$2")
-[[ -f $source ]] || fatal_usage "No such project: $2"
+[[ -f $source ]] || fatal_usage "No such file: $2"
 cli=${VROID_CLI:-vroid-cli}
 for command in jq python3 framewisp cmp; do
     command -v "$command" >/dev/null || fatal "Missing required command: $command"
@@ -224,8 +224,8 @@ thumbnails() {
         vroid -
 }
 
-# Check a PNG: render PATH FRAME WIDTH HEIGHT [VIEWS [REFERENCE]], sheet PATH
-# COUNT, or feet PATH.
+# Check a PNG: render PATH FRAME WIDTH HEIGHT [VIEWS [REFERENCE]], thumbnails
+# PATH COUNT, or feet PATH.
 #
 # A render's size must fit VIEWS views of WIDTH x HEIGHT, under a reference row
 # if REFERENCE, the hex colours of a square reference image's top and bottom
@@ -242,7 +242,7 @@ thumbnails() {
 # A thumbnail sheet's size must fit COUNT items, and no thumbnail may be one
 # flat colour.
 check_png() {
-    python3 - "$@" <<'PY' || fatal "$2 is not a valid $1; see above"
+    python3 - "$@" <<'PY' || fatal "$2 fails the $1 check; see above"
 import struct
 import sys
 import zlib
@@ -293,7 +293,7 @@ for y in range(h):
             line[x] = (line[x] + (left if pa <= pb and pa <= pc else up if pb <= pc else corner)) & 255
     rows.append([bytes(line[x : x + 3]) for x in range(0, stride, step)])
     previous = line
-if check == "sheet":
+if check == "thumbnails":
     for index in range(count):
         x, top = 4 + index % 10 * 154, 4 + index // 10 * 228
         if len({pixel for row in rows[top : top + 200] for pixel in row[x : x + 150]}) < 2:
@@ -344,9 +344,9 @@ edits=(
     'Face|Face Sets|Eye Size Y'
 )
 # Colours, each with a target and an alternative if it already has the target.
-# Hairstyle needs the shared hair colour and Base Hair's own. Distinct targets show
-# the fields are independent. The last read back, Hairstyle/Front, is the panel
-# after.png shows; its Main Color field reads the hex set here (R-EDIT-8).
+# Hairstyle needs the shared hair colour and Base Hair's own. Distinct targets
+# show the colours are independent. The last read back, Hairstyle/Front, is the
+# panel after.png shows; its Main Color reads the hex set here (R-EDIT-8).
 colours=(
     'Face|Irises|R Eye|#2E8B57|#228B22'
     'Face|Irises|L Eye|#3CB371|#32CD32'
@@ -356,7 +356,7 @@ colours=(
 
 # Categories whose items the smoke test changes.
 items=('Hairstyle|Front' 'Outfit|Tops')
-# Two accessories of one kind, which VRoid keeps in one group. The cat ears
+# Two accessories of one accessory kind, which VRoid keeps in one group. The cat ears
 # hang from another bone, which VRoid allows only while no other ears are worn,
 # and are placed, reshaped, renamed, hidden, and locked. VRoid removes a locked
 # accessory only once it is unlocked.
@@ -561,8 +561,8 @@ check_outfit 'after undoing a change of top'
 # for a colour, a shared colour set twice, a colour that writes several, too
 # many colours for an outfit item the request leaves alone, a worn
 # accessory's rotation that is no unit quaternion, scale that is not positive,
-# unknown bone, and shape slider above its maximum, and ears of one kind on
-# bones VRoid cannot combine refuse the whole request, and each is reported.
+# unknown bone, and shape slider above its maximum, and ears on bones
+# VRoid cannot combine refuse the whole request, and each is reported.
 IFS='|' read -r section category label <<<"${edits[0]}"
 IFS='|' read -r other_section other_category other_label <<<"${edits[1]}"
 # Pipeline stages run at once, so each request they need runs first.
@@ -621,8 +621,8 @@ render front body 64 128 "$out/unsaved.png" >/dev/null
 thumbnails Body 'Whole Body' "$out/unsaved-thumbnails.png" >/dev/null
 [[ $(unsaved) == true ]] || fatal "drawing thumbnails cleared the unsaved state"
 
-# Exporting a VRM of each version changes nothing in the app: values, unsaved
-# state, and a render stay the same, and the source project is left alone.
+# Exporting a VRM of each version changes nothing in VRoid: values, unsaved
+# changes, and a render stay the same, and the source file is left alone.
 # VRoid rebuilds the model on its way back to the editor, which each export
 # waits for. Each file names the title and author it was given (R-EDIT-18). An
 # existing destination is refused and left unchanged (R-EDIT-19).
@@ -658,7 +658,7 @@ if vroid "$save" >/dev/null 2>&1; then
 fi
 
 # Exporting the moved, placed, reshaped, renamed, hidden, and locked cat ears
-# changes nothing in the app, and an existing destination is refused and left
+# changes nothing in VRoid, and an existing destination is refused and left
 # unchanged (R-EDIT-16).
 ears_file=$out/ears.vroidcustomitem
 accessories=$(vroid '{"method": "accessories"}')
@@ -668,7 +668,7 @@ vroid '{"method": "dump"}' >"$out/before-export.json"
 export_ears=$(jq -cn --argjson index "$ears_index" --arg path "$ears_file" '{method: "export", index: $index, path: $path}')
 vroid "$export_ears" >/dev/null
 [[ -s $ears_file ]] || fatal "export wrote no $ears_file"
-[[ $(unsaved) == false ]] || fatal "export marked the project modified"
+[[ $(unsaved) == false ]] || fatal "export gave the character unsaved changes"
 vroid '{"method": "dump"}' | cmp -s - "$out/before-export.json" || fatal "dump changed while exporting the cat ears"
 cp "$ears_file" "$out/ears.copy"
 if vroid "$export_ears" >/dev/null 2>&1; then
@@ -676,8 +676,9 @@ if vroid "$export_ears" >/dev/null 2>&1; then
 fi
 cmp -s "$ears_file" "$out/ears.copy" || fatal "a refused export changed $ears_file"
 
-# Rendering shows the whole character (R-VIEW-1) and changes nothing in the
-# app: values, unsaved state, and the editor's view stay the same (R-VIEW-2).
+# Rendering shows the whole character (R-VIEW-1) and changes nothing in
+# VRoid: values, unsaved changes, and what its editor shows stay the same
+# (R-VIEW-2).
 # The editor shows the Body section while thumbnails are drawn for the
 # Hairstyle and Outfit sections; only restoring the section brings Body back.
 for item in "${items[@]}"; do
@@ -702,13 +703,13 @@ for item in "${renders[@]}"; do
     check_png render "$image" "$frame" "$width" "$height"
 done
 # Several views in one image, under a reference (R-VIEW-1, R-VIEW-5).
-sheets=(
+several=(
     'front,three_quarter,side,back|body|256|512|4|png|ff0000,fdfdfd'
     'front,three_quarter,side,back|head|256|256|4|jpg|2040c0,c0a020'
 )
-for item in "${sheets[@]}"; do
+for item in "${several[@]}"; do
     IFS='|' read -r views frame width height count kind colour <<<"$item"
-    image=$out/sheet-$frame.png
+    image=$out/views-$frame.png
     render "$views" "$frame" "$width" "$height" "$image" "$(jq -cn --arg path "$out/reference.$kind" '{reference: $path}')" >/dev/null
     check_png render "$image" "$frame" "$width" "$height" "$count" "$colour"
 done
@@ -728,7 +729,7 @@ if render front body 512 1024 "$image" >/dev/null 2>&1; then
 fi
 cmp -s "$image" "$out/render-front-body.copy" || fatal "a refused render changed $image"
 # Thumbnails show every built-in item of a category, in `items` order
-# (R-VIEW-4), and change nothing in the app either (R-VIEW-2).
+# (R-VIEW-4), and change nothing in VRoid either (R-VIEW-2).
 for item in "${items[@]}"; do
     IFS='|' read -r section category <<<"$item"
     image=$out/thumbnails-$section-$category.png
@@ -736,17 +737,17 @@ for item in "${items[@]}"; do
     jq -e --slurpfile listed "$out/listed-$section-$category.json" '.items == $listed[0].items and .columns == 10' \
         "$out/thumbnails-$section-$category.json" >/dev/null ||
         fatal "$section/$category thumbnails do not show its items; see $out/thumbnails-$section-$category.json"
-    check_png sheet "$image" "$(jq '.items | length' "$out/thumbnails-$section-$category.json")"
+    check_png thumbnails "$image" "$(jq '.items | length' "$out/thumbnails-$section-$category.json")"
 done
 cp "$image" "$out/thumbnails.copy"
 if thumbnails "$section" "$category" "$image" >/dev/null 2>&1; then
     fatal "second thumbnails to $image succeeded"
 fi
 cmp -s "$image" "$out/thumbnails.copy" || fatal "refused thumbnails changed $image"
-[[ $(unsaved) == false ]] || fatal "rendering or drawing thumbnails marked the project modified"
+[[ $(unsaved) == false ]] || fatal "rendering or drawing thumbnails gave the character unsaved changes"
 settled_screenshot "$out/after-render.png"
 cmp -s "$out/before-render.png" "$out/after-render.png" ||
-    fatal "the editor's view changed while rendering or drawing thumbnails; compare $out/before-render.png and $out/after-render.png"
+    fatal "what the editor shows changed while rendering or drawing thumbnails; compare $out/before-render.png and $out/after-render.png"
 vroid '{"method": "dump"}' >"$out/after-render.json"
 cmp -s "$out/before-render.json" "$out/after-render.json" ||
     fatal "dump changed while rendering or drawing thumbnails; see $out/after-render.json"
@@ -757,9 +758,9 @@ vroid '{"method": "stop"}' >/dev/null
 launch
 inputs_before=$(input_events)
 if render front body 64 64 "$out/unopened.png" >/dev/null 2>"$out/unopened.err"; then
-    fatal "render without an open project succeeded"
+    fatal "render without an open character succeeded"
 fi
-grep -qiF 'open or create a character' "$out/unopened.err" || fatal "render without a project: $(<"$out/unopened.err")"
+grep -qiF 'open or create a character' "$out/unopened.err" || fatal "render without a character: $(<"$out/unopened.err")"
 shopt -u failglob
 leftovers=("$out"/unopened.png "$out"/.vroid-render-*)
 shopt -s failglob
@@ -767,7 +768,7 @@ for leftover in "${leftovers[@]}"; do
     [[ ! -e $leftover ]] || fatal "a failed render left $leftover"
 done
 jq -cn --arg path "$edited" '{method: "open", path: $path}' | vroid - >/dev/null
-[[ $(unsaved) == false ]] || fatal "open marked the project modified"
+[[ $(unsaved) == false ]] || fatal "open gave the character unsaved changes"
 # Every edited value, numbers and colours alike, reads back after the save,
 # restart, and reopen (R-EDIT-1).
 for edit in "${edits[@]}"; do
@@ -783,10 +784,10 @@ for item in "${items[@]}"; do
     items_of "$section" "$category" | jq -e --slurpfile before "$out/items-${section}-${category}.json" '.items == $before[0]' >/dev/null ||
         fatal "$section/$category lists other items after a restart; compare $out/items-${section}-${category}.json"
 done
-# The edited project dumps, with each colour under the category it was set in,
-# and the hair colour is shared by every hair category.
+# The edited character dumps, with each colour under the category it was set in,
+# and Hairstyle Back shares the hair colour set under Front.
 vroid '{"method": "dump"}' >"$out/edited.json"
-# The reopened project dumps as it did when saved, including the colour of the
+# The reopened character dumps as it did when saved, including the colour of the
 # cat ears, which open hidden and locked.
 jq -e --slurpfile saved "$out/before-render.json" '. == $saved[0]' "$out/edited.json" >/dev/null ||
     fatal "dump after reopening differs from $out/before-render.json; see $out/edited.json"
@@ -840,7 +841,7 @@ for refusal in "${refusals[@]}"; do
     fi
     grep -qF "$reason" "$out/import-$name.err" || fatal "import of $file: $(<"$out/import-$name.err")"
 done
-vroid '{"method": "dump"}' | cmp -s - "$out/before-imports.json" || fatal "a refused import changed the project"
+vroid '{"method": "dump"}' | cmp -s - "$out/before-imports.json" || fatal "a refused import changed the character"
 
 # The template dumped before the edits restores every value, item, and
 # accessory in a new app instance.
@@ -865,7 +866,7 @@ for round in 1 2; do
         dump=$out/new-$base-$round.json
         vroid '{"method": "dump"}' >"$dump"
         jq -e --arg base "$base" '.Body["Whole Body"].item == $base and ([.. | .item? | select(. == "custom")] | length == 0)' "$dump" >/dev/null ||
-            fatal "new $base is not on its base or wears an item that is not built in; see $dump"
+            fatal "new $base is not on its base or wears a custom item; see $dump"
         if ((round == 1)); then
             image=$out/new-$base.png
             render front body 256 512 "$image" >/dev/null
@@ -915,7 +916,7 @@ if jq -cn --arg path "$out/hollow.vroidcustomitem" '{method: "import", path: $pa
     fatal "import of ears without their payload succeeded"
 fi
 grep -qF 'VRoid cannot import hollow.vroidcustomitem' "$out/import-hollow.err" || fatal "import of hollow ears: $(<"$out/import-hollow.err")"
-[[ $(unsaved) == false ]] || fatal "a refused import marked the new character modified"
+[[ $(unsaved) == false ]] || fatal "a refused import gave the new character unsaved changes"
 vroid '{"method": "dump"}' | cmp -s - "$out/before-import.json" || fatal "a refused import changed the new character"
 result=$(jq -cn --arg path "$ears_file" '{method: "import", path: $path}' | vroid -)
 jq -e --slurpfile exported "$out/exported.json" '.imported == ($exported[0] | .item = "custom")' <<<"$result" >/dev/null ||
@@ -954,4 +955,4 @@ inputs_after=$(input_events)
 ((inputs_after == inputs_before)) || fatal "input log grew from $inputs_before to $inputs_after events"
 vroid '{"method": "stop", "force": true}' >/dev/null
 
-jq -n --arg project "$edited" '{ok: true, project: $project}'
+jq -n --arg saved "$edited" '{ok: true, saved: $saved}'

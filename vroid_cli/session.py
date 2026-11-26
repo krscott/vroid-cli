@@ -1,4 +1,4 @@
-"""Named sessions: state directories, controller lock, and app lifecycle."""
+"""Named sessions: state directories, controller lock, and app instances."""
 
 import fcntl
 import json
@@ -25,15 +25,15 @@ PREFERRED_GPU_VENDORS = {"0x1002", "0x8086"}
 OUTDATED_INTEROP = "Interop assemblies are possibly out of date"
 # Logged by the bridge in plugin/Plugin.cs when it loads.
 BRIDGE_LOADED = "vroid-cli bridge loaded; app instance {app_instance}"
-# One app run's logs, relative to the session directory.
-RUN_LOGS = (
+# One app instance's logs, relative to the session directory.
+APP_INSTANCE_LOGS = (
     "player.log",
     "desktop/app.log",
     "bepinex/LogOutput.log",
     "bepinex/preloader.log",
     "bepinex/ErrorLog.log",
 )
-# A starting app whose logs are quiet this long has stalled; a cold first start
+# A starting app instance whose logs are quiet this long has stalled; a cold first start
 # writes no log line for about 12 s while it creates the Wine prefix, and then
 # one every few seconds until VRoid is ready.
 STALL_S = 30
@@ -113,7 +113,7 @@ def display_state(session: Session) -> Display:
         if (session.display / ".headless-owner.json").exists():
             raise RuntimeError(abandoned(session))
         return Display.STOPPED
-    # Framewisp records the app's exit; the runner then shuts itself down.
+    # Framewisp records VRoid's exit; the runner then shuts itself down.
     if (session.display / "app-exit.json").exists():
         return Display.EXITED
     result = subprocess.run(
@@ -132,7 +132,7 @@ def display_state(session: Session) -> Display:
 
 def abandoned(session: Session) -> str:
     return (
-        f"The private desktop was not shut down cleanly. Inspect "
+        f"The private display was not shut down cleanly. Inspect "
         f"{session.directory / 'runner.log'}, then run: "
         f"framewisp {session.display} recover"
     )
@@ -146,9 +146,9 @@ def tail(path: Path, lines: int = 10) -> str:
 
 
 def exited(session: Session, *, since_ms: float = 0) -> str:
-    """Explain why the private desktop or VRoid stopped (R-SES-11)."""
+    """Explain why the private display or VRoid exited (R-SES-11)."""
     # VRoid ran in this launch only if Framewisp recorded its exit during it;
-    # the record can remain from an earlier run.
+    # the record can remain from an earlier app instance.
     record = session.display / "app-exit.json"
     if record.exists() and record.stat().st_mtime * 1000 >= since_ms:
         # Framewisp writes VRoid's output to app.log, so the launcher's own
@@ -158,16 +158,16 @@ def exited(session: Session, *, since_ms: float = 0) -> str:
             f"VRoid exited. Last lines of {log}:\n{tail(log)}\n{bepinex_log(session)}"
         )
     log = session.directory / "runner.log"
-    return f"The private desktop exited. Last lines of {log}:\n{tail(log)}"
+    return f"The private display exited. Last lines of {log}:\n{tail(log)}"
 
 
 def keep_previous_logs(session: Session) -> None:
-    """Move the last app run's logs to previous/, replacing an older run's, so
-    every log left in place belongs to the app the desktop is about to run."""
+    """Move the last app instance's logs to previous/, replacing an older one's,
+    so every log left in place belongs to the app instance about to start."""
     previous = session.directory / "previous"
     if previous.exists():
         shutil.rmtree(previous)
-    for name in RUN_LOGS:
+    for name in APP_INSTANCE_LOGS:
         log = session.directory / name
         if log.exists():
             (previous / name).parent.mkdir(parents=True, exist_ok=True)
@@ -179,7 +179,7 @@ def last_lines(log: Path) -> str:
 
 
 def bepinex_logs(session: Session) -> tuple[Path, Path]:
-    """BepInEx's startup failure log and main log of the current app run."""
+    """BepInEx's startup failure log and main log of the current app instance."""
     root = session.directory / "bepinex"
     return root / "preloader.log", root / "LogOutput.log"
 
@@ -198,7 +198,7 @@ def bepinex_failed(session: Session) -> str | None:
 
 
 def bepinex_log(session: Session) -> str:
-    """The end of BepInEx's log of the current app run (R-SES-11)."""
+    """The end of BepInEx's log of the current app instance (R-SES-11)."""
     if failure := bepinex_failed(session) or logged_mismatch(session):
         return failure
     _, log = bepinex_logs(session)
@@ -214,7 +214,7 @@ def not_ready(session: Session, *, timeout_s: float, started_ms: float) -> str:
     if quiet_s >= STALL_S:
         advice = (
             f"Its logs have not changed for {quiet_s:.0f}s, so it has probably "
-            "stalled. Run stop, then launch; launch keeps this run's logs in "
+            "stalled. Run stop, then launch; launch keeps these logs in "
             f"{session.directory / 'previous'}"
         )
     else:
@@ -232,7 +232,7 @@ def not_ready(session: Session, *, timeout_s: float, started_ms: float) -> str:
 
 
 def logged_mismatch(session: Session) -> str | None:
-    """Explain a mismatch BepInEx logged in the current app run."""
+    """Explain a mismatch BepInEx logged in the current app instance."""
     _, log = bepinex_logs(session)
     try:
         text = log.read_text(errors="replace")
@@ -320,7 +320,7 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
         display = display_state(session)
         if display is Display.EXITED:
             raise RuntimeError(
-                f"{exited(session)}\nWait for the desktop to close, then launch "
+                f"{exited(session)}\nWait for the private display to close, then launch "
                 "again; if this persists, run stop"
             )
         if display is Display.STOPPED:
@@ -365,10 +365,10 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
                 # The bridge finds the main view model on VRoid's welcome screen
                 # too, so an app instance left at the first-run dialogs looks ready.
                 # The launcher accepts the terms before VRoid starts, so
-                # only an app an older build started can be waiting.
+                # only an app instance an older build started can be waiting.
                 if not terms_accepted(session):
                     raise RuntimeError(
-                        "This session was started by an older vroid-cli and is "
+                        "This session's app instance was started by an older vroid-cli and is "
                         "waiting at VRoid's first-run dialogs; run stop, then launch"
                     )
                 return summary(session)
@@ -406,7 +406,7 @@ def stop(session: Session, *, force: bool) -> dict[str, Any]:
                 pending or (status is not None and status.unsaved_changes)
             ):
                 raise RuntimeError(
-                    "The app has unsaved changes or a pending request. "
+                    "The character has unsaved changes, or a request is pending. "
                     'Save or wait first, or send {"method": "stop", "force": true} '
                     "to discard them"
                 )
@@ -419,7 +419,7 @@ def stop(session: Session, *, force: bool) -> dict[str, Any]:
             )
             if result.returncode and display_state(session) is Display.RUNNING:
                 raise RuntimeError(f"{result.stderr.strip()}\n{abandoned(session)}")
-        # The runner shuts itself down after the app exits.
+        # The runner shuts itself down after VRoid exits.
         deadline = time.monotonic() + 60
         while (session.display / "session.json").exists():
             if time.monotonic() >= deadline:

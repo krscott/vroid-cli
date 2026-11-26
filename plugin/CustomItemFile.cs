@@ -19,7 +19,7 @@ public static class CustomItemFile
         {
             using var zip = new ZipArchive(file, ZipArchiveMode.Read, leaveOpen: true);
             var meta = zip.GetEntry("v1customitem/meta.json") ?? throw new InvalidDataException("it has no v1customitem/meta.json");
-            // VRoid's is a few hundred bytes; a huge one would stall the app's main thread.
+            // VRoid's is a few hundred bytes; a huge one would stall VRoid's main thread.
             if (meta.Length > MaxMeta) throw new InvalidDataException($"its meta.json holds {meta.Length} bytes");
             using var stream = meta.Open();
             using var json = JsonDocument.Parse(stream);
