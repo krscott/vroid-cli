@@ -1,6 +1,6 @@
 ---
 name: vroid-cli
-description: Use to run VRoid Studio in a background desktop.
+description: Use to run VRoid Studio on a private display.
 ---
 
 # VRoid characters with vroid-cli
@@ -41,7 +41,7 @@ vroid-cli alice @alice.json
 vroid-cli alice '{"method": "save", "path": "./alice-v2.vroid"}'
 vroid-cli alice '{"method": "export_vrm", "path": "./alice.vrm", "title": "Alice", "author": "Sam"}'
 vroid-cli alice '{"method": "render", "path": "./alice-side.png", "view": "side"}'
-vroid-cli alice '{"method": "render", "path": "./alice-sheet.png", "view": ["front", "three_quarter", "side", "back"], "width": 512, "height": 1024, "reference": "./turnaround.png"}'
+vroid-cli alice '{"method": "render", "path": "./alice-views.png", "view": ["front", "three_quarter", "side", "back"], "width": 512, "height": 1024, "reference": "./turnaround.png"}'
 vroid-cli alice '{"method": "stop"}'
 ```
 
@@ -50,11 +50,11 @@ field and result.
 
 ## Scope
 
-vroid-cli opens existing `.vroid` projects, creates characters from VRoid's
-feminine and masculine bases, reads and sets the numeric sliders in the Face
-and Body editors and the colour fields in the Face, Hairstyle, and Body
-editors, sets the base and shade colours of built-in outfit items, selects
-VRoid's built-in items (hairstyle parts, face parts and presets, body presets,
+vroid-cli opens characters from existing `.vroid` files, creates characters
+from VRoid's feminine and masculine bases, reads and sets the sliders in the
+Face and Body sections and the colours in the Face, Hairstyle, and Body
+sections, sets the base and shade colours of built-in outfit items, selects
+VRoid's built-in items (hairstyle parts, face parts and sets, body items,
 outfit items), draws a category's built-in item thumbnails labelled with their
 identifiers, adds, removes, recolours, places, and reshapes built-in
 accessories (glasses, cat and rabbit ears, cat, fox, and rabbit tails, hats),
@@ -63,16 +63,16 @@ accessory, imports accessories from `.vroidcustomitem` files the user provides
 and places, recolours, and reshapes them, exports worn accessories to such
 files, renders the character to PNG from the front, three-quarter, side, or
 back, one view or several side by side, optionally under a PNG or JPEG
-reference image, at a fitted or given scale, saves projects, and exports the
+reference image, at a fitted or given scale, saves characters, and exports the
 character as VRM 1.0 or 0.0 for Blender, game engines, and VRM viewers. It
-can't change outfit or accessory textures or the colours of other custom
-items, import outfit custom items or XWear (`.xwear`) items such as bags and
-belts, design new custom items, create characters from VRoid's sample models
-(`open` a sample's `.vroid` instead), or choose a VRM's licence or reduce its
-polygons, materials, or bones. To see the character, use `render`,
-not screenshots of the editor window. Edits go through `vroid-cli`, never
-Framewisp input. When a request needs anything vroid-cli can't do, do the parts
-it can and tell the user which parts you couldn't.
+can't change outfit or accessory textures or the colours of other custom items,
+import outfit custom items or XWear (`.xwear`) items such as bags and belts,
+design new custom items, create characters from VRoid's sample models (`open` a
+sample's `.vroid` instead), or choose a VRM's licence or reduce its polygons,
+materials, or bones. To see the character, use `render`, not screenshots of the
+editor window. Edits go through `vroid-cli`, never Framewisp input. When a
+request needs anything vroid-cli can't do, do the parts it can and tell the
+user which parts you couldn't.
 
 Face "Ear" parameters shape human ears at the sides of the head. Animal ears
 and tails are accessories.
@@ -86,43 +86,42 @@ and tails are accessories.
   invalid request or session name, and nothing ran.
 - Requests are strict: misspelled fields, strings for numbers, and repeated
   keys are refused.
-- Use category and parameter names exactly as `categories` and `parameters`
-  return them. A label that appears more than once in a category, like "Nose
-  Size" in Face Sets, takes an array with one value per occurrence, in
-  `parameters` order. Outfit items have a "Base Color" and "Shade Color" per
-  part, so an item with several parts takes an array of colours. VRoid has no
-  names for the parts. To map them in one try, set each part's two colours to
-  its own vivid colour, such as `"#FF0000"`, `"#00FF00"`, and `"#0000FF"` for
-  three parts, `render` the front and back, then apply the `undo` file. A new
-  item's parts are known only once it is worn: select it, list its
-  `parameters`, then set its colours. A colour multiplies the item's texture:
-  "Base Color" on its lit side, "Shade Color" on its shaded side, which
-  includes back views. `"#FFFFFF"` shows the texture unchanged. Any colour
-  tints the light areas of the texture but never lightens it, so a dark
-  band, trim, or cuff stays dark whatever colour is set; choose another item
-  for a light colour there. Inner Top
-  and Inner Bottom items are flat black and have no colours; VRoid changes
+- Use category names and labels exactly as `categories` and `parameters` return
+  them. A label that appears more than once in a category, like "Nose Size" in
+  Face Sets, takes an array with one value per occurrence, in `parameters`
+  order. Outfit items have a "Base Color" and "Shade Color" per part, so an
+  item with several parts takes an array of colours. VRoid has no names for the
+  parts. To map them in one try, set each part's two colours to its own vivid
+  colour, such as `"#FF0000"`, `"#00FF00"`, and `"#0000FF"` for three parts,
+  `render` the front and back, then apply the undo file. A new item's parts are
+  known only once it is worn: select it, list its `parameters`, then set its
+  colours. A colour multiplies the item's texture: "Base Color" on its lit
+  side, "Shade Color" on its shaded side, which includes back views.
+  `"#FFFFFF"` shows the texture unchanged. Any colour tints the light areas of
+  the texture but never lightens it, so a dark band, trim, or cuff stays dark
+  whatever colour is set; choose another item for a light colour there. Inner
+  Top and Inner Bottom items are flat black and have no colours; VRoid changes
   them only with Edit Texture, which vroid-cli can't use.
-- `apply` accepts finite values within each parameter's `min..max`, as
+- `apply` accepts finite values within each slider's `min..max`, as
   `parameters` lists them, or `accessories` `sliders` for accessories, and
   colours as `"#RRGGBB"` where `parameters` lists a colour. It checks every
-  value before changing any, and one bad value refuses the whole request,
-  except a new item's colours and an added accessory's shape sliders, which
-  it checks once they are worn; a refusal there stops `apply` after changes. Its
+  value before changing any, and refuses the whole request for one bad value,
+  except a new item's colours and an added accessory's shape sliders, which it
+  checks once they are worn; a refusal there stops `apply` after changes. Its
   result is `changed`, `discarded`, and `undo`, the path of a file written
-  before the first change that holds an `apply` request restoring the
-  previous values. Undo with `vroid-cli NAME @PATH`. When `apply` fails after
-  changing something, its error names the same file. Undo files stay in the
-  session; copy one to keep it after the session is deleted.
+  before the first change that holds an `apply` request restoring the previous
+  values. Undo with `vroid-cli NAME @PATH`. When `apply` fails after changing
+  something, its error names the same file. Undo files stay in the session;
+  copy one to keep it after the session is deleted.
 - Colours are the hex VRoid's editor shows, without alpha. Hairstyle's "Main
   Color" and "Highlight Color" (under Front, Back, and the other hair parts)
   are one pair for all hair; Base Hair has its own "Main Color".
 - Some colours are shared: skin is one colour in Face Eyelids, Nose, and Skin
   and Body Whole Body. Set each in one place per request; the error names the
   conflict. Set Irises "R Eye" and "L Eye" separately; "Both Eyes" is refused.
-- A colour that is unavailable for the project's selected item, such as Face
+- A colour that is unavailable for the character's selected item, such as Face
   Lips "Color" when the selected lips have no colour, is refused. Remove it
-  from a template made in another project.
+  from a template made from another character.
 - Items have identifiers, not names: `items` lists a category's built-in
   items and the one it wears, as `"item"` in a template category. To choose
   one, view `thumbnails` for the category: one `.png` of VRoid's own
@@ -145,29 +144,30 @@ and tails are accessories.
   restores these too. Sets (Face Sets, Eyes Sets, Hairstyle Sets, Whole Sets)
   select the items of other categories, so name either a set or those items.
   `dump` omits sets.
-- `"custom"` is an item `items` does not list, such as a texture-edited
-  outfit or a sample model's part. `apply` refuses to change any item in a
-  section that wears one, since VRoid may replace it and `undo` cannot
-  restore it. To change items there anyway, `save` a copy of the project
-  first, then add `"discard_custom": true`; the result's `discarded` names
-  what VRoid replaced, which may be nothing. Undoing such a change needs the
-  flag too. In a template, `"custom"` only keeps the target's own such item;
-  it cannot copy one to another project, where `apply` refuses it.
+- `"custom"` is a custom item, which `items` does not list, such as a
+  texture-edited outfit or a sample model's part. `apply` refuses to change any
+  item in a section that wears one, since VRoid may replace it and `undo`
+  cannot restore it. To change items there anyway, `save` a copy of the
+  character first, then add `"discard_custom": true`; the result's `discarded`
+  names what VRoid replaced, which may be nothing. Undoing such a change needs
+  the flag too. In a template, `"custom"` only keeps the target's own custom
+  item; it cannot copy one to another character, where `apply` refuses it.
 - `Accessories` in `apply` is every accessory to wear; `apply` adds and
   removes to match, and an omitted key leaves them alone. To add one, append
   it to `worn` from `accessories`, as the example's list would otherwise
   remove the rest. A pair of ears is one accessory; VRoid allows five.
 - An accessory entry has an `item` from `accessories`, its "Color", its shape
-  sliders by label, and its placement: `bone`, one of `accessories` `bones`
-  such as `J_Bip_C_Head`; `position` `[x, y, z]` in metres; `rotation`,
-  angles `{"degrees": [x, y, z]}` or a unit quaternion `[x, y, z, w]`; and
-  `scale` `[x, y, z]`, all in the bone's axes, below. VRoid's default placement is the identity, except that it fits
-  hats on the Head about 0.13 m up and tilted 10° back, as `dump` shows.
-  `"bone": null` is VRoid's None, with no placement. An omitted key keeps a
-  worn accessory's value, or VRoid's default for an added one, whose sliders
-  are checked only once it is worn. Changing `bone` resets the placement to
-  the identity, even a hat's back on the Head, so name the placement with the
-  bone; remove and re-add a hat to fit it again.
+  sliders by label, its `bone`, one of `accessories` `bones` such as
+  `J_Bip_C_Head`, and its placement: `position` `[x, y, z]` in metres;
+  `rotation`, angles `{"degrees": [x, y, z]}` or a unit quaternion `[x, y, z,
+  w]`; and `scale` `[x, y, z]`, all in the bone's axes, below. VRoid's default
+  placement is the identity, except that it fits hats on the Head about 0.13 m
+  up and tilted 10° back, as `dump` shows. `"bone": null` is VRoid's None, with
+  no placement. An omitted key keeps a worn accessory's value, or VRoid's
+  default for an added one, whose sliders are checked only once it is worn.
+  Changing `bone` resets the placement to the identity, even a hat's back on
+  the Head, so name the placement with the bone; remove and re-add a hat to fit
+  it again.
 - Bone axes follow the character in VRoid's A-pose: +x is the character's
   right, +y up, +z forward. A positive angle about x tips the front down,
   about y turns the front to the character's right, and about z lowers the
@@ -198,41 +198,42 @@ and tails are accessories.
   product T ⊗ R. Cat ears tilted back 20° about `[0, 0.15, 0]`, near the
   top of the head, take rotation `{"degrees": [-20, 0, 0]}` and position
   `[0, 0.009, 0.051]`. `render` the front and side to check.
-- An entry's `name` is a name the user gave it, which VRoid's accessory list
-  shows, or null for VRoid's default name; leave it out when adding one from
-  `available`, whose `name` is only VRoid's name for the item. `hidden` and
-  `locked` are VRoid's Show / Hide and Lock / Unlock. `dump` always lists all
-  three. `render` leaves hidden accessories out, and they don't affect its
-  framing. A lock guards only VRoid's own editor: `apply` still changes and
-  removes locked accessories.
-- `import` wears the accessory in a `.vroidcustomitem` file as a new one,
-  such as a bow the user bought or made; vroid-cli has none of its own. It
-  reads as `"custom"` in `accessories` and `dump`; place, recolour, and
-  reshape it through `apply` with a `"custom"` entry, which keeps it. It
-  keeps the file's `name`, `hidden`, and `locked`; set `"hidden": false`
-  through `apply` to show it. Its `undo` removes it. A dump cannot carry it to another project; `export` it
-  by its index in `accessories` `worn` and `import` the file there.
-- VRoid keeps a kind's group of accessories (all glasses, all ears, all
-  tails, all hats) even after the last one is removed. So `import` refuses a
-  file whose kind the project wears or wore as a built-in accessory, and
-  `apply` refuses a built-in accessory whose kind the project wears or wore
-  as an import. An import's `undo` doesn't lift this, so `save` a copy
-  before trying an import in a project that may need built-in accessories of
-  its kind. Both errors say "Report this VRoid limit to the user": don't work
-  around it silently. In your final report, tell the user the kind and what
-  you wanted to do, such as importing ears into a project that wore built-in
-  cat ears.
-- `accessories` `sliders` holds one list per `worn` entry, in the same order:
-  its shape sliders with `label`, `value`, `min`, and `max`, as `parameters`
-  lists them. Bounds differ by slider, such as 0 to 100 for "Ear Size
-  (Bigger)" and -1 to 1 for "Tail Length". An accessory that is not worn has
-  no sliders yet: add it with `apply`, then list `accessories`.
-- VRoid moves an accessory to another bone only while no other of its kind
-  (all glasses, all ears, all tails, all hats) is worn, so `apply` may remove
-  and re-add that kind to reach a template. Accessories of one item are
-  interchangeable, and `dump` orders them by their values. Within a kind,
-  only copies of one item may leave the default bone, all on one bone;
-  `apply` refuses other combinations.
+- An accessory entry's `name` is a name the user gave it, which VRoid's
+  accessory list shows, or null for VRoid's default name; leave it out when
+  adding one from `available`, whose `name` is only VRoid's name for the item.
+  `hidden` and `locked` are VRoid's Show / Hide and Lock / Unlock. `dump`
+  always lists all three. `render` leaves hidden accessories out, and they
+  don't affect its framing. A lock guards only VRoid's own editor: `apply`
+  still changes and removes locked accessories.
+- `import` wears the accessory in a `.vroidcustomitem` file as a new one, such
+  as a bow the user bought or made; vroid-cli has none of its own. It reads as
+  `"custom"` in `accessories` and `dump`; place, recolour, and reshape it
+  through `apply` with a `"custom"` accessory entry, which keeps it. It keeps
+  the file's `name`, `hidden`, and `locked`; set `"hidden": false` through
+  `apply` to show it. Its `undo` removes it. A template cannot carry it to
+  another character; `export` it by its index in `accessories` `worn` and
+  `import` the file there.
+- VRoid keeps an accessory kind's group (all glasses, all ears, all tails, all
+  hats) even after the last accessory of that kind is removed. So `import`
+  refuses a file whose accessory kind the character wears or wore as a built-in
+  accessory, and `apply` refuses a built-in accessory whose accessory kind the
+  character wears or wore as an import. An import's `undo` doesn't lift this,
+  so `save` a copy before trying an import in a character that may need
+  built-in accessories of that kind. Both errors say "Report this VRoid limit
+  to the user": don't work around it silently. In your final report, tell the
+  user the accessory kind and what you wanted to do, such as importing ears
+  into a character that wore built-in cat ears.
+- `accessories` `sliders` holds one list per `worn` accessory, in the same
+  order: its shape sliders with `label`, `value`, `min`, and `max`, as
+  `parameters` lists them. Bounds differ by slider, such as 0 to 100 for "Ear
+  Size (Bigger)" and -1 to 1 for "Tail Length". An accessory that is not worn
+  has no sliders yet: add it with `apply`, then list `accessories`.
+- VRoid moves an accessory to another bone only while no other of its accessory
+  kind (all glasses, all ears, all tails, all hats) is worn, so `apply` may
+  remove and re-add the accessories of that kind to reach a template.
+  Accessories of one item are interchangeable, and `dump` orders them by their
+  values. Within an accessory kind, only accessories of one item may leave the
+  default bone, all on one bone; `apply` refuses other combinations.
 - `categories`, `parameters`, `items`, `accessories`, `dump`, `apply`,
   `import`, and `export` change which section VRoid's editor shows
   (`thumbnails` and `render` do not), and `parameters`, `dump`, and
@@ -245,24 +246,24 @@ and tails are accessories.
   one value. An `apply` request may name each label in only one category per
   section.
 - `dump` returns an `apply` request with every item, accessory, and Face,
-  Hairstyle, and Body value and colour, each value listed once under the first
-  category that has it (skin under Face Eyelids, hair under Hairstyle Front).
-  Save it as a template, edit or diff it with JSON tools, and apply it in any
-  session.
+  Hairstyle, and Body slider value and colour, each value listed once under the
+  first category that has it (skin under Face Eyelids, hair under Hairstyle
+  Front). Save it as a template, edit or diff it with JSON tools, and apply it
+  in any session.
 - Paths in requests, including saved ones, resolve against the current
   directory, not the request file's.
 - `save` needs a new `.vroid` path in an existing directory. It never
   overwrites. Choose a new versioned filename.
 - `export_vrm` writes the open character to a new `.vrm` through VRoid's own
-  export in a few seconds, without changing the project. Blender's VRM
-  add-on, game engines, and VRM viewers import it, so finish a character
-  there with parts VRoid lacks, such as a bag. `title` names the model, such
-  as the character's name; `author` is who gets credit, so ask the user
-  rather than guess. `vrm_version` is `"1.0"`, the default, or `"0.0"` for
-  apps that read only VRM 0.x. The file has VRoid's most restrictive licence
-  (use by the author only, no redistribution or modification) and no polygon,
-  material, or bone reduction; tell the user, who can change the licence in
-  Blender's VRM add-on. Hidden accessories are left out of the file.
+  export in a few seconds, without changing it. Blender's VRM add-on, game
+  engines, and VRM viewers import it, so finish a character there with parts
+  VRoid lacks, such as a bag. `title` is the name the file gives the character;
+  `author` is who gets credit, so ask the user rather than guess. `vrm_version`
+  is `"1.0"`, the default, or `"0.0"` for apps that read only VRM 0.x. The file
+  has VRoid's most restrictive licence (use by the author only, no
+  redistribution or modification) and no polygon, material, or bone reduction;
+  tell the user, who can change the licence in Blender's VRM add-on. Hidden
+  accessories are left out of the file.
 - `render` writes a new `.png` of the open character, without changing it:
   `view` is `front`, `three_quarter`, `side`, or `back`, or a list of them
   drawn left to right in one image; `three_quarter` and `side` show its left
@@ -285,20 +286,19 @@ and tails are accessories.
   background. The reference keeps its own scale, not the character's.
 - The body frame fits everything worn, so an item or edit that makes the
   character taller or wider, such as an ahoge, a hat, or a long top, changes
-  the scale. A body view leaves room on both sides of the centre line for
-  the farthest anything reaches from it in any direction, so a part that
-  sticks out, such as a tail, shrinks the character in every view: in 512 by
-  1024 views, a cat tail makes it about a quarter smaller. Hidden accessories
-  don't affect framing, so to compare the body with a reference at its size
-  without the part, set `"hidden": true` on the part's entry in
+  the scale. A body view leaves room on both sides of the centre line for the
+  farthest anything reaches from it in any direction, so anything that sticks
+  out, such as a tail, shrinks the character in every view: in 512 by 1024
+  views, a cat tail makes it about a quarter smaller. Hidden accessories don't
+  affect framing, so to compare the body with a reference at its size without
+  such an accessory, set `"hidden": true` on its accessory entry in
   `accessories` `worn`, `apply` that list, render, and apply the result's
-  `undo`. Wider views leave more room too, but a reference row then no
-  longer lines up view for view. Each result reports `scale` in pixels per
-  metre; pass it back as
-  `scale` to keep it, and renders of one view, frame, and size at one scale
-  line up: the floor and centre line (body), or the neck and head (head),
-  stay at the same pixels. A scale that would cut off the character in a
-  requested view is refused, and the error names the largest that fits, edge
+  `undo`. Wider views leave more room too, but a reference row then no longer
+  lines up view for view. Each result reports `scale` in pixels per metre; pass
+  it back as `scale` to keep it, and renders of one view, frame, and size at
+  one scale line up: the floor and centre line (body), or the neck and head
+  (head), stay at the same pixels. A scale that would cut off the character in
+  a requested view is refused, and the error names the largest that fits, edge
   to edge. For before and after images of an edit that may make the character
   taller or wider, multiply the "before" render's reported `scale` by 0.9,
   render the "before" again at that, and render the "after" at the same.
@@ -319,23 +319,23 @@ and tails are accessories.
 
 A new session's first `launch` is ready in about 15 seconds, later ones in a
 few seconds; the default timeout is 120 seconds. Give `launch` a tool timeout
-above that, or run it in the background. If it times out, the app keeps
-starting: run `launch` again to keep waiting. Commands need local
-graphics and Unix sockets, so a sandboxed harness may need its usual
-escalation.
+above that, or run it in the background. If it times out, VRoid keeps starting:
+run `launch` again to keep waiting. Commands need local graphics and Unix
+sockets, so a sandboxed harness may need its usual escalation.
 
 ## Recovery
 
 `status` reports `running`, `ready`, `pending_request`, and the bridge's last
-heartbeat, including `unsaved_changes` and `rebuilt`, the number of model
-rebuilds since the app started; only differences between two readings mean
+heartbeat, including `unsaved_changes` and `rebuilt`, the number of rebuilds
+since the app instance started; only differences between two readings mean
 anything. Session state lives in `.vroid/NAME/` at the Git worktree root (the
 current directory outside Git), or under `VROID_STATE_DIR`. On failure, read
 `runner.log`, `player.log`, `bepinex/LogOutput.log`, and
-`bepinex/preloader.log` there; `previous/` holds the previous run's logs.
+`bepinex/preloader.log` there; `previous/` holds the previous app instance's
+logs.
 
 - A pending request blocks new commands. Its result appears in
   `rpc/results/ID.json`. Restarting the session marks it as having an unknown
-  outcome; check the project before editing again.
-- If the private desktop was not shut down cleanly, run
+  outcome; check the character before editing again.
+- If the private display was not shut down cleanly, run
   `framewisp /abs/path/.vroid/NAME/display recover` as the error says.

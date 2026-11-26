@@ -18,9 +18,9 @@ These are fetched by hash and never committed:
 | [BepInEx 6 IL2CPP be.788](https://github.com/BepInEx/BepInEx), including its bundled .NET runtime and Il2CppInterop | LGPL-2.1 for BepInEx; bundled components under their own licenses |
 | [Unity 6000.0.62 base libraries](https://unity.bepinex.dev/libraries/) | Proprietary (Unity Technologies) |
 
-The bridge plugin links against BepInEx, Il2CppInterop, and HarmonyX from that
-bundle. VRoid is installed, and its app-specific interop assemblies are
-generated from it, in local Nix builds; both stay in the user's Nix store.
+The bridge links against BepInEx, Il2CppInterop, and HarmonyX from that
+bundle. VRoid is installed, and its interop assemblies are generated from it,
+in local Nix builds; both stay in the user's Nix store.
 
 ## Framewisp
 

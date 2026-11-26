@@ -36,25 +36,27 @@ backfill unrelated requirements.
   while another command controls the same session.
 
   Rationale: Interleaved commands from two agents could open, edit, or save the
-  wrong project, and neither agent could tell what happened.
+  wrong character, and neither agent could tell what happened.
 
-- **R-SES-2** [test] `launch` reports success only after the app reports ready
-  after that launch began.
+- **R-SES-2** [test] `launch` reports success only after the app instance
+  reports ready after that launch began.
 
-  Rationale: A heartbeat file left by the previous process looks recent for a
-  few seconds and would otherwise report a dead or still-starting app as ready.
+  Rationale: A heartbeat file left by the previous app instance looks recent
+  for a few seconds and would otherwise report a dead or still-starting one as
+  ready.
 
 - **R-SES-3** [test] Session state never appears as untracked files in Git,
   including when it is created inside another repository.
 
-  Rationale: Session state holds proprietary app files, Wine prefixes, and
+  Rationale: Session state holds proprietary VRoid files, Wine prefixes, and
   logs that must never be committed by accident.
 
-- **R-SES-4** [test] `stop` refuses while the app last reported unsaved changes
-  or a request is pending, unless forced.
+- **R-SES-4** [test] `stop` refuses, and leaves the app instance running, while
+  the bridge last reported unsaved changes or a request is pending, unless
+  forced.
 
-  Rationale: Stopping discards unsaved edits, which may be the only copy of an
-  agent's work.
+  Rationale: Stopping discards unsaved changes, which may be the only copy of
+  an agent's work.
 
 - **R-SES-5** [retired]
 
@@ -62,8 +64,8 @@ backfill unrelated requirements.
 
 - **R-SES-7** [manual: while a session is running, confirm no VRoid window
   appears on the user's desktop and the user's input reaches only their own
-  apps] A session's app runs on a private display. It never draws on or reads
-  input from the user's desktop.
+  apps] A session's app instance runs on a private display. It never draws on
+  or reads input from the user's desktop.
 
   Rationale: Users keep working on their computer while agents edit
   characters.
@@ -85,36 +87,37 @@ backfill unrelated requirements.
 
   Rationale: Per-session installs took 10 minutes or more and about 2 GB each,
   which made parallel agents and evals impractical. A per-session copy of the
-  bridge could go stale or be left partly copied, and users could not repair an
-  app directory they did not create.
+  bridge could go stale or be left partly copied, and users could not repair a
+  VRoid directory they did not create.
 
 - **R-SES-10** [test] Garbage collection of the Nix store while a session's app
-  runs never removes files that app uses.
+  instance runs never removes files it uses.
 
   Rationale: Sessions run for hours next to the user's other Nix work. A
-  collection that removed VRoid's files would crash the app and lose unsaved
-  edits.
+  collection that removed VRoid's files would crash VRoid and lose unsaved
+  changes.
 
-- **R-SES-11** [test] When `launch` fails because the app exited or did not
-  become ready, its error shows the last lines of the log that explains why.
+- **R-SES-11** [test] When `launch` fails because the app instance exited or
+  did not become ready, its error shows the last lines of the log that explains
+  why.
 
-  Rationale: The app runs on a private display, so an agent cannot see its
-  errors any other way.
+  Rationale: The app instance runs on a private display, so an agent cannot see
+  its errors any other way.
 
 ## Requests (RPC)
 
 - **R-RPC-1** [test] A request runs only in the app instance it was addressed
   to.
 
-  Rationale: A request prepared for an app that has since restarted refers to
-  state that no longer exists.
+  Rationale: A request prepared for an app instance that has since ended refers
+  to state that no longer exists.
 
-- **R-RPC-2** [test] A request interrupted by an app restart is reported as
-  having an unknown outcome and never runs again. A result written before the
-  restart is kept.
+- **R-RPC-2** [test] A request interrupted when its app instance ends is
+  reported as having an unknown outcome and never runs again. A result written
+  before then is kept.
 
   Rationale: Replaying a mutation after an unknown outcome could apply it twice
-  or apply it to a different project.
+  or apply it to a different character.
 
 - **R-RPC-3** [test] A pending request blocks every new request and stays in
   place.
@@ -122,11 +125,11 @@ backfill unrelated requirements.
   Rationale: The pending request's outcome must be known before another edit
   builds on it.
 
-- **R-RPC-4** [test] Commands never send requests to an app whose heartbeat is
-  stale.
+- **R-RPC-4** [test] Commands never send requests to an app instance whose
+  heartbeat is stale.
 
-  Rationale: A request to a dead or hung app stays pending and blocks the
-  session until it restarts.
+  Rationale: A request to a dead or hung app instance stays pending and blocks
+  the session until it restarts.
 
 - **R-RPC-5** [test] A request runs at most once. The CLI never repeats a
   request automatically.
@@ -164,45 +167,45 @@ backfill unrelated requirements.
 - **R-EDIT-1** [manual] Every value `apply` can set reads back unchanged after
   a save, a full restart and a reopen.
 
-  Rationale: Saved projects are the deliverable of an editing session.
+  Rationale: Saved characters are the deliverable of an editing session.
 
   Manual test: Run `just gui-smoke SESSION SOURCE.vroid` with an editable
-  project. It saves at least one value of each kind `apply` can set, including
-  an item in a Hairstyle and an Outfit category, an Outfit colour, and an
+  character. It saves at least one of everything `apply` can set, including an
+  item in a Hairstyle and an Outfit category, an Outfit colour, and an
   accessory with a colour, a bone other than its default, a position, rotation
   and scale, a shape slider, a custom name, and hidden and locked set, and
   passes only if each reads back unchanged.
 
-- **R-EDIT-2** [test] `apply` rejects a value that is not finite, or a colour
-  that is not `#RRGGBB`, before contacting the app.
+- **R-EDIT-2** [test] `apply` refuses a value that is not finite, or a colour
+  that is not `#RRGGBB`, before contacting the bridge.
 
-  Rationale: Non-finite values can corrupt a model without any visible error.
-  A malformed colour has no single meaning; guessing one, such as shorthand or
-  alpha, would change the character silently.
+  Rationale: Non-finite values can corrupt a character without any visible
+  error. A malformed colour has no single meaning; guessing one, such as
+  shorthand or alpha, would change the character silently.
 
-- **R-EDIT-3** [manual] `apply` refuses a request in which any value is
-  outside its parameter's bounds or of the wrong kind, names a category,
-  parameter, item or bone that is unknown or ambiguous, gives the wrong number
-  of values for a label, sets one shared colour more than once, selects items
-  that VRoid cannot wear together, puts accessories of one kind on bones that
-  VRoid cannot combine, or adds a built-in accessory to a kind that wears or
-  wore an accessory that is not built in, and changes nothing. Values that
+- **R-EDIT-3** [manual] `apply` refuses a request in which any value is outside
+  its slider's bounds or of the wrong type, names a category, parameter, item
+  or bone that is unknown or ambiguous, gives the wrong number of values for a
+  label, sets one shared colour more than once, selects items that VRoid cannot
+  wear together, puts accessories of one accessory kind on bones that VRoid
+  cannot combine, or adds a built-in accessory when the character wears or wore
+  a custom accessory of its accessory kind, and changes nothing. Values that
   R-EDIT-13 covers are checked as R-EDIT-13 says.
 
-  Rationale: VRoid's own controls never produce out-of-range values, so the
-  app's behaviour for them is unknown. A partly applied template leaves a
-  character that matches neither the old nor the new version. A shared colour
-  set twice in one request would take whichever value came last. VRoid
-  silently takes off an item that conflicts with a newly selected one, such as
-  a top when a dress is selected, so the template would not read back. VRoid
-  changes an accessory's bone only while no other accessory of its kind is
-  worn, and gives every other one the default bone or a copy of another's, so
-  some combinations of bones cannot be built. A rotation that is not a unit
+  Rationale: VRoid's own controls never produce out-of-range values, so VRoid's
+  behaviour for them is unknown. A partly applied template leaves a character
+  that matches neither the old nor the new version. A shared colour set twice
+  in one request would take whichever value came last. VRoid silently takes off
+  an item that conflicts with a newly selected one, such as a top when a dress
+  is selected, so the template would not read back. VRoid changes an
+  accessory's bone only while no other accessory of its accessory kind is worn,
+  and gives every other one the default bone or a copy of another's, so some
+  combinations of bones cannot be built. A rotation that is not a unit
   quaternion, or a scale that is not positive, distorts the accessory; VRoid's
   own controls never produce one. VRoid adds a built-in accessory to the group
-  of a kind's imported one, so it would read as `custom` and lose its
-  identifier. VRoid keeps that group after the last accessory of the kind is
-  removed.
+  of a custom accessory of its accessory kind, so it would read as `custom` and
+  lose its identifier. VRoid keeps that group after the last accessory of that
+  kind is removed.
 
   Manual test: `just gui-smoke` applies one valid value, one above its
   maximum, an unknown parameter, an unknown category, a number for a colour,
@@ -218,13 +221,13 @@ backfill unrelated requirements.
 
 - **R-EDIT-5** [manual: `just gui-smoke` checks that the session's Framewisp
   input log is unchanged by the workflow] Editing sends no pointer or keyboard
-  input to the app.
+  input to VRoid.
 
   Rationale: Synthetic input depends on the exact screen layout and fails
   silently when it changes.
 
-- **R-EDIT-6** [manual] `open`, `new`, and `apply` succeed only after the
-  model has finished rebuilding with the result.
+- **R-EDIT-6** [manual] `open`, `new`, and `apply` succeed only after VRoid has
+  finished rebuilding the character's model with the result.
 
   Rationale: Commands that run during a rebuild read stale values or save a
   half-rebuilt model.
@@ -235,21 +238,20 @@ backfill unrelated requirements.
 
 - **R-EDIT-7** [manual: `just gui-smoke` applies a template dumped before its
   edits after a restart and compares a new dump with it, including items and
-  accessories] Applying `dump` output reproduces every dumped value exactly,
-  in any app instance, except non-built-in items, which have no identifier
-  (R-EDIT-10).
+  accessories] Applying `dump` output reproduces every dumped value exactly, in
+  any app instance, except custom items, which have no identifier (R-EDIT-10).
 
   Rationale: Agents save, diff, and reapply templates to reuse characters. A
   template that drops or rounds values changes a character silently.
 
 - **R-EDIT-8** [manual: `just gui-smoke` checks that each colour it sets reads
-  back as the same hex; compare one field with VRoid's colour field in a
+  back as the same hex; compare one with the colour VRoid's editor shows in a
   Framewisp screenshot] A colour reads and writes as the `#RRGGBB` value
-  VRoid's editor shows for that field.
+  VRoid's editor shows for it.
 
-  Rationale: Agents match colours against reference sheets and VRoid's own
-  editor. A colour-space, rounding, or alpha mismatch would shift every colour
-  without an error.
+  Rationale: Agents match colours against references and VRoid's own editor. A
+  colour-space, rounding, or alpha mismatch would shift every colour without an
+  error.
 
 - **R-EDIT-9** [manual: `just gui-smoke` compares `items` output and a `dump`
   from before and after a restart] An item identifier names the same built-in
@@ -260,25 +262,25 @@ backfill unrelated requirements.
   and apply them in other sessions. An identifier that changed meaning would
   dress the character in the wrong item without an error.
 
-- **R-EDIT-10** [manual: open a project that wears a non-built-in item, apply a
+- **R-EDIT-10** [manual: open a character that wears a custom item, apply a
   built-in item to that category without the flag and check it's refused and
   `dump` is unchanged, then apply it with the flag and check the result names
-  the replaced item] `apply` replaces or removes an item that is not one of
-  VRoid's built-in items only when the request explicitly allows it, and its
-  result then names each such item that its undo template cannot restore.
-  Otherwise it refuses the request and changes nothing.
+  the replaced item] `apply` replaces or removes a custom item only when the
+  request explicitly allows it, and its result then names each one that its
+  undo file cannot restore. Otherwise it refuses the request and changes
+  nothing.
 
-  Rationale: Such items, like texture-edited outfits or parts of sample models,
-  have no identifier, so the undo template cannot put them back. An agent that
-  means to discard one says so, and saves a copy of the project first if it may
-  want the item back.
+  Rationale: Custom items, like texture-edited outfits or parts of sample
+  models, have no identifier, so the undo file cannot put them back. An agent
+  that means to discard one says so, and saves a copy of the character first if
+  it may want the item back.
 
-- **R-EDIT-11** [manual] Before `apply` or `import` changes anything, it
-  writes a template to a new file that restores everything the request
+- **R-EDIT-11** [manual] Before `apply` or `import` changes anything, it writes
+  its undo file, a new file whose template restores everything the request
   changes, including what VRoid changes with an item, except what its result
   names in `discarded` (R-EDIT-10) and the accessory group that VRoid keeps
-  after an `import` (R-EDIT-15). Its result, and its error after a change,
-  name the file.
+  after an `import` (R-EDIT-15). Its result, and its error after a change, name
+  the file.
 
   Rationale: Agents try edits and back out the ones that don't match a
   reference. The file survives a failed or interrupted `apply`, and keeping the
@@ -286,8 +288,8 @@ backfill unrelated requirements.
 
   Manual test: `just gui-smoke` applies the undo file of a value `apply`, of an
   item and accessory `apply`, and of an `apply` that removes one of two
-  accessories of one kind after moving it to another bone, placing it,
-  reshaping it, renaming it, and hiding and locking it, and compares `dump`
+  accessories of one accessory kind after moving it to another bone, placing
+  it, reshaping it, renaming it, and hiding and locking it, and compares `dump`
   with one taken before each.
 
 - **R-EDIT-12** [manual] Setting the colour of a built-in outfit item keeps it
@@ -322,11 +324,11 @@ backfill unrelated requirements.
   feminine or masculine base without network access. Each base gives the same
   character in every session, and it wears only built-in items.
 
-  Rationale: Agents start characters from scratch, often in sandboxes and
-  evals without network access. A base that differed between sessions would
-  make templates and renders from one session misleading in another, and an
-  item that is not built in would need `discard_custom` (R-EDIT-10) before any
-  item change in its section.
+  Rationale: Agents start characters from scratch, often in sandboxes and evals
+  without network access. A base that differed between sessions would make
+  templates and renders from one session misleading in another, and a custom
+  item would need `discard_custom` (R-EDIT-10) before any item change in its
+  section.
 
   Manual test: `just gui-smoke` creates a character from each base, checks
   that `dump` names no `"custom"` item and that it matches a `dump` of the
@@ -349,42 +351,42 @@ backfill unrelated requirements.
   file to the character without a file dialog and changes nothing else. The
   accessory reads as `custom`, and `apply` recolours, reshapes, and places it
   like a built-in accessory. `import` refuses a file that VRoid cannot import
-  or that holds no accessory, and an accessory that VRoid's accessory limits
-  or a built-in accessory of its kind that the project wears or wore does not
-  allow, and then changes nothing.
+  or that holds no accessory, and an accessory that VRoid's accessory limits or
+  a built-in accessory of its accessory kind that the character wears or wore
+  does not allow, and then changes nothing.
 
   Rationale: Reference characters wear accessories that VRoid does not ship,
   such as bows, which users buy or make as custom item files. VRoid's file
   dialog, and the dialog it shows at its accessory limit, would block the
   private display, where no one can close them. VRoid puts an accessory
-  imported next to a built-in one of its kind into the built-in's group, where
-  nothing marks it as imported, so it would read as the built-in item, and
-  templates and undo files would silently drop its texture. VRoid keeps that
-  group after the last accessory of the kind is removed.
+  imported next to a built-in one of its accessory kind into the built-in's
+  group, where nothing marks it as imported, so it would read as the built-in
+  item, and templates and undo files would silently drop its texture. VRoid
+  keeps that group after the last accessory of that kind is removed.
 
   Manual test: `just gui-smoke` exports an accessory it recoloured, reshaped,
   and moved, imports the file into a new character, and checks that the new
-  accessory reads as `custom` with the same values and that `apply` changes
-  its colour and placement. It checks that a file that holds no accessory,
-  and an accessory of a kind that wears a built-in one, are refused with
-  `dump` unchanged, and that the import's undo file restores a `dump` taken
-  before it.
+  accessory reads as `custom` with the same values and that `apply` changes its
+  colour and placement. It checks that a file that holds no accessory, and an
+  accessory of an accessory kind of which the character wears a built-in one,
+  are refused with `dump` unchanged, and that the import's undo file restores a
+  `dump` taken before it.
 
 - **R-EDIT-16** [manual] `export` writes a worn accessory to a new
   `.vroidcustomitem` file without a file dialog and changes nothing in the
-  project. `import` of that file in any project that R-EDIT-15 allows adds an
-  accessory with the same colours, shape sliders, and placement. `export`
+  character. `import` of that file in any character that R-EDIT-15 allows adds
+  an accessory with the same colours, shape sliders, and placement. `export`
   refuses an existing destination and leaves it unchanged.
 
-  Rationale: An accessory that is not built in has no identifier, so a
-  template cannot carry it to another project; a file can. The destination
+  Rationale: A custom accessory has no identifier to name its item by, so a
+  template cannot carry it to another character; a file can. The destination
   may be an earlier deliverable.
 
   Manual test: `just gui-smoke` exports a recoloured, reshaped, and moved
   accessory, checks that `dump` and `unsaved_changes` are unchanged, imports
-  the file into another project, and compares the new accessory's entry with
-  the exported one. It checks that an existing destination is refused and left
-  unchanged.
+  the file into another character, and compares the new accessory's accessory
+  entry with the exported one's. It checks that an existing destination is
+  refused and left unchanged.
 
 - **R-EDIT-17** [test] `apply` takes an accessory's rotation as a unit
   quaternion or as angles `[x, y, z]` in degrees. Angles turn the accessory
@@ -397,15 +399,15 @@ backfill unrelated requirements.
   meaning between versions would place accessories wrongly without an error.
 
 - **R-EDIT-18** [manual] `export_vrm` writes the open character to a new VRM
-  1.0 or VRM 0.0 file without a dialog and changes nothing in the project. The
-  file names the title and author that the request gives. Blender's VRM add-on
-  imports the file as a humanoid armature with the character's meshes and
-  materials.
+  1.0 or VRM 0.0 file without a dialog and changes nothing in the character.
+  The file names the title and author that the request gives. Blender's VRM
+  add-on imports the file as a humanoid armature with the character's meshes
+  and materials.
 
   Rationale: Blender, game engines, and VRM viewers read VRM, not `.vroid`
-  projects. Agents finish characters there with parts that VRoid has no item
-  for, such as bags and belts. VRoid's own export opens dialogs that no one can
-  close on the private display. An export that changed the project would make
+  files. Agents finish characters there with parts that VRoid has no item for,
+  such as bags and belts. VRoid's own export opens dialogs that no one can
+  close on the private display. An export that changed the character would make
   a hand-off look like an edit.
 
   Manual test: `just gui-smoke` exports an edited character as VRM 1.0 and as
@@ -449,8 +451,8 @@ backfill unrelated requirements.
   scale.
 
   Rationale: Agents judge edits by comparing the character with reference
-  turnarounds. Screenshots of the app window include editor panels, cut off
-  the feet, and cannot show the side or back. Views at one scale compare
+  turnarounds. Screenshots of VRoid's window include its editor's panels, cut
+  off the feet, and cannot show the side or back. Views at one scale compare
   directly, and one image of every view spares agents reading each view
   separately or installing other tools to tile them.
 
@@ -461,13 +463,13 @@ backfill unrelated requirements.
 
 - **R-VIEW-2** [manual: `just gui-smoke` checks that `dump`, `unsaved_changes`,
   and the Framewisp input log are unchanged by rendering and by drawing
-  thumbnails] Rendering and drawing thumbnails change nothing in the app: the
-  project, its unsaved state, and the editor's view stay as they were, and they
-  send no pointer or keyboard input.
+  thumbnails] Rendering and drawing thumbnails change nothing in VRoid: the
+  character, whether it has unsaved changes, and what VRoid's editor shows stay
+  as they were, and they send no pointer or keyboard input.
 
   Rationale: Agents render between edits to check them. A render that changed
-  the character, marked it unsaved, or moved the user's view would make an
-  inspection look like an edit.
+  the character, gave it unsaved changes, or changed what VRoid's editor shows
+  would make an inspection look like an edit.
 
 - **R-VIEW-3** [test] `render` and `thumbnails` refuse an existing destination
   and leave it unchanged. The destination never holds a partial image.
@@ -505,10 +507,10 @@ backfill unrelated requirements.
 - **R-VIEW-6** [manual] `render` reports the scale of its views and, given a
   scale, renders at it instead of fitting the character. In renders at one
   scale, view, frame, and size, the floor and the character's centre line in
-  body frames, or the neck and head in head frames, stay at the same pixels,
-  so renders before and after an edit line up. `render` refuses a scale at
-  which the framed part would be cut off, and names the largest scale that
-  fits.
+  body frames, or the neck and head in head frames, stay at the same pixels, so
+  renders before and after an edit line up. `render` refuses a scale at which
+  the framed part would be cut off, writes nothing, and names the largest scale
+  that fits.
 
   Rationale: The fitted scale follows everything worn, so a hat, an ahoge, or
   a height change rescales the character, and before and after renders no
