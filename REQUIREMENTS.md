@@ -113,9 +113,9 @@ backfill unrelated requirements.
   Rationale: A request prepared for an app instance that has since ended refers
   to state that no longer exists.
 
-- **R-RPC-2** [test] A request interrupted when its app instance ends is
-  reported as having an unknown outcome and never runs again. A result written
-  before then is kept.
+- **R-RPC-2** [test] A request that is still pending when a new app instance
+  starts is reported as having an unknown outcome and never runs again. A
+  result written before then is kept.
 
   Rationale: Replaying a mutation after an unknown outcome could apply it twice
   or apply it to a different character.

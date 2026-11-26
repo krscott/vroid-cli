@@ -63,9 +63,9 @@ vroid-cli other @template.json
 
 `apply` checks every item and value before changing any, against the bounds
 `parameters` lists, or for a worn accessory's shape sliders `accessories`,
-except colours of a category whose item the request may change and the shape
-sliders of an added accessory, which it checks once the new item or accessory
-is worn. Before the first change it writes an undo file, an `apply` request
+except colours of a category whose item the request may change and the colours
+and shape sliders of an added accessory, which it checks once the new item or
+accessory is worn. Before the first change it writes an undo file, an `apply` request
 that restores the previous ones; its result names the file. A category's
 `"item"` is the identifier of a built-in item, listed by `items`, or
 `"custom"` for a custom item; `accessories` lists accessories the same way. A

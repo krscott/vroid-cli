@@ -106,8 +106,8 @@ and tails are accessories.
   `parameters` lists them, or `accessories` `sliders` for accessories, and
   colours as `"#RRGGBB"` where `parameters` lists a colour. It checks every
   value before changing any, and refuses the whole request for one bad value,
-  except a new item's colours and an added accessory's shape sliders, which it
-  checks once they are worn; a refusal there stops `apply` after changes. Its
+  except a new item's colours and an added accessory's colours and shape
+  sliders, which it checks once they are worn; a refusal there stops `apply` after changes. Its
   result is `changed`, `discarded`, and `undo`, the path of a file written
   before the first change that holds an `apply` request restoring the previous
   values. Undo with `vroid-cli NAME @PATH`. When `apply` fails after changing
@@ -319,8 +319,9 @@ and tails are accessories.
 
 A new session's first `launch` is ready in about 15 seconds, later ones in a
 few seconds; the default timeout is 120 seconds. Give `launch` a tool timeout
-above that, or run it in the background. If it times out, VRoid keeps starting:
-run `launch` again to keep waiting. Commands need local graphics and Unix
+above that, or run it in the background. If it times out, its error says
+whether VRoid keeps starting, so run `launch` again to keep waiting, or has
+stalled, so run `stop`, then `launch`. Commands need local graphics and Unix
 sockets, so a sandboxed harness may need its usual escalation.
 
 ## Recovery
