@@ -55,6 +55,7 @@ Value = Annotated[float | list[float] | Color | list[Color], WrapValidator(one_e
 Base = Literal["Preset_F", "Preset_M"]
 # Marks a custom item.
 CUSTOM = "custom"
+# The pattern of an identifier. CUSTOM fits it too, and is no identifier.
 Identifier = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_]+$")]
 
 
@@ -190,7 +191,7 @@ class Accessory(BaseModel):
     __pydantic_extra__: dict[str, Value] = Field(init=False)  # pyright: ignore[reportIncompatibleVariableOverride]  # fmt: skip
     item: Identifier = Field(
         description="a built-in accessory's identifier as `accessories` lists it, "
-        'or "custom" for a worn accessory of a custom item'
+        'or "custom" for a worn custom accessory'
     )
     bone: Annotated[str, StringConstraints(min_length=1)] | None = Field(
         None,
@@ -363,7 +364,8 @@ class Items(Model):
 
 
 class Accessories(Model):
-    """List the worn accessories and the built-in accessory items to add."""
+    """List the worn accessories and the built-in accessory items that can be
+    added."""
 
     method: Literal["accessories"]
 
@@ -397,8 +399,8 @@ class Apply(Model):
     )
     discard_custom: bool = Field(
         False,
-        description="allow replacing or removing custom items, and accessories "
-        "of custom items; the result's `discarded` names them, and `undo` cannot "
+        description="allow replacing or removing custom items and custom "
+        "accessories; the result's `discarded` names them, and `undo` cannot "
         "restore them. Save a copy of the character first.",
     )
 
@@ -761,8 +763,8 @@ class Applied(Model):
         "don't count."
     )
     discarded: list[str] = Field(
-        description="custom items, and accessories of custom items, that this "
-        "request replaced or removed, which `undo` cannot restore"
+        description="custom items and custom accessories that this request "
+        "replaced or removed, which `undo` cannot restore"
     )
     undo: str = Field(
         description="path of an apply request, written before the first change, "

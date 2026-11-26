@@ -58,9 +58,9 @@ public sealed partial class Plugin
             throw new ArgumentException($"{file} holds an item of kind {Identifiers.Kind(kind)}, which is not an accessory. Nothing changed");
         foreach (var step in EnterAccessories()) yield return step;
         if (AccessoryGroups().BuiltIn.Contains(kind))
-            throw new ArgumentException($"{file} holds an accessory of the accessory kind {Identifiers.Kind(kind)}, and VRoid keeps a group of built-in "
+            throw new ArgumentException($"The accessory in {file} is of the accessory kind {Identifiers.Kind(kind)}, and VRoid keeps a group of built-in "
                 + $"{Identifiers.Kind(kind)} accessories in this character, even after the last one is removed. VRoid would add the import to it, where "
-                + $"it would read as a built-in item, so vroid-cli cannot import an accessory of the accessory kind {Identifiers.Kind(kind)} into this character. "
+                + $"it would read as a built-in item, so vroid-cli cannot import {Identifiers.Kind(kind)} accessories into this character. "
                 + "Report this VRoid limit to the user. Nothing changed");
         var worn = WornAccessories();
         // Beyond its limit VRoid shows a dialog no one can close on the private display.

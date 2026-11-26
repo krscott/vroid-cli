@@ -226,7 +226,7 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
                 foreach (var i in entries)
                     plan.Errors.Add($"Accessories[{i}]: VRoid keeps the group of {Identifiers.Kind(kind)} accessories that an import started, even "
                         + $"after the last one is removed, and would add {wanted[i].Item} to it, where it would read as custom, so vroid-cli cannot "
-                        + $"add a built-in accessory of the accessory kind {Identifiers.Kind(kind)} to this character. Report this VRoid limit to the user");
+                        + $"add a built-in {Identifiers.Kind(kind)} accessory to this character. Report this VRoid limit to the user");
                 continue;
             }
             // An item VRoid does not offer, which the caller refuses.

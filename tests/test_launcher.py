@@ -165,7 +165,7 @@ def test_installed_session_uses_the_shared_install(writable: Path) -> None:
     assert after == before
 
 
-def test_app_environment_names_its_store_paths(writable: Path) -> None:
+def test_vroid_environment_names_its_store_paths(writable: Path) -> None:
     # R-SES-10: Nix keeps store paths named in a running process's
     # environment, so every store path VRoid reads must be named there.
     session = writable / "session"

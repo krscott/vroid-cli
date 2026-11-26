@@ -338,4 +338,4 @@ logs.
   `rpc/results/ID.json`. Restarting the session marks it as having an unknown
   outcome; check the character before editing again.
 - If the private display was not shut down cleanly, run
-  `framewisp /abs/path/.vroid/NAME/display recover` as the error says.
+  `framewisp /abs/path/.vroid/NAME/desktop recover` as the error says.

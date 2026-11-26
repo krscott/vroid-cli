@@ -51,10 +51,10 @@ backfill unrelated requirements.
   Rationale: Session state holds proprietary VRoid files, Wine prefixes, and
   logs that must never be committed by accident.
 
-- **R-SES-4** [test] `stop` refuses, and leaves the app instance running, while
-  the bridge last reported unsaved changes, the bridge is from an incompatible
-  build, whose report this build cannot read, or a request is pending, unless
-  forced.
+- **R-SES-4** [test] `stop` refuses, and leaves the app instance running, unless
+  forced, while a request is pending or the bridge last reported unsaved
+  changes. A bridge from an incompatible build, whose status this build cannot
+  read, counts as reporting them.
 
   Rationale: Stopping discards unsaved changes, which may be the only copy of
   an agent's work.

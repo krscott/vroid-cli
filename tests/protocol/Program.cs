@@ -547,7 +547,7 @@ Test("item identifiers come from VRoid's resource names", _ =>
 const string Head = "J_Bip_C_Head", Hips = "J_Bip_C_Hips", Chest = "J_Bip_C_Chest", Neck = "J_Bip_C_Neck";
 // VRoid keeps one group per accessory kind, such as every pair of animal ears.
 string Kind(string item) => item is "CatEar" or "RabbitEar" ? "ears" : item;
-WornAccessory Worn(string item, string? bone, string group = "") => new(item, bone, group == "" ? Kind(item) : group);
+WornAccessory Worn(string item, string? bone, string kind = "") => new(item, bone, kind == "" ? Kind(item) : kind);
 WantedAccessory Any(string item) => new(item, false, null, Kind(item));
 WantedAccessory On(string item, string? bone) => new(item, true, bone, Kind(item));
 string Show(AccessoryPlan plan) =>

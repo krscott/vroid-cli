@@ -28,7 +28,7 @@ BRIDGE_LOADED = "vroid-cli bridge loaded; app instance {app_instance}"
 # One app instance's logs, relative to the session directory.
 APP_INSTANCE_LOGS = (
     "player.log",
-    "display/app.log",
+    "desktop/app.log",
     "bepinex/LogOutput.log",
     "bepinex/preloader.log",
     "bepinex/ErrorLog.log",
@@ -52,7 +52,9 @@ class Session:
 
     @property
     def display(self) -> Path:
-        return self.directory / "display"
+        # Framewisp's directory for the private display. It keeps the name
+        # that running sessions and other builds look for.
+        return self.directory / "desktop"
 
     @property
     def rpc(self) -> Path:
@@ -155,7 +157,7 @@ def exited(session: Session, *, since_ms: float = 0) -> str:
             f"VRoid exited. Last lines of {log}:\n{tail(log)}\n{bepinex_log(session)}"
         )
     log = session.directory / "runner.log"
-    return f"The private display stopped. Last lines of {log}:\n{tail(log)}"
+    return f"The private display exited. Last lines of {log}:\n{tail(log)}"
 
 
 def keep_previous_logs(session: Session) -> None:
@@ -321,6 +323,8 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
             )
         if display is Display.STOPPED:
             keep_previous_logs(session)
+            # A status left in place would be the previous app instance's.
+            (session.rpc / "status.json").unlink(missing_ok=True)
             with (session.directory / "runner.log").open("ab") as log:
                 # Python does not pass the controller lock's descriptor on, so
                 # the detached runner never holds the lock.
@@ -362,7 +366,7 @@ def launch(session: Session, *, timeout_s: float) -> dict[str, Any]:
                 # only an app instance an older build started can be waiting.
                 if not terms_accepted(session):
                     raise RuntimeError(
-                        "This session was started by an older vroid-cli and is "
+                        "This session's app instance was started by an older vroid-cli and is "
                         "waiting at VRoid's first-run dialogs; run stop, then launch"
                     )
                 return summary(session)
