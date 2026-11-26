@@ -9,11 +9,9 @@ Read `REQUIREMENTS.md` and `GLOSSARY.md` before changing behaviour.
   under a term's _Avoid_ for that term's concept. When a concept has no term,
   or a term no longer fits, change the glossary in the same PR. Keep
   implementation detail out of it.
-  Existing code and docs still use some avoided words; issues #61 to #63
-  rename them. Use the glossary's terms in new work, but keep the spelling of
-  request and result fields and values, such as `"Hair"` and `modified`, until
-  #61 changes them.
-  TODO: remove these two sentences once #61 to #63 are closed.
+  Existing code and docs still use some avoided words; issues #62 and #63
+  rename them. Use the glossary's terms in new work.
+  TODO: remove these two sentences once #62 and #63 are closed.
 - `docs/adr/` records decisions that are hard to reverse, surprising without
   context, and the result of a real trade-off. Read the ADRs for an area before
   changing it, and add one only when all three hold.

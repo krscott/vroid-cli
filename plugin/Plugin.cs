@@ -18,7 +18,7 @@ public sealed partial class Plugin : BasePlugin
     private static bool updating;
     // Holds ModelOrigin, the root transform of the model on screen.
     private static object? updater;
-    private static bool modified;
+    private static bool unsavedChanges;
     // Whether a request has started opening or creating a character in this
     // app instance; VRoid holds one per instance, even while it loads.
     private static bool loaded;
@@ -52,7 +52,7 @@ public sealed partial class Plugin : BasePlugin
         Patch(harmony, "VRoid.Studio.ModelPresetsSelector.BasePresetsSelectorViewModel", "UpdateSelectedPresets", nameof(CaptureSelector));
         Patch(harmony, "VRoid.Studio.Component.VRoidCoreModelUpdater", "set_IsUpdatingModel", nameof(ModelUpdating));
         Patch(harmony, "UnityEngine.EventSystems.EventSystem", "Update", nameof(Tick));
-        Diagnostics.LogInfo($"vroid-cli bridge loaded; boot {rpc.Boot}");
+        Diagnostics.LogInfo($"vroid-cli bridge loaded; app instance {rpc.AppInstance}");
     }
 
     private static void Patch(Harmony harmony, string type, string method, string callback)
@@ -159,13 +159,13 @@ public sealed partial class Plugin : BasePlugin
 
     private static object Status() => new
     {
-        boot = rpc.Boot,
+        app_instance = rpc.AppInstance,
         protocol = RpcDirectory.Protocol,
         heartbeat = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         main = main != null,
         editor = root != null,
         updating,
-        modified,
+        unsaved_changes = unsavedChanges,
         rebuilt,
     };
 
@@ -228,10 +228,15 @@ public sealed partial class Plugin : BasePlugin
     private static object Root => root ?? throw new InvalidOperationException("Open or create a character first");
 
     // In app order: the editor tabs run Face, Hairstyle, Body, Outfit.
-    private static readonly string[] Sections = { "Face", "Hair", "Body", "Outfit" };
+    private static readonly string[] Sections = { "Face", "Hairstyle", "Body", "Outfit" };
 
-    // The editor behind a section; VRoid calls the Outfit editor the clothing editor.
-    private static string Editor(string section) => (section == "Outfit" ? "Clothing" : section) + "Editor";
+    // VRoid's own name for the editor behind a section.
+    private static string Editor(string section) => section switch
+    {
+        "Hairstyle" => "Hair",
+        "Outfit" => "Clothing",
+        _ => section,
+    } + "Editor";
 
     // A label that occurs more than once in a category takes its values as an
     // array, in app order. A colour is "#RRGGBB" and has no numeric values.
@@ -277,7 +282,7 @@ public sealed partial class Plugin : BasePlugin
     // Switches to a section's editor and returns its categories once its selector is captured.
     private static IEnumerable<object[]?> Enter(string section)
     {
-        if (!Sections.Contains(section)) throw new ArgumentException("Only Face, Hair, Body, and Outfit are supported");
+        if (!Sections.Contains(section)) throw new ArgumentException("Only Face, Hairstyle, Body, and Outfit are supported");
         Reflect.Call(Root, "set_EditMode", Enum.Parse(Reflect.Type("VRoid.Studio.EditRootScreen.EditMode"), Editor(section)));
         while (!Selectors.Values.Any(value => value.GetType().FullName!.Contains("." + Editor(section) + ".")))
             yield return null;
@@ -341,7 +346,7 @@ public sealed partial class Plugin : BasePlugin
                 shown.Add((Field(label, sub, "Color", keys.Select(key => $"{key.Group}:{key.Key}").ToHashSet()), available));
             }
         }
-        if (section == "Hair")
+        if (section == "Hairstyle")
         {
             // One hair material colour pair covers every hair category. Hairstyle
             // Sets shows an aggregate colour instead, and Base Hair its own above.
@@ -590,7 +595,7 @@ public sealed partial class Plugin : BasePlugin
                 if (Read(parameter) == value) continue;
                 var before = rebuilt;
                 // Set first so an interrupted edit still counts as unsaved.
-                modified = true;
+                unsavedChanges = true;
                 Reflect.Call(parameter, "set_" + Member(parameter), value);
                 Changed.Add(path);
                 changed++;
@@ -600,7 +605,7 @@ public sealed partial class Plugin : BasePlugin
             {
                 if (Colors.Write(ReadHex(swatch, field.Path), hex) is not { } channels) continue;
                 var before = rebuilt;
-                modified = true;
+                unsavedChanges = true;
                 Write(swatch, channels);
                 Changed.Add(field.Path);
                 changed++;
@@ -729,7 +734,7 @@ public sealed partial class Plugin : BasePlugin
         start();
         while (root == null || rebuilt == before || updating) yield return true;
         // VRoid does not count a new character as unsaved, though it has no file.
-        modified = false;
+        unsavedChanges = false;
     }
 
     private static IEnumerable<bool> Execute(Request request)
@@ -745,7 +750,7 @@ public sealed partial class Plugin : BasePlugin
                 foreach (var step in RebuildAccessoryColors()) yield return step;
                 // The flags that pass toggles end as they were, so the character has
                 // no unsaved changes; VRoid's own undo history still holds the toggles.
-                modified = false;
+                unsavedChanges = false;
                 result = new { opened = path };
                 break;
             }
@@ -847,7 +852,7 @@ public sealed partial class Plugin : BasePlugin
                     throw new IOException("VRoid refused to save the project");
                 if (!File.Exists(path) || new FileInfo(path).Length == 0)
                     throw new IOException("VRoid reported success without writing the project");
-                modified = false;
+                unsavedChanges = false;
                 result = new { saved = path, bytes = new FileInfo(path).Length };
                 break;
             }

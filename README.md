@@ -52,8 +52,8 @@ JSON Schema of every request and result.
 
 ### Templates
 
-`dump` prints every item and accessory, and every Face, Hair, and Body value
-and colour, as an `apply` request, so a character's look can be saved,
+`dump` prints every item and accessory, and every Face, Hairstyle, and Body
+value and colour, as an `apply` request, so a character's look can be saved,
 diffed, edited, and applied to another project:
 
 ```sh
@@ -124,11 +124,11 @@ or has stalled, and `stop` then `launch` restarts it.
 ## Recovery
 
 `vroid-cli NAME '{"method": "status"}'` reports whether the app runs, whether
-it is ready, any pending request, and unsaved changes (`bridge.modified`).
-Logs are in the session directory: `runner.log`, `player.log`,
-`desktop/app.log`, `bepinex/LogOutput.log`, and, if BepInEx failed to start,
-`bepinex/preloader.log`. `launch` moves the previous run's logs to
-`previous/`.
+it is ready, any pending request, and unsaved changes
+(`bridge.unsaved_changes`). Logs are in the session directory: `runner.log`,
+`player.log`, `display/app.log`, `bepinex/LogOutput.log`, and, if BepInEx
+failed to start, `bepinex/preloader.log`. `launch` moves the previous run's
+logs to `previous/`.
 
 - **Timed-out request:** do not repeat it. It stays pending and blocks other
   commands until its result appears in `rpc/results/ID.json`. Restarting the
@@ -137,7 +137,7 @@ Logs are in the session directory: `runner.log`, `player.log`,
   pending request. Save to a new path, or send
   `{"method": "stop", "force": true}` to discard them.
 - **Another project:** save, `stop`, and `launch` before opening it.
-- **Unclean desktop shutdown:** run `framewisp ABSOLUTE/SESSION/desktop recover`
+- **Unclean desktop shutdown:** run `framewisp ABSOLUTE/SESSION/display recover`
   as the error message says, then launch again.
 - **Stalled launch:** before `stop`, save a backtrace of every thread of the
   session's Wine processes with the Wine build that runs them, and attach it
@@ -158,8 +158,10 @@ Logs are in the session directory: `runner.log`, `player.log`,
   again.
 - **Sessions from earlier versions** launch with the shared install and keep
   their VRoid preferences. Their own copy of VRoid in
-  `wine/drive_c/VRoidStudio`, `installed`, and `installer.log` are no longer
-  used. Deleting them is optional and only frees about 1.4 GB.
+  `wine/drive_c/VRoidStudio`, `installed`, `installer.log`, and `desktop/` are
+  no longer used. Deleting them is optional and only frees about 1.4 GB. A
+  session that an earlier build still runs from `desktop/` must be stopped
+  with that build first; commands refuse it until then.
 
 ## Development
 

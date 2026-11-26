@@ -97,7 +97,7 @@ public sealed partial class Plugin
         var conflicting = id == null || slot.IsSet ? Array.Empty<Slot>()
             : section.Where(other => !other.IsSet && Conflict(slot, other)).ToArray();
         var before = rebuilt;
-        modified = true;
+        unsavedChanges = true;
         if (id == null) Reflect.Call(slot.Presets, "ClearTransferableGroup");
         else Reflect.Call(slot.Items.Single(item => item.Id == id).Option, "set_IsSelected", true);
         while (rebuilt == before || updating) yield return true;
@@ -340,7 +340,7 @@ public sealed partial class Plugin
     {
         var count = Instances().Length;
         var before = rebuilt;
-        modified = true;
+        unsavedChanges = true;
         // Setting `SelectedTemplate` adds an accessory only when its value changes,
         // so it is set to null first, which lets one item be added again.
         // `AddSelectedTemplate` after this would add a second accessory.
@@ -355,7 +355,7 @@ public sealed partial class Plugin
     {
         var count = Instances().Length;
         var before = rebuilt;
-        modified = true;
+        unsavedChanges = true;
         Reflect.Call(AccessoryEditor, "set_SelectedIndex", index);
         if (!Equals(Reflect.Get(AccessoryEditor, "SelectedIndex"), index)) throw Differs($"how to select accessory {index}");
         Reflect.Call(AccessoryEditor, "DuplicateSelectedInstance");
@@ -368,7 +368,7 @@ public sealed partial class Plugin
         foreach (var step in SetFlag(index, "locked", false, path)) yield return step;
         var count = Instances().Length;
         var before = rebuilt;
-        modified = true;
+        unsavedChanges = true;
         Reflect.Call(AccessoryEditor, "set_SelectedIndex", index);
         // RemoveSelectedInstance removes whichever accessory is selected.
         if (!Equals(Reflect.Get(AccessoryEditor, "SelectedIndex"), index)) throw Differs($"how to select accessory {index}");
@@ -724,7 +724,7 @@ public sealed partial class Plugin
         if (worn.Count(other => other.Kind == worn[index].Kind) > 1)
             throw new InvalidOperationException($"{path}: another accessory of its kind is worn, so VRoid cannot move it to {bone ?? "None"}");
         var before = rebuilt;
-        modified = true;
+        unsavedChanges = true;
         Run(worn[index].Instance, "SetPartOriginParentCommand", worn[index].Group, bone == null ? null : Reflect.New("VRoidCore.Common.Types.ResolvedBoneId", bone));
         Changed.Add($"{path}/bone");
         while (rebuilt == before || updating) yield return true;
@@ -747,7 +747,7 @@ public sealed partial class Plugin
             {
                 var worn = Find();
                 var before = rebuilt;
-                modified = true;
+                unsavedChanges = true;
                 // The editor's own setters, such as `PartOriginLocalScale`, only change
                 // what its gizmo shows.
                 Run(worn.Instance, "SetPartOriginTransformCommand", worn.Id, Reflect.New("VRoidCore.Common.Types.Transform",
@@ -775,7 +775,7 @@ public sealed partial class Plugin
                     throw new InvalidOperationException(number.Path != null ? $"{where} reads {Read(number.Parameter)} after setting {number.Value}"
                         : $"{where} reads {paint!.Field.Hex} after setting {paint.Hex}");
                 var before = rebuilt;
-                modified = true;
+                unsavedChanges = true;
                 if (number.Path != null) Reflect.Call(number.Parameter, "set_" + Member(number.Parameter), number.Value);
                 else Write(paint!.Swatch, Colors.Write(paint.Field.Hex, paint.Hex)!);
                 Changed.Add(where);
@@ -853,7 +853,7 @@ public sealed partial class Plugin
 
     private static void FlagCommand(object instance, string key, bool value)
     {
-        modified = true;
+        unsavedChanges = true;
         var id = Reflect.Get(Reflect.Get(instance, "transferableInfo"), "Id") as string ?? throw Differs("the transferable of an accessory");
         Run(instance, key == "hidden" ? "SetTransferableVisibilityCommand" : "SetTransferableEditabilityCommand", id, !value);
     }
@@ -894,7 +894,7 @@ public sealed partial class Plugin
             if (Reflect.Get(worn.DisplayName, "LocalizationKey") is string key) Reflect.Call(display, "set_LocalizationKey", key);
             if (Reflect.Get(worn.DisplayName, "FallbackString") is string fallback) Reflect.Call(display, "set_FallbackString", fallback);
         }
-        modified = true;
+        unsavedChanges = true;
         Run(worn.Instance, "SetTransferableDisplayNameCommand", worn.Id, display);
         Changed.Add($"{path}/name");
         // The editor's list shows a new name only once told it changed.
