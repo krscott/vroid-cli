@@ -55,7 +55,7 @@ public sealed partial class Plugin
                 // Only player.log holds the reason: a Harmony hook on VRoid's
                 // error callback, which could report it here, crashed VRoid.
                 throw new InvalidOperationException(
-                    "VRoid could not export the VRM; the session's player.log names the reason. Nothing changed in the project");
+                    "VRoid could not export the VRM; the session's player.log names the reason. Nothing changed in the character");
             }
             VrmMeta written;
             using (var file = File.OpenRead(path))
@@ -77,7 +77,7 @@ public sealed partial class Plugin
                 yield return true;
             }
             // Back in the editor, VRoid rebuilds the model from the unchanged
-            // project, which takes about 100 frames.
+            // character, which takes about 100 frames.
             var settled = rebuilt;
             for (int frame = 0, stable = 0; stable < SettledFrames; frame++)
             {
@@ -114,7 +114,7 @@ public sealed partial class Plugin
 
     // VRoid's own export defaults: no polygon, hair bone, or material reduction,
     // and textures at their own size. The export screen keeps the options
-    // between exports in one app run, and vroid-cli never changes them, so a
+    // between exports in one app instance, and vroid-cli never changes them, so a
     // difference means something else did. Setting an option rebuilds the
     // preview, so this checks the options rather than setting them.
     private static void CheckExportOptions(object booth)

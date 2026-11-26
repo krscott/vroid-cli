@@ -52,7 +52,8 @@ backfill unrelated requirements.
   logs that must never be committed by accident.
 
 - **R-SES-4** [test] `stop` refuses, and leaves the app instance running, while
-  the bridge last reported unsaved changes or a request is pending, unless
+  the bridge last reported unsaved changes, the bridge is from an incompatible
+  build, whose report this build cannot read, or a request is pending, unless
   forced.
 
   Rationale: Stopping discards unsaved changes, which may be the only copy of

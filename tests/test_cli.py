@@ -277,10 +277,21 @@ def test_bridge_from_an_older_protocol_is_refused(tmp_path: Path) -> None:
     assert result.returncode == 1
     assert "incompatible" in result.stderr
     assert not (rpc / "request.json").exists()
-    # R-SES-4: what it holds may be unsaved.
+    # R-SES-4
     env = running_display(tmp_path)
     assert '"force": true' in invoke(tmp_path, "stop", env=env).stderr
     assert invoke(tmp_path, "stop", force=True, env=env).returncode == 0
+
+
+@pytest.mark.parametrize("status", ["[]", "null", "{}", "not JSON"])
+def test_unreadable_status_gets_no_request(tmp_path: Path, status: str) -> None:
+    # R-RPC-4
+    rpc = bridge(tmp_path)
+    (rpc / "status.json").write_text(status)
+    result = invoke(tmp_path, "dump")
+    assert result.returncode == 1
+    assert "not running or not responding" in result.stderr
+    assert not (rpc / "request.json").exists()
 
 
 @pytest.mark.parametrize(

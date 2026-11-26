@@ -1,5 +1,5 @@
-// Draws a category's built-in item thumbnails into one sheet. VRoid's own
-// previews are prebaked textures, so nothing about the model changes.
+// Draws a category's built-in item thumbnails into one thumbnail sheet. VRoid's
+// own previews are prebaked textures, so nothing about the character changes.
 //
 // Like Render.cs, instance members of Unity engine objects are called through
 // `dynamic`; static members go through Reflect.
@@ -9,7 +9,7 @@ public sealed partial class Plugin
 {
     // Draws the requested category's thumbnails to the request's path.
     // Finding the category switches the editor's section; it is switched back
-    // when this ends, so the editor's view stays as it was (R-VIEW-2).
+    // when this ends, so what VRoid's editor shows stays as it was (R-VIEW-2).
     private static IEnumerable<bool> Thumbnails(Request request)
     {
         var mode = Reflect.Get(Root, "EditMode") ?? throw Differs("the editor's section");
@@ -23,7 +23,7 @@ public sealed partial class Plugin
         }
     }
 
-    // Returns a preview as Sheet.Place expects it: halved with bilinear
+    // Returns a preview as ThumbnailSheet.Place expects it: halved with bilinear
     // filtering, which averages each 2x2 block. Destroys `texture`, which
     // `Preview.Create()` makes anew on every call and nothing else frees.
     // `item` names it in errors.
@@ -33,11 +33,11 @@ public sealed partial class Plugin
         {
             dynamic source = Reflect.Concrete(texture);
             int width = source.width, height = source.height;
-            if (width != 2 * Sheet.ThumbWidth || height != 2 * Sheet.ThumbHeight)
+            if (width != 2 * ThumbnailSheet.ThumbWidth || height != 2 * ThumbnailSheet.ThumbHeight)
                 throw new InvalidOperationException(
-                    $"The thumbnail of {item} is {width}x{height}, not {2 * Sheet.ThumbWidth}x{2 * Sheet.ThumbHeight}: this VRoid differs from the validated 2.16.0");
+                    $"The thumbnail of {item} is {width}x{height}, not {2 * ThumbnailSheet.ThumbWidth}x{2 * ThumbnailSheet.ThumbHeight}: this VRoid differs from the validated 2.16.0");
             source.filterMode = (dynamic)Enum.Parse(Reflect.Type("UnityEngine.FilterMode"), "Bilinear");
-            return Textures.Read((object)source, Sheet.ThumbWidth, Sheet.ThumbHeight);
+            return Textures.Read((object)source, ThumbnailSheet.ThumbWidth, ThumbnailSheet.ThumbHeight);
         }
         finally
         {
@@ -53,19 +53,19 @@ public sealed partial class Plugin
             if (step == null) yield return true;
             else slot = step;
         }
-        var ids = slot!.Items.Select(item => item.Id).ToArray();
-        Sheet sheet;
+        var identifiers = slot!.Items.Select(item => item.Identifier).ToArray();
+        ThumbnailSheet sheet;
         try
         {
-            sheet = new Sheet(ids);
+            sheet = new ThumbnailSheet(identifiers);
         }
         catch (ArgumentException error)
         {
             throw Differs($"the labels of {slot.Path}: {error.Message}");
         }
-        for (var index = 0; index < ids.Length; index++)
+        for (var index = 0; index < identifiers.Length; index++)
         {
-            var item = $"{slot.Path}/{ids[index]}";
+            var item = $"{slot.Path}/{identifiers[index]}";
             // Preview is a TransferableGroupThumbnailTextureSource, whose Create
             // loads a prebaked texture from VRoid's asset storage, usually within
             // a frame. VRoid's capture-based ThumbnailProvider serves custom
@@ -84,6 +84,6 @@ public sealed partial class Plugin
         var png = Textures.Encode(sheet);
         var path = request.Text("path");
         WriteNew(path, png);
-        result = new { rendered = path, bytes = png.Length, columns = Sheet.Columns, items = ids };
+        result = new { rendered = path, bytes = png.Length, columns = ThumbnailSheet.Columns, items = identifiers };
     }
 }

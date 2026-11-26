@@ -24,7 +24,7 @@ internal static class Reflect
     }
 
     internal static Type Type(string name) => FindType(name)
-        ?? throw new InvalidOperationException($"Missing app type: {name}");
+        ?? throw new InvalidOperationException($"Missing VRoid type: {name}");
 
     // The same native object as its most derived proxy type. A proxy of a
     // declared base type or interface lacks the object's own members, which
@@ -97,7 +97,7 @@ internal static class Reflect
     }
 
     // A native delegate of the IL2CPP delegate type `native`, such as
-    // Il2CppSystem.Action`2 closed over app types, that passes its arguments to
+    // Il2CppSystem.Action`2 closed over VRoid's types, that passes its arguments to
     // `body`.
     internal static object Callback(Type native, Action<object?[]> body)
     {

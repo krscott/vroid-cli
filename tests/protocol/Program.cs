@@ -1,8 +1,9 @@
-// Exercises plugin/Bridge.cs, the app side of the file protocol, the colour
-// rules in plugin/Colors.cs, custom item files in plugin/CustomItemFile.cs,
-// VRM files in plugin/VrmFile.cs, the camera placement in plugin/Framing.cs,
-// item identifiers and accessory matching in plugin/ItemIds.cs, and the image
-// layout in plugin/Canvas.cs and plugin/Sheet.cs, without Unity.
+// Exercises plugin/Bridge.cs, the bridge's side of the file protocol, the
+// colour rules in plugin/Colors.cs, custom item files in
+// plugin/CustomItemFile.cs, VRM files in plugin/VrmFile.cs, the camera
+// placement in plugin/Framing.cs, item identifiers and accessory matching in
+// plugin/Identifiers.cs, and the image layout in plugin/Canvas.cs and
+// plugin/ThumbnailSheet.cs, without Unity.
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
@@ -49,7 +50,7 @@ JsonElement Result(string directory, string id) =>
     JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "results", id + ".json"))).RootElement;
 
 // R-RPC-1
-Test("request for another app instance is rejected, not run", directory =>
+Test("request for another app instance is refused, not run", directory =>
 {
     var rpc = Rpc(directory, "current");
     var id = NewId();
@@ -80,7 +81,7 @@ Test("restart keeps a result written before the restart", directory =>
     Send(directory, id, "previous");
     var request = before.Take()!;
     before.Finish(request, true, 0.25);
-    Send(directory, id, "previous"); // As if the app died before removing the request.
+    Send(directory, id, "previous"); // As if the app instance ended before removing the request.
     Rpc(directory, "current").RecoverInterrupted();
     Check(Result(directory, id).GetProperty("ok").GetBoolean(), "completed result was replaced");
     Check(!File.Exists(Path.Combine(directory, "request.json")), "request still pending");
@@ -149,7 +150,7 @@ Test("a result that cannot be serialized is recorded as an error", directory =>
     rpc.Finish(rpc.Take()!, true, new { value = float.NaN });
     var result = Result(directory, id);
     Check(!result.GetProperty("ok").GetBoolean(), "result reports success");
-    Check(result.GetProperty("error").GetString()!.Contains("operation ran"), "error does not say it ran");
+    Check(result.GetProperty("error").GetString()!.Contains("request ran"), "error does not say it ran");
 });
 
 // R-EDIT-11, R-RPC-6
@@ -180,7 +181,7 @@ Test("a request whose id is not a CLI id writes nothing outside results", direct
 
 // Framing: a sample character's meshes, as VRoid reports their bounds: the
 // body with its arms, the head, and long ears that reach past the head's
-// height. The model stands on the floor at its origin, facing +Z or turned.
+// height. The character stands on the floor at its origin, facing +Z or turned.
 var origin = new Vec(0, 0, 0);
 var body = new Box(new Vec(-0.48, 0.0, -0.38), new Vec(0.48, 1.30, 0.33));
 var skull = new Box(new Vec(-0.12, 1.19, -0.15), new Vec(0.12, 1.50, 0.12));
@@ -188,7 +189,7 @@ var ears = new Box(new Vec(-0.30, 1.28, -0.05), new Vec(0.30, 1.36, 0.02));
 // Long hair from above the skull to the waist, centred below the neck.
 var hair = new Box(new Vec(-0.17, 0.80, -0.20), new Vec(0.17, 1.53, 0.10));
 var parts = new[] { body, skull, ears, hair };
-// A tall hat and a tail behind the model, which the fitted frames must grow for.
+// A tall hat and a tail behind the character, which the fitted frames must grow for.
 var hat = new Box(new Vec(-0.15, 1.40, -0.15), new Vec(0.15, 1.90, 0.15));
 var tail = new Box(new Vec(-0.05, 0.50, -0.90), new Vec(0.05, 0.70, -0.30));
 var dressed = parts.Append(hat).Append(tail).ToArray();
@@ -252,7 +253,7 @@ void Shows(Shot shot, double aspect, IEnumerable<Box> boxes, string what, double
 }
 
 // R-VIEW-1
-Test("every body view shows the whole model with a margin", _ =>
+Test("every body view shows the whole character with a margin", _ =>
 {
     foreach (var boxes in new[] { parts, dressed })
         foreach (var forward in forwards)
@@ -262,7 +263,7 @@ Test("every body view shows the whole model with a margin", _ =>
 });
 
 // R-VIEW-1
-Test("views of one model at one size share their scale", _ =>
+Test("views of one character at one size share their scale", _ =>
 {
     foreach (var forward in forwards)
         foreach (var aspect in aspects)
@@ -279,14 +280,14 @@ Test("views of one model at one size share their scale", _ =>
 Test("a part below the floor keeps a margin below it", _ =>
 {
     // A tail moved 0.3 m below the floor, deeper than the margin at the fit
-    // the rest of the model would get.
+    // the rest of the character would get.
     var low = parts.Append(new Box(new Vec(-0.05, -0.30, -0.60), new Vec(0.05, 0.40, -0.30))).ToArray();
     foreach (var aspect in aspects)
     {
         var shot = BodyShot(low, forwards[0], View.Front, aspect);
         var clear = -0.30 - (shot.Target.Y - shot.Size);
         Check(clear >= 0.30 * (Framing.Margin - 1) - 1e-9, $"at aspect {aspect} the tail is {clear} m above the bottom edge");
-        Shows(shot, aspect, parts, "the rest of the model", margin: 1);
+        Shows(shot, aspect, parts, "the rest of the character", margin: 1);
     }
 });
 
@@ -353,7 +354,7 @@ Test("a scale that would cut off the character in a requested view is refused, n
                 }
                 catch (InvalidOperationException) { }
             }
-    // The tail behind the model limits the side view, not the front one.
+    // The tail behind the character limits the side view, not the front one.
     var forwardOnly = new[] { Framing.Direction(forwards[0], View.Front) };
     var sideToo = new[] { forwardOnly[0], Framing.Direction(forwards[0], View.Side) };
     Framing.Size(extent, forwardOnly, 0.5, 1000, 400);
@@ -366,9 +367,9 @@ Test("a scale that would cut off the character in a requested view is refused, n
 });
 
 // R-VIEW-1
-Test("each view looks from its side of the model", _ =>
+Test("each view looks from its side of the character", _ =>
 {
-    // Facing +Z, the model's left is -X.
+    // Facing +Z, the character's left is -X.
     var forward = new Vec(0, 0, 1);
     var expected = new Dictionary<View, (int X, int Z)>
     {
@@ -419,7 +420,7 @@ Test("unknown views and frames are refused", _ =>
     }
 });
 
-ColorField Field(string path, string hex, params string[] keys) => new(path, keys.ToHashSet(), hex);
+ShownColor Shown(string path, string hex, params string[] keys) => new(path, keys.ToHashSet(), hex);
 
 void Throws(Action action, params string[] parts)
 {
@@ -454,8 +455,8 @@ Test("every channel value round-trips through #RRGGBB as k/255", _ =>
 Test("a colour off the 1/255 grid dumps and reapplies without a write", _ =>
 {
     // A stored channel such as 0.5 is off the grid; the dump holds the hex
-    // VRoid shows for it, H, and the field still reads H when it is reapplied.
-    var stored = Field("Face/Eyebrows/Color", "#808080", "Eyebrow:Overlay");
+    // VRoid shows for it, H, and the colour still reads H when it is reapplied.
+    var stored = Shown("Face/Eyebrows/Color", "#808080", "Eyebrow:Overlay");
     var dumped = Colors.Listed(new[] { stored }).Single();
     Check(Colors.Write(stored.Hex, dumped.Hex) == null, "reapplying the dump writes the colour");
     Check(Colors.Write(stored.Hex, "#808081") is { } changed && changed[2] == 129 / 255f, "a changed colour is not written");
@@ -464,16 +465,16 @@ Test("a colour off the 1/255 grid dumps and reapplies without a write", _ =>
 // R-EDIT-7
 Test("a dump lists a shared colour once, under the first category", _ =>
 {
-    var fields = new[]
+    var colors = new[]
     {
-        Field("Face/Irises/R Eye", "#9E6233", "Iris:Left"),
-        Field("Face/Irises/L Eye", "#2E8B57", "Iris:Right"),
-        Field("Face/Eyelids/Color", "#FAEBDE", "Eyelid:Main", "FaceSkin:Main", "BodySkin:Main"),
-        Field("Face/Skin/Color", "#FAEBDE", "FaceSkin:Main", "BodySkin:Main", "Eyelid:Main"),
-        Field("Face/Eyebrows/Color", "#8F5836", "Eyebrow:Overlay"),
-        Field("Body/Whole Body/Color", "#FAEBDE", "BodySkin:Main", "FaceSkin:Main", "Eyelid:Main"),
+        Shown("Face/Irises/R Eye", "#9E6233", "Iris:Left"),
+        Shown("Face/Irises/L Eye", "#2E8B57", "Iris:Right"),
+        Shown("Face/Eyelids/Color", "#FAEBDE", "Eyelid:Main", "FaceSkin:Main", "BodySkin:Main"),
+        Shown("Face/Skin/Color", "#FAEBDE", "FaceSkin:Main", "BodySkin:Main", "Eyelid:Main"),
+        Shown("Face/Eyebrows/Color", "#8F5836", "Eyebrow:Overlay"),
+        Shown("Body/Whole Body/Color", "#FAEBDE", "BodySkin:Main", "FaceSkin:Main", "Eyelid:Main"),
     };
-    var listed = Colors.Listed(fields).Select(field => field.Path).ToArray();
+    var listed = Colors.Listed(colors).Select(color => color.Path).ToArray();
     Check(listed.SequenceEqual(new[] { "Face/Irises/R Eye", "Face/Irises/L Eye", "Face/Eyelids/Color", "Face/Eyebrows/Color" }),
         $"listed {string.Join(", ", listed)}");
 });
@@ -483,30 +484,30 @@ Test("a dump fails rather than drop a colour or list one apply would refuse", _ 
 {
     Throws(() => Colors.Listed(new[]
     {
-        Field("Face/Skin/Color", "#FAEBDE", "FaceSkin:Main", "BodySkin:Main"),
-        Field("Body/Whole Body/Color", "#FF0000", "BodySkin:Main", "FaceSkin:Main"),
+        Shown("Face/Skin/Color", "#FAEBDE", "FaceSkin:Main", "BodySkin:Main"),
+        Shown("Body/Whole Body/Color", "#FF0000", "BodySkin:Main", "FaceSkin:Main"),
     }), "Body/Whole Body/Color", "Face/Skin/Color", "not one shared colour");
-    // A field writing a superset of another's keys, or part of them.
+    // A colour writing a superset of another's keys, or part of them.
     Throws(() => Colors.Listed(new[]
     {
-        Field("Face/Irises/R Eye", "#9E6233", "Iris:Left"),
-        Field("Face/Other/Both", "#9E6233", "Iris:Left", "Iris:Right"),
+        Shown("Face/Irises/R Eye", "#9E6233", "Iris:Left"),
+        Shown("Face/Other/Both", "#9E6233", "Iris:Left", "Iris:Right"),
     }), "Face/Irises/R Eye and Face/Other/Both", "cannot hold both");
     Throws(() => Colors.Listed(new[]
     {
-        Field("Face/A/Color", "#000000", "k1", "k2"),
-        Field("Body/B/Color", "#000000", "k2", "k3"),
+        Shown("Face/A/Color", "#000000", "k1", "k2"),
+        Shown("Body/B/Color", "#000000", "k2", "k3"),
     }), "Face/A/Color and Body/B/Color");
 });
 
 // R-EDIT-3
 Test("a request may set each shared colour in only one place", _ =>
 {
-    var skin = Field("Face/Skin/Color", "#FAEBDE", "FaceSkin:Main", "BodySkin:Main");
-    var body = Field("Body/Whole Body/Color", "#FAEBDE", "BodySkin:Main", "FaceSkin:Main");
-    var right = Field("Face/Irises/R Eye", "#9E6233", "Iris:Left");
-    var left = Field("Face/Irises/L Eye", "#9E6233", "Iris:Right");
-    var brows = Field("Face/Eyebrows/Color", "#8F5836", "Eyebrow:Overlay");
+    var skin = Shown("Face/Skin/Color", "#FAEBDE", "FaceSkin:Main", "BodySkin:Main");
+    var body = Shown("Body/Whole Body/Color", "#FAEBDE", "BodySkin:Main", "FaceSkin:Main");
+    var right = Shown("Face/Irises/R Eye", "#9E6233", "Iris:Left");
+    var left = Shown("Face/Irises/L Eye", "#9E6233", "Iris:Right");
+    var brows = Shown("Face/Eyebrows/Color", "#8F5836", "Eyebrow:Overlay");
     Check(Colors.Conflicts(new[] { skin, right, left, brows }).Count == 0, "disjoint colours conflict");
     var shared = Colors.Conflicts(new[] { skin, body });
     Check(shared.Single() == "Face/Skin/Color and Body/Whole Body/Color set the same colour; set it in one place", shared.Single());
@@ -515,43 +516,43 @@ Test("a request may set each shared colour in only one place", _ =>
 // R-EDIT-9
 Test("item identifiers come from VRoid's resource names", _ =>
 {
-    Check(ItemIds.Preset("pixiv/VRoid/Clothing/Tops/N00/159/TransferableGroupType.N00.Level1.Tops.transferablegroup") == "159", "Tops 159");
-    Check(ItemIds.Preset("pixiv/VRoid/Hair/N00/Preset_F/TransferableGroupType.N00.Level1.HairFront.transferablegroup") == "Preset_F", "Preset_F");
-    Check(ItemIds.Preset("user/VRoid/Clothing/abc/TransferableGroupType.N00.Level1.Tops.transferablegroup") == null, "a user item is built in");
-    Check(ItemIds.Preset(null) == null, "no resource is an item");
-    Check(ItemIds.Preset("pixiv/VRoid/Clothing/Tops/N00/a-b/x.transferablegroup") == null, "an ID the CLI refuses");
-    Check(ItemIds.Preset("pixiv/VRoid/Clothing/Tops/N00/custom/x.transferablegroup") == null, "the reserved ID");
-    Check(ItemIds.AccessoryKey("Model.N00.Transferable.GlassesLow") == "GlassesLow", "accessory key");
-    Check(ItemIds.AccessoryKey(null) == null && ItemIds.AccessoryKey("Other.GlassesLow") == null, "a user accessory is built in");
-    Check(ItemIds.Attachment("pixiv/VRoid/Attachment/CatEar/N00/Base_N00_000_00_Accessory_CatEar/TransferableGroupType.N00.Level1.AnimalEar.transferablegroup") == "CatEar", "CatEar");
-    Check(ItemIds.Attachment("pixiv/VRoid/Clothing/Tops/N00/159/x.transferablegroup") == null, "a top is an accessory");
-    Check(ItemIds.Attachment("user/VRoid/AdditionalAccessoryTemplate/e004.transferable") == null, "a user accessory is built in");
-    Check(ItemIds.IsSet("TransferableGroupType.N00.Level0.HairSet") && ItemIds.IsSet("TransferableGroupType.N00.Level1.EyeSet"), "sets");
-    Check(!ItemIds.IsSet("TransferableGroupType.N00.Level1.Tops"), "Tops is a set");
-    // An accessory's key names its template; a group an import started makes it custom.
+    Check(Identifiers.CategoryItem("pixiv/VRoid/Clothing/Tops/N00/159/TransferableGroupType.N00.Level1.Tops.transferablegroup") == "159", "Tops 159");
+    Check(Identifiers.CategoryItem("pixiv/VRoid/Hair/N00/Preset_F/TransferableGroupType.N00.Level1.HairFront.transferablegroup") == "Preset_F", "Preset_F");
+    Check(Identifiers.CategoryItem("user/VRoid/Clothing/abc/TransferableGroupType.N00.Level1.Tops.transferablegroup") == null, "a user item is built in");
+    Check(Identifiers.CategoryItem(null) == null, "no resource is an item");
+    Check(Identifiers.CategoryItem("pixiv/VRoid/Clothing/Tops/N00/a-b/x.transferablegroup") == null, "an identifier the CLI refuses");
+    Check(Identifiers.CategoryItem("pixiv/VRoid/Clothing/Tops/N00/custom/x.transferablegroup") == null, "the reserved identifier");
+    Check(Identifiers.AccessoryKey("Model.N00.Transferable.GlassesLow") == "GlassesLow", "accessory key");
+    Check(Identifiers.AccessoryKey(null) == null && Identifiers.AccessoryKey("Other.GlassesLow") == null, "a user accessory is built in");
+    Check(Identifiers.Attachment("pixiv/VRoid/Attachment/CatEar/N00/Base_N00_000_00_Accessory_CatEar/TransferableGroupType.N00.Level1.AnimalEar.transferablegroup") == "CatEar", "CatEar");
+    Check(Identifiers.Attachment("pixiv/VRoid/Clothing/Tops/N00/159/x.transferablegroup") == null, "a top is an accessory");
+    Check(Identifiers.Attachment("user/VRoid/AdditionalAccessoryTemplate/e004.transferable") == null, "a user accessory is built in");
+    Check(Identifiers.IsSet("TransferableGroupType.N00.Level0.HairSet") && Identifiers.IsSet("TransferableGroupType.N00.Level1.EyeSet"), "sets");
+    Check(!Identifiers.IsSet("TransferableGroupType.N00.Level1.Tops"), "Tops is a set");
+    // An accessory's key names its item; a group an import started makes it custom.
     var builtIn = new HashSet<string> { "CatEar", "RabbitEar" };
     const string ears = "pixiv/VRoid/Attachment/CatEar/N00/Base_N00_000_00_Accessory_CatEar/TransferableGroupType.N00.Level1.AnimalEar.transferablegroup";
-    Check(ItemIds.Accessory("Model.N00.Transferable.CatEar", ears, builtIn) == "CatEar", "a built-in accessory");
-    Check(ItemIds.Accessory("Model.N00.Transferable.CatEar", "user/VRoid/CustomItem/ea62.transferablegroup", builtIn) == "custom",
+    Check(Identifiers.Accessory("Model.N00.Transferable.CatEar", ears, builtIn) == "CatEar", "a built-in accessory");
+    Check(Identifiers.Accessory("Model.N00.Transferable.CatEar", "user/VRoid/CustomItem/ea62.transferablegroup", builtIn) == "custom",
         "an imported accessory is built in");
-    Check(ItemIds.Accessory("Model.N00.Transferable.RabbitEar", "user/VRoid/CustomItem/ea62.transferablegroup", builtIn) == "custom",
+    Check(Identifiers.Accessory("Model.N00.Transferable.RabbitEar", "user/VRoid/CustomItem/ea62.transferablegroup", builtIn) == "custom",
         "a built-in accessory in an imported one's group keeps its identifier");
-    Check(ItemIds.Accessory("Model.N00.Transferable.FoxTail", ears, builtIn) == "custom", "an accessory the catalog lacks is built in");
-    Check(ItemIds.Accessory(null, ears, builtIn) == "custom", "an accessory without a key is built in");
-    Check(ItemIds.Imported("user/VRoid/CustomItem/ea62.transferablegroup") && !ItemIds.Imported(ears), "imported groups");
+    Check(Identifiers.Accessory("Model.N00.Transferable.FoxTail", ears, builtIn) == "custom", "an accessory the catalog lacks is built in");
+    Check(Identifiers.Accessory(null, ears, builtIn) == "custom", "an accessory without a key is built in");
+    Check(Identifiers.Imported("user/VRoid/CustomItem/ea62.transferablegroup") && !Identifiers.Imported(ears), "imported groups");
     // Selectors list conflicts as transferable types, categories as group types.
-    Check(ItemIds.Kind("TransferableType.N00.Onepiece") == ItemIds.Kind("TransferableGroupType.N00.Level1.Onepiece"), "kinds differ");
+    Check(Identifiers.Kind("TransferableType.N00.Onepiece") == Identifiers.Kind("TransferableGroupType.N00.Level1.Onepiece"), "kinds differ");
 });
 
 const string Head = "J_Bip_C_Head", Hips = "J_Bip_C_Hips", Chest = "J_Bip_C_Chest", Neck = "J_Bip_C_Neck";
-// VRoid keeps one group per kind, such as every pair of animal ears.
+// VRoid keeps one group per accessory kind, such as every pair of animal ears.
 string Kind(string item) => item is "CatEar" or "RabbitEar" ? "ears" : item;
 WornAccessory Worn(string item, string? bone, string group = "") => new(item, bone, group == "" ? Kind(item) : group);
 WantedAccessory Any(string item) => new(item, false, null, Kind(item));
 WantedAccessory On(string item, string? bone) => new(item, true, bone, Kind(item));
 string Show(AccessoryPlan plan) =>
     $"kept {string.Join(",", plan.Kept)} rebone {string.Join(",", plan.Rebone)} removed {string.Join(",", plan.Removed)} "
-    + $"added {string.Join(",", plan.Added)} rebuilt {string.Join(",", plan.Rebuilt)} errors {string.Join("; ", plan.Errors)}";
+    + $"added {string.Join(",", plan.Added)} readded {string.Join(",", plan.Readded)} errors {string.Join("; ", plan.Errors)}";
 
 Test("accessories keep matching items in order and add or remove the rest", _ =>
 {
@@ -559,7 +560,7 @@ Test("accessories keep matching items in order and add or remove the rest", _ =>
         new[] { Any("CatEar"), Any("FoxTail"), Any("custom") });
     Check(plan.Kept.SequenceEqual(new[] { (1, 0), (2, 2) }) && plan.Removed.SequenceEqual(new[] { 0, 3 }) && plan.Rebone.Count == 0
         && plan.Added.SequenceEqual(new[] { new Addition(1, null, false, Hips) }) && plan.Errors.Count == 0, Show(plan));
-    // "custom" with no worn accessory that is not built in is an addition, which apply refuses.
+    // "custom" with no worn custom accessory is an addition, which apply refuses.
     var missing = AccessoryPlan.Of(Array.Empty<WornAccessory>(), new[] { Any("custom") });
     Check(missing.Added.SequenceEqual(new[] { new Addition(0, null, false, null) }), Show(missing));
     var same = AccessoryPlan.Of(new[] { Worn("CatEar", Head), Worn("CatEar", Chest) }, new[] { On("CatEar", Head), On("CatEar", Chest) });
@@ -578,33 +579,33 @@ Test("accessories of one item reach every arrangement of bones VRoid can make", 
     // Undoing the removal of a moved one while its twin stays: the twin cannot
     // stay, since the moved one must be added alone.
     var undo = AccessoryPlan.Of(new[] { Worn("CatEar", Head) }, new[] { On("CatEar", Head), On("CatEar", Chest) });
-    Check(undo.Kept.Count == 0 && undo.Removed.SequenceEqual(new[] { 0 }) && undo.Rebuilt.SetEquals(new[] { 0 })
+    Check(undo.Kept.Count == 0 && undo.Removed.SequenceEqual(new[] { 0 }) && undo.Readded.SetEquals(new[] { 0 })
         && undo.Added.SequenceEqual(new[] { new Addition(1, null, true, Chest), new Addition(0, null, false, Head) })
         && undo.Matched.SequenceEqual(new int?[] { 0, null }), Show(undo));
     // Two kept ones cannot move, so both are added again: one moved, then a copy.
     var both = AccessoryPlan.Of(new[] { Worn("CatEar", Head), Worn("CatEar", Head) }, new[] { On("CatEar", Chest), On("CatEar", Chest) });
-    Check(both.Removed.SequenceEqual(new[] { 0, 1 }) && both.Rebuilt.Count == 2
+    Check(both.Removed.SequenceEqual(new[] { 0, 1 }) && both.Readded.Count == 2
         && both.Added.SequenceEqual(new[] { new Addition(0, null, true, Chest), new Addition(1, 0, false, Chest) })
         && both.Matched.SequenceEqual(new int?[] { 0, 1 }), Show(both));
     // A new set moves its first one away from home while it is alone.
     var fresh = AccessoryPlan.Of(Array.Empty<WornAccessory>(), new[] { On("CatEar", Head), On("CatEar", Chest), On("CatEar", Chest) });
     Check(fresh.Added.SequenceEqual(new[] { new Addition(1, null, true, Chest), new Addition(0, null, false, Head),
-        new Addition(2, 1, false, Chest) }) && fresh.Rebuilt.Count == 0, Show(fresh));
+        new Addition(2, 1, false, Chest) }) && fresh.Readded.Count == 0, Show(fresh));
     // Cat and rabbit ears share a group, so one cannot move while the other is worn.
     var ears = AccessoryPlan.Of(new[] { Worn("CatEar", Head), Worn("RabbitEar", Head) }, new[] { On("CatEar", Chest), Any("RabbitEar") });
-    Check(ears.Rebuilt.Count == 2 && ears.Added.SequenceEqual(new[] { new Addition(0, null, true, Chest), new Addition(1, null, false, Head) }),
+    Check(ears.Readded.Count == 2 && ears.Added.SequenceEqual(new[] { new Addition(0, null, true, Chest), new Addition(1, null, false, Head) }),
         Show(ears));
     // One that names no bone keeps a worn one on the default bone whichever VRoid
     // lists first, so the other may move.
     foreach (var worn in new[] { new[] { Worn("CatEar", Neck), Worn("CatEar", Head) }, new[] { Worn("CatEar", Head), Worn("CatEar", Neck) } })
     {
-        // Even though the bare entry matches either.
+        // Even though the bare accessory entry matches either.
         var order = AccessoryPlan.Of(worn, new[] { Any("CatEar"), On("RabbitEar", Chest) }, (i, _) => i == 0);
         var source = order.Matched[0];
         Check(order.Errors.Count == 0 && source != null && worn[source.Value].Bone == Head, Show(order));
     }
-    // An entry that already matches a worn one keeps it, so reapplying a dump
-    // changes nothing whichever order VRoid lists them in.
+    // An accessory entry that already matches a worn one keeps it, so reapplying
+    // a dump changes nothing whichever order VRoid lists them in.
     var dumped = AccessoryPlan.Of(new[] { Worn("CatEar", Head), Worn("CatEar", Head) }, new[] { On("CatEar", Head), On("CatEar", Head) },
         (i, j) => i != j);
     Check(dumped.Kept.SequenceEqual(new[] { (1, 0), (0, 1) }) && dumped.Removed.Count == 0, Show(dumped));
@@ -615,7 +616,7 @@ Test("accessories of one item reach every arrangement of bones VRoid can make", 
     var copies = AccessoryPlan.Of(new[] { Worn("CatEar", Head), Worn("CatEar", Neck), Worn("CatEar", Neck) }, new[] { Any("CatEar") },
         (_, j) => j == 1);
     Check(copies.Kept.SequenceEqual(new[] { (1, 0) }) && copies.Removed.SequenceEqual(new[] { 0, 2 }), Show(copies));
-    // "custom" keeps app order, its only identity, so undo files restore it.
+    // "custom" keeps VRoid's order, its only identity, so undo files restore it.
     var customs = AccessoryPlan.Of(new[] { Worn("custom", Head, "user"), Worn("custom", Head, "user") }, new[] { Any("custom"), Any("custom") },
         (i, j) => i != j);
     Check(customs.Kept.SequenceEqual(new[] { (0, 0), (1, 1) }) && customs.Removed.Count == 0, Show(customs));
@@ -637,7 +638,7 @@ Test("apply refuses bones VRoid cannot combine, built-in accessories that would 
     // Kept ones are still matched, so their values are checked too.
     var refused = AccessoryPlan.Of(new[] { Worn("CatEar", Neck), Worn("RabbitEar", Head) }, new[] { On("CatEar", Neck), On("RabbitEar", Chest) });
     Check(refused.Errors.Count == 1 && refused.Matched.SequenceEqual(new int?[] { 0, 1 }), Show(refused));
-    // A copy is of one item, so two items of a kind cannot both move.
+    // A copy is of one item, so two items of an accessory kind cannot both move.
     var mixed = AccessoryPlan.Of(Array.Empty<WornAccessory>(), new[] { On("CatEar", Chest), On("RabbitEar", Chest) });
     Check(mixed.Errors.Count == 1, Show(mixed));
     // A kept one counts with the bone it stays on.
@@ -645,11 +646,11 @@ Test("apply refuses bones VRoid cannot combine, built-in accessories that would 
     Check(kept.Errors.Count == 1, Show(kept));
     // A custom accessory moves only while alone in its group.
     var crowded = AccessoryPlan.Of(new[] { Worn("custom", Head, "user"), Worn("custom", Head, "user") }, new[] { On("custom", Chest), Any("custom") });
-    Check(crowded.Errors.Single().Contains("only while no other accessory of its kind is worn") && crowded.Rebone.Count == 0, Show(crowded));
+    Check(crowded.Errors.Single().Contains("only while no other accessory of its accessory kind is worn") && crowded.Rebone.Count == 0, Show(crowded));
     var alone = AccessoryPlan.Of(new[] { Worn("custom", Head, "user"), Worn("custom", Head, "other") }, new[] { On("custom", Chest), Any("custom") });
     Check(alone.Errors.Count == 0 && alone.Rebone.SequenceEqual(new (int, string?)[] { (0, Chest) }), Show(alone));
-    // A built-in accessory added to a kind whose group an import started would read
-    // as custom, even once no accessory of the kind is worn, since VRoid keeps the group.
+    // A built-in accessory added to an accessory kind whose group an import started would
+    // read as custom, even once no accessory of that kind is worn, since VRoid keeps the group.
     var imported = new HashSet<string> { "ears" };
     var joins = AccessoryPlan.Of(new[] { Worn("custom", Head, "ears") }, new[] { Any("custom"), Any("RabbitEar"), Any("FoxTail") }, null, imported);
     Check(joins.Errors.Single().StartsWith("Accessories[1]: VRoid keeps the group of ears accessories that an import started")
@@ -771,27 +772,27 @@ Test("a VRM file names its version, title, and author", _ =>
 });
 
 // R-EDIT-7
-Test("dumps order accessories so they compare across instances", _ =>
+Test("dumps order accessories so they compare across app instances", _ =>
 {
-    // By item, then the others in app order; one item's built-in accessories by entry.
+    // By item, then the others in VRoid's order; one item's built-in accessories by accessory entry.
     Check(AccessoryPlan.DumpOrder(new[] { "custom", "FoxTail", "CatEar", "CatEar", "custom" }, new[] { "z", "a", "b", "a", "y" })
         .SequenceEqual(new[] { 3, 2, 1, 0, 4 }), "dump order");
 });
 
 // R-VIEW-4
-Test("the sheet font draws every identifier character distinctly", _ =>
+Test("the thumbnail sheet's font draws every identifier character distinctly", _ =>
 {
     var allowed = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_";
-    Check(Sheet.Font.Keys.OrderBy(c => c).SequenceEqual(allowed.OrderBy(c => c)), "the font does not match ItemIds' characters");
+    Check(ThumbnailSheet.Font.Keys.OrderBy(c => c).SequenceEqual(allowed.OrderBy(c => c)), "the font does not match Identifiers' characters");
     // Every character the font covers is valid in an identifier.
-    Check(ItemIds.Preset($"pixiv/VRoid/Hair/N00/{allowed}/x.transferablegroup") == allowed, "the font covers characters ItemIds refuses");
-    foreach (var (c, glyph) in Sheet.Font)
+    Check(Identifiers.CategoryItem($"pixiv/VRoid/Hair/N00/{allowed}/x.transferablegroup") == allowed, "the font covers characters Identifiers refuses");
+    foreach (var (c, glyph) in ThumbnailSheet.Font)
     {
         var rows = glyph.Split(' ');
         Check(rows.Length is >= 7 and <= 9 && rows.All(row => row.Length == 5 && row.All(dot => dot is '.' or '#')), $"malformed glyph {c}");
         Check(glyph.Contains('#'), $"blank glyph {c}");
     }
-    var shapes = Sheet.Font.Values.Select(glyph => glyph.PadRight(53, '.')).ToList();
+    var shapes = ThumbnailSheet.Font.Values.Select(glyph => glyph.PadRight(53, '.')).ToList();
     Check(shapes.Distinct().Count() == shapes.Count, "two glyphs look the same");
 });
 
@@ -830,20 +831,20 @@ Test("a reference keeps its aspect ratio", _ =>
 });
 
 // R-VIEW-4
-Test("the sheet lays thumbnails out in labelled rows of ten", _ =>
+Test("the thumbnail sheet lays thumbnails out in labelled rows of ten", _ =>
 {
     var labels = Enumerable.Range(0, 82).Select(i => i.ToString("000")).ToArray();
-    var sheet = new Sheet(labels);
+    var sheet = new ThumbnailSheet(labels);
     Check((sheet.Width, sheet.Height) == (1544, 2056), $"82 items: {sheet.Width}x{sheet.Height}");
     Check(sheet.Pixels.Length == sheet.Width * sheet.Height * 3, "pixel buffer size");
-    var small = new Sheet(new[] { "Default", "Preset_F" });
+    var small = new ThumbnailSheet(new[] { "Default", "Preset_F" });
     Check((small.Width, small.Height) == (312, 232), $"2 items: {small.Width}x{small.Height}");
 
     // Pixels run bottom row first; this reads them top first.
-    byte Red(Sheet image, int x, int top) => image.Pixels[((image.Height - 1 - top) * image.Width + x) * 3];
-    var thumbnail = new byte[Sheet.ThumbWidth * Sheet.ThumbHeight * 3];
+    byte Red(ThumbnailSheet image, int x, int top) => image.Pixels[((image.Height - 1 - top) * image.Width + x) * 3];
+    var thumbnail = new byte[ThumbnailSheet.ThumbWidth * ThumbnailSheet.ThumbHeight * 3];
     // The source's bottom row is dark, the rest mid-grey.
-    for (var i = 0; i < thumbnail.Length; i++) thumbnail[i] = i < Sheet.ThumbWidth * 3 ? (byte)10 : (byte)128;
+    for (var i = 0; i < thumbnail.Length; i++) thumbnail[i] = i < ThumbnailSheet.ThumbWidth * 3 ? (byte)10 : (byte)128;
     sheet.Place(11, thumbnail);
     // Cell 11 is the second in the second row: x = 4 + 154, top = 4 + 228.
     Check(Red(sheet, 158, 232) == 128 && Red(sheet, 307, 232) == 128, "thumbnail top row misplaced");
@@ -851,27 +852,27 @@ Test("the sheet lays thumbnails out in labelled rows of ten", _ =>
     Check(Red(sheet, 157, 232) == 255 && Red(sheet, 158, 231) == 255 && Red(sheet, 308, 232) == 255, "thumbnail spills into the gutter");
     Check(Red(sheet, 4, 4) == 255, "an empty cell is not white");
 
-    bool Inked(Sheet image, int index)
+    bool Inked(ThumbnailSheet image, int index)
     {
-        var (x, top) = (4 + index % 10 * 154, 4 + index / 10 * 228 + Sheet.ThumbHeight);
+        var (x, top) = (4 + index % 10 * 154, 4 + index / 10 * 228 + ThumbnailSheet.ThumbHeight);
         for (var row = top; row < top + 24; row++)
-            for (var column = x; column < x + Sheet.ThumbWidth; column++)
+            for (var column = x; column < x + ThumbnailSheet.ThumbWidth; column++)
                 if (Red(image, column, row) < 128) return true;
         return false;
     }
     Check(Inked(sheet, 0) && Inked(sheet, 81), "a label is missing");
 
     // The longest label stays inside its cell, with its first and last glyphs drawn.
-    var longest = new Sheet(new[] { new string('W', Sheet.MaxLabel) });
+    var longest = new ThumbnailSheet(new[] { new string('W', ThumbnailSheet.MaxLabel) });
     var ink = Enumerable.Range(0, longest.Width).Where(x =>
-        Enumerable.Range(4 + Sheet.ThumbHeight, 24).Any(top => Red(longest, x, top) < 128)).ToArray();
-    Check(ink.Length > 0 && ink.Min() >= 4 && ink.Max() < 4 + Sheet.ThumbWidth, "the longest label leaves its cell");
-    Check(ink.Min() < 4 + 10 && ink.Max() >= 4 + Sheet.ThumbWidth - 10, "the longest label is not centred across its cell");
-    foreach (var bad in new[] { new string('W', Sheet.MaxLabel + 1), "a-b", "" })
+        Enumerable.Range(4 + ThumbnailSheet.ThumbHeight, 24).Any(top => Red(longest, x, top) < 128)).ToArray();
+    Check(ink.Length > 0 && ink.Min() >= 4 && ink.Max() < 4 + ThumbnailSheet.ThumbWidth, "the longest label leaves its cell");
+    Check(ink.Min() < 4 + 10 && ink.Max() >= 4 + ThumbnailSheet.ThumbWidth - 10, "the longest label is not centred across its cell");
+    foreach (var bad in new[] { new string('W', ThumbnailSheet.MaxLabel + 1), "a-b", "" })
     {
         try
         {
-            var drawn = new Sheet(new[] { bad });
+            var drawn = new ThumbnailSheet(new[] { bad });
             Check(false, $"drew label {bad}");
         }
         catch (ArgumentException)

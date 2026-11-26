@@ -4,52 +4,54 @@ using System.Text.RegularExpressions;
 
 namespace VroidBridge;
 
-public static class ItemIds
+public static class Identifiers
 {
-    /// Stands for an item that is not one of VRoid's built-in items.
+    /// Stands for a custom item.
     public const string Custom = "custom";
 
     private const string BuiltIn = "pixiv/VRoid/";
     private const string Attachments = "pixiv/VRoid/Attachment/";
     private const string AccessoryName = "Model.N00.Transferable.";
     private const string CustomItems = "user/VRoid/CustomItem/";
-    // The CLI's ItemId pattern; "custom" is reserved.
+    // The CLI's pattern for an identifier; "custom" is reserved.
     private static readonly Regex Valid = new("^[A-Za-z0-9_]+$");
 
-    private static string? Checked(string id) => Valid.IsMatch(id) && id != Custom ? id : null;
+    private static string? Checked(string identifier) =>
+        Valid.IsMatch(identifier) && identifier != Custom ? identifier : null;
 
-    /// A built-in item's resource name ends in `.../ID/TYPE.transferablegroup`,
-    /// such as `pixiv/VRoid/Clothing/Tops/N00/159/...`. The ID is unique within
-    /// its category in VRoid 2.16.0; null means the name has no valid ID.
+    /// The resource name of a built-in item that a category lists ends in
+    /// `.../IDENTIFIER/TYPE.transferablegroup`, such as
+    /// `pixiv/VRoid/Clothing/Tops/N00/159/...`. The identifier is unique within
+    /// its category in VRoid 2.16.0; null means the name has no valid one.
     /// The name is a fixed asset path, so an item's identifier is the same in
     /// every session and after every restart (R-EDIT-9).
-    public static string? Preset(string? resourceName)
+    public static string? CategoryItem(string? resourceName)
     {
         if (resourceName == null || !resourceName.StartsWith(BuiltIn)) return null;
         var parts = resourceName.Split('/');
         return parts.Length >= 4 ? Checked(parts[^2]) : null;
     }
 
-    /// A built-in accessory template's resource name is
-    /// `pixiv/VRoid/Attachment/ID/...`, such as `CatEar`; null means it is not
-    /// built in.
+    /// A built-in accessory item's resource name is
+    /// `pixiv/VRoid/Attachment/IDENTIFIER/...`, such as `CatEar`; null means the
+    /// name is not one.
     public static string? Attachment(string? resourceName) =>
         resourceName != null && resourceName.StartsWith(Attachments)
             ? Checked(resourceName[Attachments.Length..].Split('/')[0])
             : null;
 
-    /// A worn accessory's display name keeps the localization key of the
-    /// template it was added from, `Model.N00.Transferable.ID`, even for the
-    /// copies VRoid makes when it adds a second accessory of a kind; null means
-    /// the name has no such key.
+    /// A worn accessory's display name keeps the localization key of the item
+    /// it was added from, `Model.N00.Transferable.IDENTIFIER`, even for the
+    /// copies VRoid makes when it adds a second accessory of an accessory kind;
+    /// null means the name has no such key.
     public static string? AccessoryKey(string? localizationKey) =>
         localizationKey != null && localizationKey.StartsWith(AccessoryName)
             ? Checked(localizationKey[AccessoryName.Length..])
             : null;
 
-    /// A worn accessory's item: the built-in template its localization key
-    /// names, or "custom". The key names the template even for an imported
-    /// accessory, but VRoid keeps every accessory of a kind in one group, and a
+    /// A worn accessory's item: the built-in item its localization key names,
+    /// or "custom". The key names the item even for an imported accessory, but
+    /// VRoid keeps every accessory of an accessory kind in one group, and a
     /// group an imported accessory started is a `user/VRoid/CustomItem/...`
     /// resource, so every accessory in such a group is custom.
     /// An accessory that VRoid's own Import button added to a group of built-in
@@ -75,7 +77,7 @@ public static class ItemIds
 /// accessory can hang from, and the one each built-in accessory starts on.
 public static class Bones
 {
-    /// The avatar's humanoid bones in VRoid 2.16.0, in its order.
+    /// The character's humanoid bones in VRoid 2.16.0, in its order.
     public static readonly IReadOnlyList<string> All = new[]
     {
         "J_Bip_C_Hips", "J_Bip_L_UpperLeg", "J_Bip_R_UpperLeg", "J_Bip_L_LowerLeg", "J_Bip_R_LowerLeg",
@@ -100,7 +102,7 @@ public static class Bones
     };
 
     /// The bone VRoid 2.16.0 puts a newly added built-in accessory on, or null
-    /// for an item that is not built in.
+    /// for any other item.
     public static string? Default(string item) => Defaults.GetValueOrDefault(item);
 }
 
@@ -126,49 +128,50 @@ public static class Placement
         scale.All(factor => factor > 0) ? null : "every factor must be positive";
 }
 
-/// A worn accessory as matching sees it: its item, bone, and kind, the group
-/// type VRoid keeps one group of accessories for, such as every pair of animal
-/// ears. A null bone is VRoid's "None".
+/// A worn accessory as matching sees it: its item, bone, and accessory kind,
+/// the group type VRoid keeps one group of accessories for, such as every pair
+/// of animal ears. A null bone is VRoid's "None".
 public sealed record WornAccessory(string Item, string? Bone, string Kind);
 
 /// A wanted accessory: its item, its bone if the request names one, and its
-/// kind, the group type a built-in one joins.
+/// accessory kind, the group type a built-in one joins.
 public sealed record WantedAccessory(string Item, bool HasBone, string? Bone, string Kind);
 
-/// One accessory to add for a wanted index: a new one from its template, or a
-/// copy of the one added for `CopyOf`, which copies its bone. `SetBone` moves
-/// it to its wanted bone once it is added, while no other of its kind is worn.
-/// `Bone` is the bone it ends on. When a rebuild replaced a worn accessory,
-/// `Matched` names it, and the new one takes over its values.
+/// One accessory to add for a wanted index: a new one of its item, or a copy
+/// of the one added for `CopyOf`, which copies its bone. `SetBone` moves it to
+/// its wanted bone once it is added, while no other of its accessory kind is
+/// worn. `Bone` is the bone it ends on. When it replaces a worn accessory that
+/// was removed to be added again, `Matched` names that one, and the new one
+/// takes over its values.
 public sealed record Addition(int Wanted, int? CopyOf, bool SetBone, string? Bone);
 
 /// How worn accessories become the wanted ones. `Kept` pairs a worn index with
 /// a wanted index, and `Rebone` moves kept ones to their wanted bone. `Removed`
 /// lists worn indices to remove, `Added` the accessories to add in order.
-/// `Rebuilt` is the worn indices removed only to add them again, which do not
+/// `Readded` is the worn indices removed only to add them again, which do not
 /// count as changes. `Matched` is the worn accessory each wanted one keeps or
 /// replaces, even where `Errors` holds what VRoid cannot do.
 public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int Worn, string? Bone)> Rebone,
-    List<int> Removed, List<Addition> Added, HashSet<int> Rebuilt, int?[] Matched, List<string> Errors)
+    List<int> Removed, List<Addition> Added, HashSet<int> Readded, int?[] Matched, List<string> Errors)
 {
     /// VRoid changes an accessory's bone only while no other accessory of its
-    /// kind is worn; it adds one on its default bone, and a duplicate copies the
-    /// item and bone. So the accessories of one kind sit on their default bone,
-    /// except copies of one item on one other bone. Built-in accessories of one
-    /// item are interchangeable: a wanted one keeps a worn one that `same` says
-    /// already matches it, first among those on the default bone if it names no
-    /// bone; then one that names its bone keeps one on that bone, and one that
-    /// names no bone keeps one on the default bone, then any. When a kept
-    /// one cannot move, every one of that kind is removed and added again: one
-    /// first, moved while alone, then copies of it and new ones. "custom" matches
-    /// any worn accessory that is not built in, in order, which is its only
-    /// identity, and moves only while alone in its kind. VRoid keeps a kind's
-    /// group after its last accessory is removed, and adds a built-in one to a
-    /// group an import started, where it reads as custom, so none is added to
-    /// the `imported` kinds.
-    /// Removing a kind's accessories and adding them again reaches every
-    /// arrangement of bones VRoid's own controls can make for built-in
-    /// accessories (R-EDIT-7, R-EDIT-11).
+    /// accessory kind is worn; it adds one on its default bone, and a duplicate
+    /// copies the item and bone. So the accessories of one accessory kind sit on
+    /// their default bone, except copies of one item on one other bone. Built-in
+    /// accessories of one item are interchangeable: a wanted one keeps a worn
+    /// one that `same` says already matches it, first among those on the
+    /// default bone if it names no bone; then one that names its bone keeps one
+    /// on that bone, and one that names no bone keeps one on the default bone,
+    /// then any. When a kept one cannot move, every one of that accessory kind
+    /// is removed and added again: one first, moved while alone, then copies of
+    /// it and new ones. "custom" matches any worn custom accessory, in order,
+    /// which is its only identity, and moves only while alone in its accessory
+    /// kind. VRoid keeps an accessory kind's group after its last accessory is
+    /// removed, and adds a built-in one to a group an import started, where it
+    /// reads as custom, so none is added to the `imported` accessory kinds.
+    /// Removing the accessories of an accessory kind and adding them again
+    /// reaches every arrangement of bones VRoid's own controls can make for
+    /// built-in accessories (R-EDIT-7, R-EDIT-11).
     public static AccessoryPlan Of(IReadOnlyList<WornAccessory> worn, IReadOnlyList<WantedAccessory> wanted,
         Func<int, int, bool>? same = null, IReadOnlySet<string>? imported = null)
     {
@@ -183,8 +186,8 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
         int Free(int i, Func<int, bool> fits) =>
             Enumerable.Range(0, worn.Count).FirstOrDefault(j => !used[j] && worn[j].Item == wanted[i].Item && fits(j), -1);
         // A built-in one that names no bone takes one on its default bone first, so
-        // it never leaves the default bone only because of app order.
-        bool BuiltIn(int i) => wanted[i].Item != ItemIds.Custom;
+        // it never leaves the default bone only because of VRoid's order.
+        bool BuiltIn(int i) => wanted[i].Item != Identifiers.Custom;
         foreach (var pass in new Func<int, int, bool>[]
                  {
                      (i, j) => BuiltIn(i) && same != null && same(i, j)
@@ -204,26 +207,26 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
 
         for (var i = 0; i < wanted.Count; i++)
             // An unmatched one is added, which the caller refuses.
-            if (wanted[i].Item == ItemIds.Custom && matched[i] == null) plan.Added.Add(new Addition(i, null, false, null));
-            else if (wanted[i].Item == ItemIds.Custom && matched[i] is { } j)
+            if (wanted[i].Item == Identifiers.Custom && matched[i] == null) plan.Added.Add(new Addition(i, null, false, null));
+            else if (wanted[i].Item == Identifiers.Custom && matched[i] is { } j)
             {
                 plan.Kept.Add((j, i));
                 if (!Moves(i)) continue;
                 if (Enumerable.Range(0, worn.Count).Count(k => used[k] && worn[k].Kind == worn[j].Kind) > 1)
-                    plan.Errors.Add($"Accessories[{i}]: VRoid moves an accessory to another bone only while no other accessory of its kind is worn");
+                    plan.Errors.Add($"Accessories[{i}]: VRoid moves an accessory to another bone only while no other accessory of its accessory kind is worn");
                 else plan.Rebone.Add((j, wanted[i].Bone));
             }
-        foreach (var kind in wanted.Where(entry => entry.Item != ItemIds.Custom).Select(entry => entry.Kind).Distinct())
+        foreach (var kind in wanted.Where(entry => entry.Item != Identifiers.Custom).Select(entry => entry.Kind).Distinct())
         {
-            var entries = Enumerable.Range(0, wanted.Count).Where(i => wanted[i].Item != ItemIds.Custom && wanted[i].Kind == kind).ToList();
+            var entries = Enumerable.Range(0, wanted.Count).Where(i => wanted[i].Item != Identifiers.Custom && wanted[i].Kind == kind).ToList();
             var kept = entries.Where(i => matched[i] != null).ToList();
             if (imported != null && imported.Contains(kind))
             {
-                // A built-in one of this kind would read as custom, so none is worn.
+                // A built-in one of this accessory kind would read as custom, so none is worn.
                 foreach (var i in entries)
-                    plan.Errors.Add($"Accessories[{i}]: VRoid keeps the group of {ItemIds.Kind(kind)} accessories that an import started, even "
+                    plan.Errors.Add($"Accessories[{i}]: VRoid keeps the group of {Identifiers.Kind(kind)} accessories that an import started, even "
                         + $"after the last one is removed, and would add {wanted[i].Item} to it, where it would read as custom, so vroid-cli cannot "
-                        + $"add a built-in accessory of kind {ItemIds.Kind(kind)} to this project. Report this VRoid limit to the user");
+                        + $"add a built-in accessory of the accessory kind {Identifiers.Kind(kind)} to this character. Report this VRoid limit to the user");
                 continue;
             }
             // An item VRoid does not offer, which the caller refuses.
@@ -237,7 +240,7 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
             var away = entries.Where(Away).Select(i => (wanted[i].Item, Bone: Final(i))).Distinct().ToList();
             if (away.Count > 1)
             {
-                plan.Errors.Add($"Accessories: VRoid moves accessories of one kind off their default bone only as copies of one, "
+                plan.Errors.Add($"Accessories: VRoid moves accessories of one accessory kind off their default bone only as copies of one, "
                     + $"but these put {string.Join(", ", away.Select(entry => $"{entry.Item} on {entry.Bone ?? "None"}"))}");
                 continue;
             }
@@ -253,7 +256,7 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
                 foreach (var i in kept)
                 {
                     plan.Removed.Add(matched[i]!.Value);
-                    plan.Rebuilt.Add(matched[i]!.Value);
+                    plan.Readded.Add(matched[i]!.Value);
                 }
             // The first one away from its default bone moves while it is alone; the
             // others there copy it, and the rest start at their default.
@@ -269,11 +272,11 @@ public sealed record AccessoryPlan(List<(int Worn, int Wanted)> Kept, List<(int 
 
     /// Worn accessories in a dump's order: by item, built-in before custom.
     /// Built-in accessories of one item are interchangeable, so they are ordered
-    /// by `key`, their entry, and dumps compare across instances whichever one
-    /// VRoid lists first; custom ones keep app order.
+    /// by `key`, their accessory entry, and dumps compare across app instances
+    /// whichever one VRoid lists first; custom ones keep VRoid's order.
     public static IEnumerable<int> DumpOrder(IReadOnlyList<string> worn, IReadOnlyList<string> key) =>
         Enumerable.Range(0, worn.Count)
-            .OrderBy(i => worn[i] == ItemIds.Custom)
+            .OrderBy(i => worn[i] == Identifiers.Custom)
             .ThenBy(i => worn[i], StringComparer.Ordinal)
-            .ThenBy(i => worn[i] == ItemIds.Custom ? "" : key[i], StringComparer.Ordinal);
+            .ThenBy(i => worn[i] == Identifiers.Custom ? "" : key[i], StringComparer.Ordinal);
 }
