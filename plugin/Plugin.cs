@@ -157,6 +157,8 @@ public sealed partial class Plugin : BasePlugin
         return Reflect.Items(views).Select(view => Reflect.Get(view, "_viewModel")).FirstOrDefault(value => value != null);
     }
 
+    // The CLI reads `protocol`, `heartbeat`, and `main` from a bridge of any
+    // protocol (vroid_cli/rpc.py), so they keep their names and meaning.
     private static object Status() => new
     {
         app_instance = rpc.AppInstance,
