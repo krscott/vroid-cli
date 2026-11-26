@@ -13,7 +13,7 @@ public static class VrmFile
 {
     private const uint Magic = 0x46546C67; // "glTF"
     private const uint JsonChunk = 0x4E4F534A; // "JSON"
-    // VRoid writes well under 1 MiB of JSON; a huge chunk would stall the app's main thread.
+    // VRoid writes well under 1 MiB of JSON; a huge chunk would stall VRoid's main thread.
     private const uint MaxJson = 64 << 20;
 
     /// A VRM is a binary glTF 2.0 file whose JSON chunk holds a VRM 1.0

@@ -4,11 +4,11 @@ namespace VroidBridge;
 // texture editor.
 public sealed partial class Plugin
 {
-    private const string NotBuiltIn = "the worn item is not built in; only built-in items' colours can be set";
+    private const string CustomItem = "the worn item is a custom item; only built-in items' colours can be set";
 
-    // The colour fields of the category's worn item, one per colour of each of
-    // its parts in app order, and whether that item is built in; null for a
-    // category that wears no item or selects other categories' items.
+    // The colours of the category's worn item, one for each colour of each of
+    // its parts in VRoid's order, and whether it is a built-in item; null for
+    // a category that wears no item or selects other categories' items.
     // Parts stay unnamed: VRoid's only name for one is its transferable's
     // display name (`GetTransferableDisplayNameQuery`), which names what the
     // part was modelled from and misleads, such as "Dress (Short Sleeve)" for a
@@ -42,9 +42,9 @@ public sealed partial class Plugin
                     var label = Reflect.CallStatic("VRoidStudio.UICulture.Translator", "Translate", key) as string;
                     if (string.IsNullOrEmpty(label) || label == key) throw Differs($"the colour labels of {slot.Path}");
                     swatches.Add(new Swatch(label, () => Reflect.Call(context, "GetColorParameter", group, path),
-                        // The texture editor's colour field writes without its screen, and
-                        // keeps the item built in (R-EDIT-12). VRoid holds view models'
-                        // event registrations weakly, so each one is collected.
+                        // The texture editor's colour view model writes without its screen,
+                        // and the item stays a built-in item (R-EDIT-12). VRoid holds view
+                        // models' event registrations weakly, so each one is collected.
                         value => Reflect.Call(Reflect.New("VRoid.Studio.TextureEditor.Color.ViewModel.CommonColorViewModel",
                             Reflect.Get(Root, "Resources") ?? throw Differs("the editor resources"), engine, group, path, disable, key,
                             Reflect.Get(Root, "ColorPalette") ?? throw Differs("the colour palette")), "set_Color", value),
@@ -52,7 +52,7 @@ public sealed partial class Plugin
                 }
             }
         }
-        return (swatches.ToArray(), state != ItemIds.Custom);
+        return (swatches.ToArray(), state != Identifiers.Custom);
     }
 
     private static string Kind(object value) => Reflect.Concrete(value).GetType().Name;

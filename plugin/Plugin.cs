@@ -16,26 +16,27 @@ public sealed partial class Plugin : BasePlugin
     private static object? main;
     private static object? root;
     private static bool updating;
-    // Holds ModelOrigin, the root transform of the model on screen.
+    // Holds ModelOrigin, the root transform of the character's model on screen.
     private static object? updater;
     private static bool unsavedChanges;
     // Whether a request has started opening or creating a character in this
-    // app instance; VRoid holds one per instance, even while it loads.
+    // app instance; VRoid holds one per app instance, even while it loads.
     private static bool loaded;
     private static long rebuilt;
     private static int frame = -1;
     private static readonly Dictionary<string, object> Selectors = new();
     private static Request? current;
-    private static IEnumerator<bool>? operation;
+    // The current request's remaining steps, one per frame.
+    private static IEnumerator<bool>? steps;
     private static object? result;
-    // Values the current operation changed, reported if it fails, and the
+    // Values the current request changed, reported if it fails, and the
     // request that restores them, kept in its undo file (R-EDIT-11).
     private static readonly List<string> Changed = new();
     private static object? undo;
     // Whether the undo file may still name a custom accessory removed since.
     private static bool undoStale;
-    // Items that are not built in and that the current operation replaced or
-    // removed, which its undo cannot restore (R-EDIT-10).
+    // Custom items that the current request replaced or removed, which its
+    // undo cannot restore (R-EDIT-10).
     private static readonly List<string> Discarded = new();
     private static readonly Stopwatch Elapsed = new();
     private static readonly Stopwatch SinceHeartbeat = new();
@@ -109,7 +110,7 @@ public sealed partial class Plugin : BasePlugin
                 Try(rpc.WriteStatus, "write status");
                 SinceHeartbeat.Restart();
             }
-            if (operation == null && (current = rpc.Take()) != null)
+            if (steps == null && (current = rpc.Take()) != null)
             {
                 Elapsed.Restart();
                 result = null;
@@ -117,23 +118,23 @@ public sealed partial class Plugin : BasePlugin
                 Discarded.Clear();
                 undo = null;
                 undoStale = false;
-                operation = Execute(current).GetEnumerator();
+                steps = Execute(current).GetEnumerator();
             }
-            if (operation != null)
+            if (steps != null)
             {
                 // Checked between frames: a single blocking call can run past it.
                 if (Elapsed.ElapsedMilliseconds > current!.TimeoutMs)
-                    throw new TimeoutException("Engine operation timed out; outcome may be incomplete. Inspect state before another edit.");
-                if (!operation.MoveNext()) Complete(true, result);
+                    throw new TimeoutException("The request timed out; outcome may be incomplete. Inspect state before another edit.");
+                if (!steps.MoveNext()) Complete(true, result);
             }
         }
         catch (Exception error)
         {
             if (current != null)
             {
-                // Ends the operation first, so its cleanup, which records what was
+                // Ends the request first, so its cleanup, which records what was
                 // discarded and rewrites the undo file, runs before the message is written.
-                EndOperation();
+                EndRequest();
                 var message = (error.InnerException ?? error).Message;
                 if (Changed.Count > 0)
                 {
@@ -183,25 +184,25 @@ public sealed partial class Plugin : BasePlugin
         }
     }
 
-    // Runs the operation's pending cleanup; a failing cleanup never keeps a
+    // Runs the request's pending cleanup; a failing cleanup never keeps a
     // result from being published.
-    private static void EndOperation()
+    private static void EndRequest()
     {
         try
         {
-            operation?.Dispose();
+            steps?.Dispose();
         }
         catch (Exception error)
         {
             Diagnostics.LogError($"Could not end request {current?.Id}: {error}");
         }
-        operation = null;
+        steps = null;
     }
 
     private static void Complete(bool ok, object? payload)
     {
         var request = current!;
-        EndOperation();
+        EndRequest();
         current = null;
         if (undoStale)
         {
@@ -224,10 +225,10 @@ public sealed partial class Plugin : BasePlugin
             undoStale = !Try(() => rpc.WriteUndo(current, undo), "update the undo file");
     }
 
-    private static object Main => main ?? throw new InvalidOperationException("App is not ready");
+    private static object Main => main ?? throw new InvalidOperationException("The app instance is not ready");
     private static object Root => root ?? throw new InvalidOperationException("Open or create a character first");
 
-    // In app order: the editor tabs run Face, Hairstyle, Body, Outfit.
+    // In VRoid's order: its editor lists Face, Hairstyle, Body, Outfit.
     private static readonly string[] Sections = { "Face", "Hairstyle", "Body", "Outfit" };
 
     // VRoid's own name for the editor behind a section.
@@ -239,22 +240,23 @@ public sealed partial class Plugin : BasePlugin
     } + "Editor";
 
     // A label that occurs more than once in a category takes its values as an
-    // array, in app order. A colour is "#RRGGBB" and has no numeric values.
+    // array, in VRoid's order. A colour is "#RRGGBB" and has no numbers.
     private sealed record Wanted(string Label, double[] Values, bool Repeated, string[]? Colors);
     // `Item` is the wanted item's identifier, "custom", or null to take it off;
     // `HasItem` is false when the request leaves the item alone.
     private sealed record CategoryEdit(string Name, Wanted[] Values, bool HasItem, string? Item);
-    // A colour field: `Get` reads its UnityEngine.Color, `Set` writes one, and
-    // a write changes the model values named by `Keys`.
+    // A colour: `Get` reads its UnityEngine.Color, `Set` writes one, and a
+    // write changes the character's values named by `Keys`.
     private sealed record Swatch(string Label, Func<object?> Get, Action<object> Set, HashSet<string> Keys);
 
-    // A colour field held in `owner.member`.
-    private static Swatch Field(string label, object owner, string member, HashSet<string> keys) =>
+    // A colour held in `owner.member`.
+    private static Swatch SwatchIn(string label, object owner, string member, HashSet<string> keys) =>
         new(label, () => Reflect.Get(owner, member), color => Reflect.Call(owner, "set_" + member, color), keys);
     // `Refused` maps colour labels the panel shows but apply cannot set to the reason.
     private sealed record Category(string Name, int Index, object Node, object[] Parameters, Swatch[] Swatches,
         Dictionary<string, string> Refused);
-    private sealed record Paint(Swatch Swatch, string Hex, ColorField Field);
+    // A colour to set to `Hex`, and what it shows before.
+    private sealed record Paint(Swatch Swatch, string Hex, ShownColor Shown);
     private sealed record Target(string Section, Category Category,
         List<(object Parameter, float Value, string Path)> Matched, List<Paint> Painted);
 
@@ -267,7 +269,7 @@ public sealed partial class Plugin : BasePlugin
     private static float Read(object parameter) => Convert.ToSingle(Reflect.Get(parameter, Member(parameter))
         ?? throw new InvalidOperationException($"Parameter {Label(parameter)} has no value"));
 
-    // A numeric parameter with its bounds, as `parameters` and `accessories` list it.
+    // A slider with its bounds, as `parameters` and `accessories` list it.
     private static object Slider(object parameter) => new
     {
         label = Label(parameter),
@@ -279,7 +281,7 @@ public sealed partial class Plugin : BasePlugin
     private static object Selector(string section) => Selectors.Values.FirstOrDefault(
         value => value.GetType().FullName!.Contains("." + Editor(section) + ".")) ?? throw new InvalidOperationException("No selector");
 
-    // Switches to a section's editor and returns its categories once its selector is captured.
+    // Switches VRoid's editor to a section and returns its categories once its selector is captured.
     private static IEnumerable<object[]?> Enter(string section)
     {
         if (!Sections.Contains(section)) throw new ArgumentException("Only Face, Hairstyle, Body, and Outfit are supported");
@@ -289,7 +291,7 @@ public sealed partial class Plugin : BasePlugin
         yield return Reflect.Items(Reflect.Get(Reflect.Get(Selector(section), "Categories"), "Children")).ToArray();
     }
 
-    // Selects each named category, or every category in app order, and yields
+    // Selects each named category, or every category in VRoid's order, and yields
     // it while it is selected; null means wait a frame. A name that matches no
     // single category adds a message to `errors` and is skipped.
     private static IEnumerable<Category?> Visit(string section, IEnumerable<string>? names, List<string> errors)
@@ -321,8 +323,8 @@ public sealed partial class Plugin : BasePlugin
         }
     }
 
-    // The selected category's colour fields that apply can set, and the reason
-    // for each other field its editor panel shows.
+    // The selected category's colours that apply can set, and the reason for
+    // each other colour its editor panel shows.
     private static (Swatch[], Dictionary<string, string>) Swatches(string section, object node, int index)
     {
         var category = Name(node);
@@ -336,40 +338,40 @@ public sealed partial class Plugin : BasePlugin
             foreach (var sub in Reflect.Items(Reflect.Get(selection, "_subColorSelections")))
             {
                 var label = (string?)Reflect.Get(sub, "TranslatedDisplayName") ?? "";
-                // Fields that write the same keys show one shared colour, such as skin
-                // in Face and Body; without the keys, sharing cannot be told apart.
+                // Colours that write the same keys are one shared parameter, such as
+                // skin in Face and Body; without the keys, sharing cannot be told apart.
                 var keys = Reflect.Items(Reflect.Get(Reflect.Get(Reflect.Get(sub, "_model"), "Accessor"), "_keysToSet"))
                     .Select(key => (Group: Reflect.Get(key, "TransferableGroupType") as string, Key: Reflect.Get(key, "Key") as string))
                     .ToArray();
                 if (keys.Length == 0 || keys.Any(key => string.IsNullOrEmpty(key.Group) || string.IsNullOrEmpty(key.Key)))
                     throw new InvalidOperationException(Unknown($"shared colours for {label}"));
-                shown.Add((Field(label, sub, "Color", keys.Select(key => $"{key.Group}:{key.Key}").ToHashSet()), available));
+                shown.Add((SwatchIn(label, sub, "Color", keys.Select(key => $"{key.Group}:{key.Key}").ToHashSet()), available));
             }
         }
         if (section == "Hairstyle")
         {
-            // One hair material colour pair covers every hair category. Hairstyle
-            // Sets shows an aggregate colour instead, and Base Hair its own above.
+            // One hair material colour pair covers every Hairstyle category.
+            // Hairstyle Sets shows an aggregate colour instead, and Base Hair its own above.
             var hair = Reflect.Get(Root, "HairEditor");
             if (Reflect.Get(hair, "IsHairSet") is not bool set || Reflect.Get(hair, "IsBaseHair") is not bool baseHair)
                 throw new InvalidOperationException(Unknown("hair colours"));
             if (!set && !baseHair)
             {
-                shown.Add((Field("Main Color", hair!, "HairMaterialTemplateColor", new() { "HairMaterial:Main" }), true));
-                shown.Add((Field("Highlight Color", hair!, "HairMaterialTemplateEmissionColor", new() { "HairMaterial:Highlight" }), true));
+                shown.Add((SwatchIn("Main Color", hair!, "HairMaterialTemplateColor", new() { "HairMaterial:Main" }), true));
+                shown.Add((SwatchIn("Highlight Color", hair!, "HairMaterialTemplateEmissionColor", new() { "HairMaterial:Highlight" }), true));
             }
         }
         var swatches = new List<Swatch>();
         var refused = new Dictionary<string, string>();
         if (section == "Outfit" && OutfitSwatches(node, index) is var (outfit, builtIn))
         {
-            // Only a built-in item's colours reproduce in another project.
+            // Only a built-in item's colours reproduce in another character.
             if (builtIn) shown.AddRange(outfit.Select(part => (part, true)));
-            else foreach (var part in outfit) refused[part.Label] = NotBuiltIn;
+            else foreach (var part in outfit) refused[part.Label] = CustomItem;
         }
         foreach (var (swatch, available) in shown)
         {
-            // A field such as "Both Eyes" writes several colours and reads only one of
+            // A colour such as "Both Eyes" writes several others and reads only one of
             // them, so neither skipping an equal value nor its undo would be exact.
             var parts = shown.Where(other => other.Swatch.Keys.IsProperSubsetOf(swatch.Keys)).Select(other => other.Swatch.Label).ToArray();
             if (!available) refused[swatch.Label] = Unavailable;
@@ -384,7 +386,7 @@ public sealed partial class Plugin : BasePlugin
     private static object ColorOf(Swatch swatch) => swatch.Get()
         ?? throw new InvalidOperationException($"Colour {swatch.Label} has no value");
 
-    // The hex VRoid's editor shows for the field.
+    // The hex VRoid's editor shows for the colour.
     private static string ReadHex(Swatch swatch, string path)
     {
         var text = (string?)Reflect.Type("VRoid.UI.Util.ColorUtil").GetMethod("ColorToColorHex")!
@@ -458,14 +460,14 @@ public sealed partial class Plugin : BasePlugin
                     errors.Add(refused ?? (found.Length > 0 ? $"{path}: is a number; give a number" : $"{path}: unknown parameter; list them first"));
                 else if (swatches.Length != colors.Length || (swatches.Length == 1 && wanted.Repeated))
                     errors.Add(swatches.Length == 1 ? $"{path}: give one colour"
-                        : $"{path}: {swatches.Length} colours have this label; give an array of {swatches.Length} colours in app order");
+                        : $"{path}: {swatches.Length} colours have this label; give an array of {swatches.Length} colours in VRoid's order");
                 else if (hexes.Any(hex => hex == null))
                     errors.Add($"{path}: {string.Join(", ", colors.Where((_, at) => hexes[at] == null))} is not #RRGGBB");
                 else
                     foreach (var (swatch, at) in swatches.Select((swatch, at) => (swatch, at)))
                     {
                         var where = wanted.Repeated ? $"{path}[{at}]" : path;
-                        painted.Add(new Paint(swatch, hexes[at]!, new ColorField(where, swatch.Keys, ReadHex(swatch, where))));
+                        painted.Add(new Paint(swatch, hexes[at]!, new ShownColor(where, swatch.Keys, ReadHex(swatch, where))));
                     }
                 continue;
             }
@@ -474,7 +476,7 @@ public sealed partial class Plugin : BasePlugin
                 errors.Add(swatches.Length switch
                 {
                     1 => $"{path}: is a colour; give \"#RRGGBB\"",
-                    > 1 => $"{path}: is {swatches.Length} colours; give an array of {swatches.Length} \"#RRGGBB\" in app order",
+                    > 1 => $"{path}: is {swatches.Length} colours; give an array of {swatches.Length} \"#RRGGBB\" in VRoid's order",
                     _ => refused ?? $"{path}: unknown parameter; list them first",
                 });
                 continue;
@@ -483,7 +485,7 @@ public sealed partial class Plugin : BasePlugin
             {
                 errors.Add(found.Length == 1
                     ? $"{path}: give one number"
-                    : $"{path}: {found.Length} parameters have this label; give an array of {found.Length} numbers in app order");
+                    : $"{path}: {found.Length} parameters have this label; give an array of {found.Length} numbers in VRoid's order");
                 continue;
             }
             foreach (var (parameter, index) in found.Select((parameter, index) => (parameter, index)))
@@ -503,7 +505,7 @@ public sealed partial class Plugin : BasePlugin
         return new Target(section, category, matched, painted);
     }
 
-    // Values grouped by label in app order; repeated labels become arrays.
+    // Values grouped by label in VRoid's order; repeated labels become arrays.
     private static Dictionary<string, object?> Values(IEnumerable<object> parameters) =>
         parameters.GroupBy(Label).ToDictionary(group => group.Key,
             group => group.Count() == 1 ? (object?)Read(group.First()) : group.Select(Read).ToArray());
@@ -533,7 +535,7 @@ public sealed partial class Plugin : BasePlugin
         var work = new Outfitting();
         foreach (var step in CheckItems(request, edits, discard, work, errors)) yield return step;
         var previous = Sections.ToDictionary(section => section, _ => new Dictionary<string, Dictionary<string, object?>>());
-        var colors = new List<ColorField>();
+        var colors = new List<ShownColor>();
         foreach (var target in Targets(edits, errors, work.ItemMayChange))
         {
             if (target is not { } found)
@@ -545,9 +547,9 @@ public sealed partial class Plugin : BasePlugin
             var values = Values(found.Category.Parameters.Where(parameters.Contains));
             // Match paints every colour of a label or none.
             foreach (var label in found.Painted.GroupBy(paint => paint.Swatch.Label))
-                values[label.Key] = label.Count() > 1 ? label.Select(paint => paint.Field.Hex).ToArray() : label.Single().Field.Hex;
+                values[label.Key] = label.Count() > 1 ? label.Select(paint => paint.Shown.Hex).ToArray() : label.Single().Shown.Hex;
             previous[found.Section][found.Category.Name] = values;
-            colors.AddRange(found.Painted.Select(paint => paint.Field));
+            colors.AddRange(found.Painted.Select(paint => paint.Shown));
         }
         errors.AddRange(Colors.Conflicts(colors));
         if (errors.Count > 0) throw new ArgumentException(string.Join("; ", errors) + ". Nothing changed");
@@ -557,12 +559,12 @@ public sealed partial class Plugin : BasePlugin
         if (Sections.Any(work.ItemsChange))
         {
             foreach (var step in Dump(restore)) yield return step;
-            // Undo cannot restore an item that is not built in, and "custom" only
-            // keeps one still worn, so leaving it out changes nothing while it is
-            // worn and keeps the undo applying once it is gone.
+            // Undo cannot restore a custom item, and "custom" only keeps one still
+            // worn, so leaving it out changes nothing while it is worn and keeps
+            // the undo applying once it is gone.
             foreach (var section in Sections)
                 foreach (var values in ((Dictionary<string, object>)restore[section]).Values.Cast<Dictionary<string, object?>>())
-                    if (values.TryGetValue("item", out var item) && item as string == ItemIds.Custom)
+                    if (values.TryGetValue("item", out var item) && item as string == Identifiers.Custom)
                         values.Remove("item");
         }
         else
@@ -583,7 +585,7 @@ public sealed partial class Plugin : BasePlugin
         foreach (var target in Targets(edits, errors, (_, _) => false))
         {
             // The first pass found none, unless new items made a colour unavailable or
-            // the app changed underneath; stop changing it.
+            // VRoid changed underneath; stop changing it.
             if (errors.Count > 0) throw new InvalidOperationException(string.Join("; ", errors) + ".");
             if (target is not { } found)
             {
@@ -601,19 +603,19 @@ public sealed partial class Plugin : BasePlugin
                 changed++;
                 while (rebuilt == before || updating) yield return true;
             }
-            foreach (var (swatch, hex, field) in found.Painted)
+            foreach (var (swatch, hex, shown) in found.Painted)
             {
-                if (Colors.Write(ReadHex(swatch, field.Path), hex) is not { } channels) continue;
+                if (Colors.Write(ReadHex(swatch, shown.Path), hex) is not { } channels) continue;
                 var before = rebuilt;
                 unsavedChanges = true;
                 Write(swatch, channels);
-                Changed.Add(field.Path);
+                Changed.Add(shown.Path);
                 changed++;
                 while (rebuilt == before || updating) yield return true;
                 // Catches clamping or a colour-space conversion inside VRoid (R-EDIT-8).
-                var actual = ReadHex(swatch, field.Path);
+                var actual = ReadHex(swatch, shown.Path);
                 if (actual != hex)
-                    throw new InvalidOperationException($"{field.Path} reads {actual} after setting {hex}");
+                    throw new InvalidOperationException($"{shown.Path} reads {actual} after setting {hex}");
             }
         }
         if (errors.Count > 0) throw new InvalidOperationException(string.Join("; ", errors) + ".");
@@ -626,9 +628,9 @@ public sealed partial class Plugin : BasePlugin
     private static IEnumerable<bool> Dump(Dictionary<string, object> dump)
     {
         var sections = new Dictionary<string, List<(string Name, Dictionary<string, object?> Values)>>();
-        // Every available colour in app order, with the category values that would
-        // list it and, for a repeated label, its number of colours.
-        var colors = new List<(ColorField Field, Dictionary<string, object?> Values, string Label, int Count)>();
+        // Every available colour in VRoid's order, with the category values that
+        // would list it and, for a repeated label, its number of colours.
+        var colors = new List<(ShownColor Shown, Dictionary<string, object?> Values, string Label, int Count)>();
         foreach (var section in Sections)
         {
             var categories = sections[section] = new();
@@ -677,28 +679,28 @@ public sealed partial class Plugin : BasePlugin
                     foreach (var (swatch, at) in label.Select((swatch, at) => (swatch, at)))
                     {
                         var where = count > 0 ? $"{path}[{at}]" : path;
-                        colors.Add((new ColorField(where, swatch.Keys, ReadHex(swatch, where)), values, label.Key, count));
+                        colors.Add((new ShownColor(where, swatch.Keys, ReadHex(swatch, where)), values, label.Key, count));
                     }
                 }
                 categories.Add((category.Name, values));
             }
         }
-        // A shared colour is listed once, under the first category in app order.
-        var once = Colors.Listed(colors.Select(color => color.Field).ToList()).ToHashSet(ReferenceEqualityComparer.Instance);
-        foreach (var (field, values, label, count) in colors.Where(color => once.Contains(color.Field)))
+        // A shared colour is listed once, under the first category in VRoid's order.
+        var once = Colors.Listed(colors.Select(color => color.Shown).ToList()).ToHashSet(ReferenceEqualityComparer.Instance);
+        foreach (var (shown, values, label, count) in colors.Where(color => once.Contains(color.Shown)))
         {
             if (count == 0)
             {
-                values[label] = field.Hex;
+                values[label] = shown.Hex;
                 continue;
             }
             if (!values.TryGetValue(label, out var list)) values[label] = list = new List<string>();
-            ((List<string>)list!).Add(field.Hex);
+            ((List<string>)list!).Add(shown.Hex);
         }
         // apply sets a repeated label as a whole array, which a colour listed
         // elsewhere would leave short.
-        foreach (var color in colors.Where(color => color.Count > 0 && !once.Contains(color.Field)))
-            throw new InvalidOperationException($"{color.Field.Path} is shared with another colour; a template cannot hold its label");
+        foreach (var color in colors.Where(color => color.Count > 0 && !once.Contains(color.Shown)))
+            throw new InvalidOperationException($"{color.Shown.Path} is shared with another colour; a template cannot hold its label");
         dump["method"] = "apply";
         foreach (var (section, categories) in sections)
             dump[section] = categories.Where(category => category.Values.Count > 0)
@@ -745,9 +747,9 @@ public sealed partial class Plugin : BasePlugin
             case "open":
             {
                 var path = request.Text("path");
-                if (!File.Exists(path)) throw new ArgumentException("Project must be an existing file");
+                if (!File.Exists(path)) throw new ArgumentException("The .vroid file must exist");
                 foreach (var step in Load(() => Reflect.Call(Main, "ImportFileAndMoveToEditRoot", path, false, false))) yield return step;
-                foreach (var step in RebuildAccessoryColors()) yield return step;
+                foreach (var step in BuildAccessoryColors()) yield return step;
                 // The flags that pass toggles end as they were, so the character has
                 // no unsaved changes; VRoid's own undo history still holds the toggles.
                 unsavedChanges = false;
@@ -802,7 +804,7 @@ public sealed partial class Plugin : BasePlugin
                     if (step == null) yield return true;
                     else slot = step;
                 }
-                result = new { selected = State(slot!), removable = slot!.Removable, set = slot.IsSet, items = slot.Items.Select(item => item.Id).ToArray() };
+                result = new { selected = State(slot!), removable = slot!.Removable, set = slot.IsSet, items = slot.Items.Select(item => item.Identifier).ToArray() };
                 break;
             }
             case "thumbnails":
@@ -849,9 +851,9 @@ public sealed partial class Plugin : BasePlugin
                 var handler = Reflect.Get(Root, "_mainActionHandler")
                     ?? throw new InvalidOperationException("Save handler is unavailable");
                 if (Reflect.Call(handler, "SaveSync", path, true) is not true)
-                    throw new IOException("VRoid refused to save the project");
+                    throw new IOException("VRoid refused to save the character");
                 if (!File.Exists(path) || new FileInfo(path).Length == 0)
-                    throw new IOException("VRoid reported success without writing the project");
+                    throw new IOException("VRoid reported success without writing the .vroid file");
                 unsavedChanges = false;
                 result = new { saved = path, bytes = new FileInfo(path).Length };
                 break;
@@ -860,7 +862,7 @@ public sealed partial class Plugin : BasePlugin
             {
                 _ = Root;
                 var origin = Reflect.Get(updater, "ModelOrigin")
-                    ?? throw new InvalidOperationException("The model is not loaded; open or create a character first");
+                    ?? throw new InvalidOperationException("The character's model is not loaded; open or create a character first");
                 var views = request.Body.GetProperty("view").EnumerateArray().Select(view => Framing.ParseView(view.GetString()!)).ToArray();
                 var reference = request.Body.GetProperty("reference");
                 var scale = request.Body.GetProperty("scale");

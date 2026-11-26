@@ -45,13 +45,13 @@ public sealed class RpcDirectory
         var request = Parse();
         if (request == null) return;
         if (File.Exists(ResultPath(request.Id))) File.Delete(RequestPath);
-        else Finish(request, false, "App restarted before this request finished; outcome unknown. "
-            + "Inspect the project before another edit.");
+        else Finish(request, false, "The app instance ended before this request finished; outcome unknown. "
+            + "Inspect the character before another edit.");
     }
 
     /// Returns the pending request if it is addressed to this app instance and
     /// was not returned before; each request runs at most once. Requests for
-    /// another instance are answered with an error and not run.
+    /// another app instance are answered with an error and not run.
     public Request? Take()
     {
         if (Flush() != null || !File.Exists(RequestPath)) return null;
@@ -67,7 +67,7 @@ public sealed class RpcDirectory
     }
 
     /// Serializes a result. A payload that cannot be serialized becomes an error,
-    /// since the operation has already run.
+    /// since the request has already run.
     public static string Result(bool ok, object? payload)
     {
         try
@@ -80,7 +80,7 @@ public sealed class RpcDirectory
             {
                 ok = false,
                 result = (object?)null,
-                error = $"The operation ran, but its result could not be recorded ({error.Message}). Inspect the project.",
+                error = $"The request ran, but its result could not be recorded ({error.Message}). Inspect the character.",
             });
         }
     }
@@ -114,8 +114,8 @@ public sealed class RpcDirectory
         return null;
     }
 
-    /// Writes or replaces the request's undo template. Undo files are kept,
-    /// like results.
+    /// Writes or replaces the request's undo file. Undo files are kept, like
+    /// results.
     public void WriteUndo(Request request, object template) =>
         Write(Path.Combine(root, "undo", request.Id + ".json"), template);
 

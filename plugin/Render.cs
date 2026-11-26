@@ -1,5 +1,5 @@
 // Renders the open character with a temporary camera owned by the bridge. It
-// never touches the editor's cameras, the project, or its parameters.
+// never touches the editor's cameras, the character, or its parameters.
 //
 // Instance members of Unity engine objects are called through `dynamic`, which
 // binds to the IL2CPP proxy types at runtime. Static members go through
@@ -25,10 +25,11 @@ internal static class CharacterRender
 
     private static Vec Plain(dynamic value) => new((float)value.x, (float)value.y, (float)value.z);
 
-    /// Renders `views` of `origin`, the model's root transform, side by side,
-    /// each `width` x `height`, at one scale: `scale` pixels per metre, or the
-    /// largest that shows the frame with its margin. With `reference`, an image
-    /// file, a row above the views shows it. Returns the PNG bytes and the scale.
+    /// Renders `views` of `origin`, the root transform of the character's model,
+    /// side by side, each `width` x `height`, at one scale: `scale` pixels per
+    /// metre, or the largest that shows the frame with its margin. With
+    /// `reference`, an image file, a row above the views shows it. Returns the
+    /// PNG bytes and the scale.
     internal static (byte[] Png, double Scale) Png(object origin, IReadOnlyList<View> views, Frame frame,
         int width, int height, string? reference, double? scale)
     {
@@ -196,9 +197,9 @@ internal static class CharacterRender
             }
             camera.cullingMask = 0;
             var background = Shoot()[..3];
-            // Leaves out scene objects on layers the model does not use. In
-            // VRoid 2.16.0 its renderers are all on Default, which nothing else
-            // in view uses.
+            // Leaves out scene objects on layers the character's model does not
+            // use. In VRoid 2.16.0 its renderers are all on Default, which
+            // nothing else in view uses.
             camera.cullingMask = layers;
             // The scene's own directional lights, fixed in world space in front
             // of the character, light every shot, so back views show MToon's

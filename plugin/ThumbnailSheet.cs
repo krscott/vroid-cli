@@ -4,7 +4,7 @@ namespace VroidBridge;
 
 /// An image of item thumbnails, each above its identifier, in rows of
 /// `Columns`.
-public sealed class Sheet : Canvas
+public sealed class ThumbnailSheet : Canvas
 {
     public const int Columns = 10;
     // Half of the 300x400 thumbnails VRoid 2.16.0 ships.
@@ -25,16 +25,16 @@ public sealed class Sheet : Canvas
 
     /// Draws one label per thumbnail. Refuses a label the font cannot draw or
     /// that does not fit under its thumbnail.
-    public Sheet(IReadOnlyList<string> labels)
-        : base(SheetWidth(labels), (labels.Count + Columns - 1) / Columns * (CellHeight + Gutter) + Gutter, White)
+    public ThumbnailSheet(IReadOnlyList<string> labels)
+        : base(WidthFor(labels), (labels.Count + Columns - 1) / Columns * (CellHeight + Gutter) + Gutter, White)
     {
         for (var index = 0; index < labels.Count; index++) Label(index, labels[index]);
     }
 
-    // The sheet's width, once every label is known to be drawable.
-    private static int SheetWidth(IReadOnlyList<string> labels)
+    // The thumbnail sheet's width, once every label is known to be drawable.
+    private static int WidthFor(IReadOnlyList<string> labels)
     {
-        if (labels.Count == 0) throw new ArgumentException("A sheet needs at least one item");
+        if (labels.Count == 0) throw new ArgumentException("A thumbnail sheet needs at least one item");
         foreach (var label in labels)
             if (label.Length == 0 || label.Length > MaxLabel || label.Any(c => !Font.ContainsKey(c)))
                 throw new ArgumentException($"Cannot label item {label}");
