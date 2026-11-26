@@ -107,12 +107,12 @@ and tails are accessories.
   colours as `"#RRGGBB"` where `parameters` lists a colour. It checks every
   value before changing any, and refuses the whole request for one bad value,
   except a new item's colours and an added accessory's colours and shape
-  sliders, which it checks once they are worn; a refusal there stops `apply` after changes. Its
-  result is `changed`, `discarded`, and `undo`, the path of a file written
-  before the first change that holds an `apply` request restoring the previous
-  values. Undo with `vroid-cli NAME @PATH`. When `apply` fails after changing
-  something, its error names the same file. Undo files stay in the session;
-  copy one to keep it after the session is deleted.
+  sliders, which it checks once they are worn; a refusal there stops `apply`
+  after changes. Its result is `changed`, `discarded`, and `undo`, the path of
+  a file written before the first change that holds an `apply` request
+  restoring the previous values. Undo with `vroid-cli NAME @PATH`. When `apply`
+  fails after changing something, its error names the same file. Undo files
+  stay in the session; copy one to keep it after the session is deleted.
 - Colours are the hex VRoid's editor shows, without alpha. Hairstyle's "Main
   Color" and "Highlight Color" (under Front, Back, and the other hair parts)
   are one pair for all hair; Base Hair has its own "Main Color".
@@ -145,7 +145,7 @@ and tails are accessories.
   select the items of other categories, so name either a set or those items.
   `dump` omits sets.
 - `"custom"` is a custom item, which `items` does not list, such as a
-  texture-edited outfit or a sample model's part. `apply` refuses to change any
+  texture-edited outfit or a sample model's item. `apply` refuses to change any
   item in a section that wears one, since VRoid may replace it and `undo`
   cannot restore it. To change items there anyway, `save` a copy of the
   character first, then add `"discard_custom": true`; the result's `discarded`
@@ -164,10 +164,10 @@ and tails are accessories.
   placement is the identity, except that it fits hats on the Head about 0.13 m
   up and tilted 10° back, as `dump` shows. `"bone": null` is VRoid's None, with
   no placement. An omitted key keeps a worn accessory's value, or VRoid's
-  default for an added one, whose sliders are checked only once it is worn.
-  Changing `bone` resets the placement to the identity, even a hat's back on
-  the Head, so name the placement with the bone; remove and re-add a hat to fit
-  it again.
+  default for an added one, whose colours and shape sliders are checked only
+  once it is worn. Changing `bone` resets the placement to the identity, even a
+  hat's back on the Head, so name the placement with the bone; remove and
+  re-add a hat to fit it again.
 - Bone axes follow the character in VRoid's A-pose: +x is the character's
   right, +y up, +z forward. A positive angle about x tips the front down,
   about y turns the front to the character's right, and about z lowers the
@@ -217,11 +217,11 @@ and tails are accessories.
   hats) even after the last accessory of that kind is removed. So `import`
   refuses a file whose accessory kind the character wears or wore as a built-in
   accessory, and `apply` refuses a built-in accessory whose accessory kind the
-  character wears or wore as an import. An import's `undo` doesn't lift this,
-  so `save` a copy before trying an import in a character that may need
-  built-in accessories of that kind. Both errors say "Report this VRoid limit
-  to the user": don't work around it silently. In your final report, tell the
-  user the accessory kind and what you wanted to do, such as importing ears
+  character wears or wore as a custom accessory. An import's `undo` doesn't
+  lift this, so `save` a copy before trying an import in a character that may
+  need built-in accessories of that kind. Both errors say "Report this VRoid
+  limit to the user": don't work around it silently. In your final report, tell
+  the user the accessory kind and what you wanted to do, such as importing ears
   into a character that wore built-in cat ears.
 - `accessories` `sliders` holds one list per `worn` accessory, in the same
   order: its shape sliders with `label`, `value`, `min`, and `max`, as

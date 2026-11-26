@@ -51,8 +51,8 @@ backfill unrelated requirements.
   Rationale: Session state holds proprietary VRoid files, Wine prefixes, and
   logs that must never be committed by accident.
 
-- **R-SES-4** [test] `stop` refuses, and leaves the app instance running, unless
-  forced, while a request is pending or the bridge last reported unsaved
+- **R-SES-4** [test] Unless forced, `stop` refuses and leaves the app instance
+  running while a request is pending or the bridge last reported unsaved
   changes. A bridge from an incompatible build, whose status this build cannot
   read, counts as reporting them.
 
@@ -130,7 +130,7 @@ backfill unrelated requirements.
   heartbeat is stale.
 
   Rationale: A request to a dead or hung app instance stays pending and blocks
-  the session until it restarts.
+  the session until a new app instance starts.
 
 - **R-RPC-5** [test] A request runs at most once. The CLI never repeats a
   request automatically.
@@ -271,13 +271,13 @@ backfill unrelated requirements.
   undo file cannot restore. Otherwise it refuses the request and changes
   nothing.
 
-  Rationale: Custom items, like texture-edited outfits or parts of sample
+  Rationale: Custom items, like texture-edited outfits or items of sample
   models, have no identifier, so the undo file cannot put them back. An agent
   that means to discard one says so, and saves a copy of the character first if
   it may want the item back.
 
 - **R-EDIT-11** [manual] Before `apply` or `import` changes anything, it writes
-  its undo file, a new file whose template restores everything the request
+  its undo file, a template in a new file that restores everything the request
   changes, including what VRoid changes with an item, except what its result
   names in `discarded` (R-EDIT-10) and the accessory group that VRoid keeps
   after an `import` (R-EDIT-15). Its result, and its error after a change, name
@@ -369,8 +369,8 @@ backfill unrelated requirements.
   and moved, imports the file into a new character, and checks that the new
   accessory reads as `custom` with the same values and that `apply` changes its
   colour and placement. It checks that a file that holds no accessory, and an
-  accessory of an accessory kind of which the character wears a built-in one,
-  are refused with `dump` unchanged, and that the import's undo file restores a
+  accessory while the character wears a built-in one of its accessory kind, are
+  refused with `dump` unchanged, and that the import's undo file restores a
   `dump` taken before it.
 
 - **R-EDIT-16** [manual] `export` writes a worn accessory to a new
@@ -379,15 +379,15 @@ backfill unrelated requirements.
   an accessory with the same colours, shape sliders, and placement. `export`
   refuses an existing destination and leaves it unchanged.
 
-  Rationale: A custom accessory has no identifier to name its item by, so a
-  template cannot carry it to another character; a file can. The destination
-  may be an earlier deliverable.
+  Rationale: A custom accessory's item has no identifier, so a template cannot
+  carry it to another character; a file can. The destination may be an earlier
+  deliverable.
 
   Manual test: `just gui-smoke` exports a recoloured, reshaped, and moved
   accessory, checks that `dump` and `unsaved_changes` are unchanged, imports
-  the file into another character, and compares the new accessory's accessory
-  entry with the exported one's. It checks that an existing destination is
-  refused and left unchanged.
+  the file into another character, and compares the new accessory entry with
+  the exported accessory's. It checks that an existing destination is refused
+  and left unchanged.
 
 - **R-EDIT-17** [test] `apply` takes an accessory's rotation as a unit
   quaternion or as angles `[x, y, z]` in degrees. Angles turn the accessory

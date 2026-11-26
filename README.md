@@ -65,16 +65,16 @@ vroid-cli other @template.json
 `parameters` lists, or for a worn accessory's shape sliders `accessories`,
 except colours of a category whose item the request may change and the colours
 and shape sliders of an added accessory, which it checks once the new item or
-accessory is worn. Before the first change it writes an undo file, an `apply` request
-that restores the previous ones; its result names the file. A category's
-`"item"` is the identifier of a built-in item, listed by `items`, or
+accessory is worn. Before the first change it writes an undo file, an `apply`
+request that restores what the request changes; its result names the file. A
+category's `"item"` is the identifier of a built-in item, listed by `items`, or
 `"custom"` for a custom item; `accessories` lists accessories the same way. A
-label that repeats within a category, such as "Nose Size" in Face Sets, maps
-to an array of its values. Categories share parameters ("Eye Size X" is in
-Face Sets, Eyes Sets, and Eyeliner), so `dump` lists each once, and a request
-may name each label in only one category per section. Colours are `"#RRGGBB"`
-as VRoid's editor shows them; shared colours, such as skin in Face and Body,
-may also be set in only one place per request.
+label that repeats within a category, such as "Nose Size" in Face Sets, maps to
+an array of its values. Categories share parameters ("Eye Size X" is in Face
+Sets, Eyes Sets, and Eyeliner), so `dump` lists each once, and a request may
+name each label in only one category per section. Colours are `"#RRGGBB"` as
+VRoid's editor shows them; shared colours, such as skin in Face and Body, may
+also be set in only one place per request.
 
 Use one session name per agent or task; the first `launch` creates it.
 Session state lives in `.vroid/NAME/` at the Git worktree root (the current
